@@ -1,0 +1,25 @@
+name: Check links in Hugo site
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0' # Runs every Sunday at 00:00 UTC
+
+# Default to bash
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  check-links:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create skip file
+        run: echo "\.s?css$" > skip_file.txt
+      - name: Check links with linkcheck
+        uses: filiph/linkcheck@3.0.0
+        with:
+          arguments: |
+            https://alan-cha.github.io/silhouette-card-maker/ --skip-file skip_file.txt
