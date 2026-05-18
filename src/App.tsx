@@ -264,6 +264,7 @@ export default function App() {
   const [showPluginSaveModal, setShowPluginSaveModal] = useState(false);
   const [showPluginLoadModal, setShowPluginLoadModal] = useState(false);
   const [pluginSaveName, setPluginSaveName] = useState("");
+  const [showPreFetchWarning, setShowPreFetchWarning] = useState<{ matches: string[], args: any[] } | null>(null);
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
 
@@ -372,7 +373,7 @@ export default function App() {
         // Use API to delete instead of clear_up.py directly
         (async () => {
           try {
-            const arr = Array.from(selectedAssets);
+            const arr = Array.from(selectedAssets) as string[];
             for (let i = 0; i < arr.length; i++) {
               setTaskProgress({ current: i + 1, total: arr.length, message: `Deleting ${arr[i].split(':')[1]}...` });
               await fetch('/api/delete', {
@@ -1836,64 +1837,87 @@ export default function App() {
                           />
                           <button 
                             onClick={async () => {
-                              // 1. Save decklist
-                              addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
-                              try {
-                                await fetch('/api/project/save-decklist', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ content: pluginState.decklist })
-                                });
-                              } catch (err) {
-                                addLog(`[Error] Failed to stage decklist: ${err}`);
-                                return;
-                              }
-
-                              // 2. Build and run command
-                              const args = [`game/decklist/current.txt`, pluginState.format];
-                              Object.entries(pluginState.options).forEach(([flag, val]) => {
-                                if (val === true) args.push(flag);
-                                else if (typeof val === 'string' && val !== "") {
-                                  args.push(flag);
-                                  args.push(val);
-                                }
-                              });
-                              
-                              const tempDirId = crypto.randomUUID();
-                              const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
-                                startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
-                                hideProgressOnComplete: true,
-                                tempDirId
-                              });
-                              
-                              if (result && result.fetchedFiles) {
-                                  const collisions = [];
-                                  const { fronts, backs, double_sided } = result.fetchedFiles;
-                                  
-                                  const targetFronts = status?.plugins?.fronts || [];
-                                  const targetBacks = status?.plugins?.backs || [];
-                                  const targetDob = status?.plugins?.double_sided || [];
-                                  
-                                  fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
-                                  backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
-                                  double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
-                                  
-                                  if (collisions.length > 0) {
-                                      setTaskProgress(null);
-                                      setFetchConflictData({ tempDirId, collisions, resolutions: {} });
-                                  } else {
-                                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                                      await fetch('/api/plugin/fetch-commit', {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ tempDirId, resolutions: {} })
+                              // Pre-flight duplicate check (Heuristic based on decklist text)
+                              if (pluginState.format !== 'url' && !pluginState.format.includes('url')) {
+                                  const cleanedDecklistWords = pluginState.decklist.split('\n')
+                                    .map(line => line.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().replace(/^[0-9]+x?/, ''))
+                                    .filter(w => w.length > 3);
+                                    
+                                  if (cleanedDecklistWords.length > 0) {
+                                      const possibleMatches = (status?.plugins?.fronts || []).filter(name => {
+                                         const lowerName = name.toLowerCase().replace(/^[0-9]+/, '');
+                                         return cleanedDecklistWords.some(w => lowerName.includes(w));
                                       });
-                                      await fetchStatus();
-                                      setTaskProgress(null);
+                                      
+                                      if (possibleMatches.length > 0) {
+                                          setShowPreFetchWarning({ matches: possibleMatches, args: [] }); // We will save the logic for 'proceed'
+                                          return;
+                                      }
                                   }
-                              } else {
-                                setTaskProgress(null);
                               }
+                              
+                              const proceedWithFetch = async () => {
+                                // 1. Save decklist
+                                addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
+                                try {
+                                  await fetch('/api/project/save-decklist', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ content: pluginState.decklist })
+                                  });
+                                } catch (err) {
+                                  addLog(`[Error] Failed to stage decklist: ${err}`);
+                                  return;
+                                }
+  
+                                // 2. Build and run command
+                                const args = [`game/decklist/current.txt`, pluginState.format];
+                                Object.entries(pluginState.options).forEach(([flag, val]) => {
+                                  if (val === true) args.push(flag);
+                                  else if (typeof val === 'string' && val !== "") {
+                                    args.push(flag);
+                                    args.push(val);
+                                  }
+                                });
+                                
+                                const tempDirId = crypto.randomUUID();
+                                const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
+                                  startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
+                                  hideProgressOnComplete: true,
+                                  tempDirId
+                                });
+                                
+                                if (result && result.fetchedFiles) {
+                                    const collisions = [];
+                                    const { fronts, backs, double_sided } = result.fetchedFiles;
+                                    
+                                    const targetFronts = status?.plugins?.fronts || [];
+                                    const targetBacks = status?.plugins?.backs || [];
+                                    const targetDob = status?.plugins?.double_sided || [];
+                                    
+                                    fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
+                                    backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
+                                    double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
+                                    
+                                    if (collisions.length > 0) {
+                                        setTaskProgress(null);
+                                        setFetchConflictData({ tempDirId, collisions, resolutions: {} });
+                                    } else {
+                                        setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                                        await fetch('/api/plugin/fetch-commit', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ tempDirId, resolutions: {} })
+                                        });
+                                        await fetchStatus();
+                                        setTaskProgress(null);
+                                    }
+                                } else {
+                                  setTaskProgress(null);
+                                }
+                              };
+                              
+                              proceedWithFetch();
                             }}
                             className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg"
                           >
@@ -2163,6 +2187,128 @@ export default function App() {
                     className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
                   >
                     Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {showPreFetchWarning && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#0f0f13] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-white/5 bg-amber-500/10">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-500/20 rounded-lg">
+                    <ShieldCheck size={24} className="text-amber-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Cards Might Already Exist</h2>
+                    <p className="text-amber-500 text-sm">
+                      We found {showPreFetchWarning.matches.length} file(s) in your plugin gallery that look suspiciously similar to cards in your decklist!
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="text-sm text-white/70 space-y-3">
+                  <p>
+                    If you proceed, the system will still download API data (which can take a minute) and temporarily fetch all images, then prompt you to choose whether to replace duplicates or skip them.
+                  </p>
+                  <p>
+                    <strong>Some potential matches:</strong>
+                  </p>
+                  <div className="bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs text-white/60 max-h-24 overflow-y-auto">
+                    <ul className="space-y-1">
+                      {showPreFetchWarning.matches.slice(0, 10).map(c => (
+                        <li key={c} className="truncate">• {c.split(':')[0]}</li>
+                      ))}
+                      {showPreFetchWarning.matches.length > 10 && <li>...and {showPreFetchWarning.matches.length - 10} more.</li>}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={async () => {
+                      setShowPreFetchWarning(null);
+                      // Since we can't easily re-invoke proceedWithFetch from here without refactoring, we'll
+                      // just copy the identical proceed logic
+                      const proceedWithFetch = async () => {
+                        addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
+                        try {
+                          await fetch('/api/project/save-decklist', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: pluginState.decklist })
+                          });
+                        } catch (err) {
+                          addLog(`[Error] Failed to stage decklist: ${err}`);
+                          return;
+                        }
+
+                        const args = [`game/decklist/current.txt`, pluginState.format];
+                        Object.entries(pluginState.options).forEach(([flag, val]) => {
+                          if (val === true) args.push(flag);
+                          else if (typeof val === 'string' && val !== "") {
+                            args.push(flag);
+                            args.push(val);
+                          }
+                        });
+                        
+                        const tempDirId = crypto.randomUUID();
+                        const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
+                          startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
+                          hideProgressOnComplete: true,
+                          tempDirId
+                        });
+                        
+                        if (result && result.fetchedFiles) {
+                            const collisions = [];
+                            const { fronts, backs, double_sided } = result.fetchedFiles;
+                            const targetFronts = status?.plugins?.fronts || [];
+                            const targetBacks = status?.plugins?.backs || [];
+                            const targetDob = status?.plugins?.double_sided || [];
+                            
+                            fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
+                            backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
+                            double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
+                            
+                            if (collisions.length > 0) {
+                                setTaskProgress(null);
+                                setFetchConflictData({ tempDirId, collisions, resolutions: {} });
+                            } else {
+                                setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                                await fetch('/api/plugin/fetch-commit', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ tempDirId, resolutions: {} })
+                                });
+                                await fetchStatus();
+                                setTaskProgress(null);
+                            }
+                        } else {
+                          setTaskProgress(null);
+                        }
+                      };
+                      proceedWithFetch();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
+                  >
+                    Proceed with Fetch
+                  </button>
+
+                  <button 
+                    onClick={() => setShowPreFetchWarning(null)}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
+                  >
+                    Cancel Fetch
                   </button>
                 </div>
               </div>
