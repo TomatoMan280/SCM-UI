@@ -2,12 +2,14 @@ import express from "express";
 import path from "path";
 import multer from "multer";
 import fs from "fs";
+import cors from "cors";
 import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.use(cors());
   app.use(express.json());
 
   // More robust path resolution for standalone bundle
@@ -824,6 +826,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://127.0.0.1:${PORT}`);
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

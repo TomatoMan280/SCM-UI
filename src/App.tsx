@@ -32,6 +32,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { Theme, setTheme, getTheme } from './lib/theme';
 
+const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:3000' : '';
+
 // Types
 type Tab = 'dashboard' | 'console' | 'assets' | 'builder' | 'plugins';
 
@@ -232,7 +234,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [assetViewMode, setAssetViewMode] = useState<'project' | 'library' | 'plugins'>('project');
   const [status, setStatus] = useState<AppStatus | null>(null);
-  const [logs, setLogs] = useState<string[]>(["[System] Initializing Silhouette Master Virtual Bridge..."]);
+  const [logs, setLogs] = useState<string[]>(["[System] Initializing SCMUI Virtual Bridge..."]);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -270,7 +272,7 @@ export default function App() {
 
   const fetchPluginConfigs = async () => {
     try {
-      const res = await fetch('/api/library/load-decklists');
+      const res = await fetch(API_BASE + '/api/library/load-decklists');
       const data = await res.json();
       if (data.configs) {
         setPluginConfigs(data.configs);
@@ -339,7 +341,7 @@ export default function App() {
             for (let i = 0; i < copiedBuffer.length; i++) {
               setTaskProgress({ current: i + 1, total: copiedBuffer.length, message: `Duplicating ${copiedBuffer[i].split(':')[1]}...` });
               try {
-                await fetch('/api/duplicate', {
+                await fetch(API_BASE + '/api/duplicate', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ identity: copiedBuffer[i], assetViewMode })
@@ -376,7 +378,7 @@ export default function App() {
             const arr = Array.from(selectedAssets) as string[];
             for (let i = 0; i < arr.length; i++) {
               setTaskProgress({ current: i + 1, total: arr.length, message: `Deleting ${arr[i].split(':')[1]}...` });
-              await fetch('/api/delete', {
+              await fetch(API_BASE + '/api/delete', {
                  method: 'POST',
                  headers: { 'Content-Type': 'application/json' },
                  body: JSON.stringify({ identity: [arr[i]], assetViewMode })
@@ -458,7 +460,7 @@ export default function App() {
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch('/api/status?_=' + new Date().getTime());
+      const res = await fetch(API_BASE + '/api/status?_=' + new Date().getTime());
       const data = await res.json();
       setStatus(data);
       if (data.assets) {
@@ -505,7 +507,7 @@ export default function App() {
     
     setTaskProgress({ current: 1, total: 1, message: `Saving config...` });
     try {
-      await fetch('/api/library/save-decklist', {
+      await fetch(API_BASE + '/api/library/save-decklist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -565,7 +567,7 @@ export default function App() {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     try {
-      const res = await fetch('/api/run-command', {
+      const res = await fetch(API_BASE + '/api/run-command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command, args, tempDirId: options?.tempDirId })
@@ -753,7 +755,7 @@ export default function App() {
     setTaskProgress({ current: 1, total: 1, message: `Clearing project...` });
     addLog("[Project] Clearing project assets...");
     try {
-      const res = await fetch('/api/project/clear', { method: 'POST' });
+      const res = await fetch(API_BASE + '/api/project/clear', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         addLog(`[Project] Success: ${data.message}`);
@@ -807,7 +809,7 @@ export default function App() {
       if (isLibrary) formData.append('library', 'true');
       if (replaceBack) formData.append('replaceBack', 'true');
       
-      const res = await fetch('/api/upload', {
+      const res = await fetch(API_BASE + '/api/upload', {
         method: 'POST',
         body: formData
       });
@@ -854,7 +856,7 @@ export default function App() {
 
       for (let i = 0; i < finalItems.length; i++) {
          setTaskProgress({ current: i + 1, total: finalItems.length, message: `Processing ${finalItems[i].split(':')[1]}...` });
-         await fetch('/api/plugin/import', {
+         await fetch(API_BASE + '/api/plugin/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ identity: finalItems[i], destination, source })
@@ -875,7 +877,7 @@ export default function App() {
     setTaskProgress({ current: 1, total: 1, message: `Saving project '${saveName}'...` });
     addLog(`[Project] Saving current assets as '${saveName}'...`);
     try {
-      const res = await fetch('/api/project/save', {
+      const res = await fetch(API_BASE + '/api/project/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: saveName })
@@ -899,7 +901,7 @@ export default function App() {
     setTaskProgress({ current: 1, total: 1, message: `Loading project '${name}'...` });
     addLog(`[Project] Loading project '${name}'...`);
     try {
-      const res = await fetch('/api/project/load', {
+      const res = await fetch(API_BASE + '/api/project/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
@@ -984,7 +986,7 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="font-extrabold text-base tracking-tighter whitespace-nowrap text-white select-none"
                 >
-                  Silhouette Master
+                  SCMUI Studio
                 </motion.h1>
               )}
             </div>
@@ -1129,7 +1131,7 @@ export default function App() {
                     <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
                       <Layers size={120} />
                     </div>
-                    <h2 className="text-2xl font-bold mb-2">Silhouette Master Studio</h2>
+                    <h2 className="text-2xl font-bold mb-2">SCMUI Studio</h2>
                     <p className="text-white/60 max-w-xl leading-relaxed mb-6">
                       High-performance card generation engine. Build custom PDFs with precision blade offset calibration.
                     </p>
@@ -1862,7 +1864,7 @@ export default function App() {
                                 // 1. Save decklist
                                 addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
                                 try {
-                                  await fetch('/api/project/save-decklist', {
+                                  await fetch(API_BASE + '/api/project/save-decklist', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ content: pluginState.decklist })
@@ -1906,7 +1908,7 @@ export default function App() {
                                         setFetchConflictData({ tempDirId, collisions, resolutions: {} });
                                     } else {
                                         setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                                        await fetch('/api/plugin/fetch-commit', {
+                                        await fetch(API_BASE + '/api/plugin/fetch-commit', {
                                             method: 'POST',
                                             headers: { 'Content-Type': 'application/json' },
                                             body: JSON.stringify({ tempDirId, resolutions: {} })
@@ -2245,7 +2247,7 @@ export default function App() {
                       const proceedWithFetch = async () => {
                         addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
                         try {
-                          await fetch('/api/project/save-decklist', {
+                          await fetch(API_BASE + '/api/project/save-decklist', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ content: pluginState.decklist })
@@ -2287,7 +2289,7 @@ export default function App() {
                                 setFetchConflictData({ tempDirId, collisions, resolutions: {} });
                             } else {
                                 setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                                await fetch('/api/plugin/fetch-commit', {
+                                await fetch(API_BASE + '/api/plugin/fetch-commit', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ tempDirId, resolutions: {} })
@@ -2359,7 +2361,7 @@ export default function App() {
                       const resolutions: Record<string, 'skip'> = {};
                       collisions.forEach(c => resolutions[c] = 'skip');
                       
-                      await fetch('/api/plugin/fetch-commit', {
+                      await fetch(API_BASE + '/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, resolutions })
@@ -2377,7 +2379,7 @@ export default function App() {
                       const { tempDirId } = fetchConflictData;
                       setFetchConflictData(null);
                       setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                      await fetch('/api/plugin/fetch-commit', {
+                      await fetch(API_BASE + '/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, resolutions: {} })
@@ -2394,7 +2396,7 @@ export default function App() {
                     onClick={async () => {
                       const { tempDirId } = fetchConflictData;
                       setFetchConflictData(null);
-                      await fetch('/api/plugin/fetch-commit', {
+                      await fetch(API_BASE + '/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, abort: true })
@@ -2770,7 +2772,7 @@ export default function App() {
                   for (let i = 0; i < targets.length; i++) {
                     setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
                     try {
-                      await fetch('/api/duplicate', {
+                      await fetch(API_BASE + '/api/duplicate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ identity: targets[i], assetViewMode })
@@ -2894,7 +2896,7 @@ export default function App() {
                     for (let i = 0; i < targets.length; i++) {
                       setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
                       try {
-                        await fetch('/api/delete', {
+                        await fetch(API_BASE + '/api/delete', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ identity: [targets[i]], assetViewMode })
@@ -3156,9 +3158,10 @@ interface AssetItemProps {
 const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode }) => {
   
   const getBaseUrl = () => {
-    if (assetViewMode === 'library') return '/library';
-    if (assetViewMode === 'plugins') return '/plugins_staging';
-    return '/game';
+    const base = API_BASE;
+    if (assetViewMode === 'library') return `${base}/library`;
+    if (assetViewMode === 'plugins') return `${base}/plugins_staging`;
+    return `${base}/game`;
   };
 
   const getImgSrc = () => {

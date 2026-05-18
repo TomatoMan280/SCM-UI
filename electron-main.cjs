@@ -8,7 +8,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: "Silhouette Card Maker",
+    title: "SCMUI",
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
@@ -16,65 +16,51 @@ function createWindow() {
     },
   });
 
-  // Start the Express server
-  // When bundled, __dirname points to the folder containing electron-main.cjs
-  // We need to resolve dist/server.cjs
+  // Load the built app directly
+  const indexPath = path.join(__dirname, 'dist', 'index.html');
+  mainWindow.loadFile(indexPath).catch(err => {
+    console.error("Failed to load index.html:", err);
+  });
+
+  // Start the Express server as a background service
   const serverPath = path.join(__dirname, 'dist', 'server.cjs');
   const appPath = app.getAppPath();
   
-  // Use utilityProcess for a more stable Node.js process in Electron production
-  try {
-    serverProcess = utilityProcess.fork(serverPath, [], {
-      cwd: appPath,
-      env: { 
-        ...process.env, 
-        PORT: '3000', 
-        NODE_ENV: 'production',
-        APP_USER_DATA: app.getPath('userData'),
-        APP_PATH: appPath
-      },
-      stdio: 'pipe'
-    });
+  const launchServer = () => {
+    try {
+      serverProcess = utilityProcess.fork(serverPath, [], {
+        cwd: appPath,
+        env: { 
+          ...process.env, 
+          PORT: '3000', 
+          NODE_ENV: 'production',
+          APP_USER_DATA: app.getPath('userData'),
+          APP_PATH: appPath,
+          ELECTRON_RUN_AS_NODE: '1'
+        },
+        stdio: 'pipe'
+      });
 
-    serverProcess.stdout.on('data', (data) => {
-      console.log(`Server: ${data}`);
-      const output = data.toString();
-      if (output.includes('Server running') || output.includes('localhost:3000')) {
-         if (mainWindow && !mainWindow.isDestroyed()) {
-           mainWindow.loadURL('http://localhost:3000');
-         }
-      }
-    });
-    
-    serverProcess.stderr.on('data', (data) => {
-      console.error(`Server Error: ${data}`);
-    });
+      serverProcess.stdout.on('data', (data) => {
+        process.stdout.write(`[Server] ${data}`);
+      });
+      
+      serverProcess.stderr.on('data', (data) => {
+        process.stderr.write(`[Server Error] ${data}`);
+      });
 
-    serverProcess.on('exit', (code) => {
-      console.log(`Server process exited with code ${code}`);
-    });
-  } catch (err) {
-    console.error("Failed to launch utilityProcess, falling back to fork:", err);
-    const { fork } = require('child_process');
-    serverProcess = fork(serverPath, [], {
-      cwd: appPath,
-      env: { ...process.env, PORT: '3000', NODE_ENV: 'production' },
-      silent: true
-    });
-    
-    serverProcess.stdout.on('data', (data) => {
-       if (data.toString().includes('localhost:3000')) {
-         mainWindow.loadURL('http://localhost:3000');
-       }
-    });
-  }
-
-  // Fallback if we miss the console log
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.getURL()) {
-      mainWindow.loadURL('http://localhost:3000');
+      serverProcess.on('exit', (code) => {
+        console.log(`Server process exited with code ${code}`);
+        if (code !== 0 && code !== null) {
+          setTimeout(launchServer, 5000);
+        }
+      });
+    } catch (err) {
+      console.error("Failed to launch server process:", err);
     }
-  }, 5000);
+  };
+
+  launchServer();
 
   mainWindow.on('closed', () => {
     mainWindow = null;
