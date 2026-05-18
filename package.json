@@ -29,7 +29,9 @@
     "files": [
       "dist/**/*",
       "electron-main.cjs",
-      "package.json"
+      "package.json",
+      "src/silhouette-card-maker-main/**/*",
+      "src/Library/**/*"
     ],
     "mac": {
       "target": "dmg"

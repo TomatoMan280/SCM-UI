@@ -18,8 +18,10 @@ function createWindow() {
 
   // Start the Express server
   const serverPath = path.join(__dirname, 'dist', 'server.cjs');
+  const appPath = app.getAppPath();
   
   serverProcess = spawn('node', [serverPath], {
+    cwd: appPath,
     env: { ...process.env, PORT: '3000', NODE_ENV: 'production' }
   });
 

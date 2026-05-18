@@ -628,9 +628,11 @@ export default function App() {
       const isCurrentlyFlipped = next.has(identity);
       
       if (selectedAssets.size > 1 && selectedAssets.has(identity)) {
-        // Toggle all selected assets based on the state of the clicked one
+        const [targetType] = identity.split(':');
+        // Toggle all selected assets of the same type based on the state of the clicked one
         selectedAssets.forEach(item => {
-           if (item.startsWith('front:') || item.startsWith('double_sided:')) {
+           const [itemType] = item.split(':');
+           if (itemType === targetType && (itemType === 'front' || itemType === 'double_sided')) {
              if (isCurrentlyFlipped) {
                next.delete(item);
              } else {
@@ -1931,7 +1933,7 @@ export default function App() {
 
                 <div className="space-y-16">
                   {/* Back Patterns Section */}
-                  {(assetFilter === 'all' || assetFilter === 'back') && (
+                  {(assetFilter === 'all' || assetFilter === 'back') && (getAllAssets('back').some(img => img.toLowerCase().includes(assetSearch.toLowerCase())) || !assetSearch) && (
                     <section className="space-y-6">
                       <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
                         <div className="flex items-center gap-3">
@@ -1994,7 +1996,7 @@ export default function App() {
                   )}
 
                   {/* Front Faces Section */}
-                  {(assetFilter === 'all' || assetFilter === 'front') && (
+                  {(assetFilter === 'all' || assetFilter === 'front') && (getAllAssets('front').some(img => img.toLowerCase().includes(assetSearch.toLowerCase())) || !assetSearch) && (
                     <section className="space-y-6">
                       <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
                         <div className="flex items-center gap-3">
@@ -2058,7 +2060,7 @@ export default function App() {
                   )}
 
                   {/* Double-Sided Section */}
-                  {(assetFilter === 'all' || assetFilter === 'double_sided') && (
+                  {(assetFilter === 'all' || assetFilter === 'double_sided') && (getAllAssets('double_sided').some(img => img.toLowerCase().includes(assetSearch.toLowerCase())) || !assetSearch) && (
                     <section className="space-y-6">
                       <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
                         <div className="flex items-center gap-3">
@@ -2584,10 +2586,10 @@ export default function App() {
                     <button
                       key={name}
                       onClick={() => loadPluginConfig(name)}
-                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl text-left transition-all group"
+                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl text-left transition-all group overflow-hidden"
                     >
-                      <span className="font-semibold text-white/80 group-hover:text-white">{name}</span>
-                      <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 translate-x-0 group-hover:translate-x-1 transition-all" />
+                      <span className="font-semibold text-white/80 group-hover:text-white truncate pr-4">{name}</span>
+                      <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 translate-x-0 group-hover:translate-x-1 transition-all shrink-0" />
                     </button>
                   ))
                 ) : (

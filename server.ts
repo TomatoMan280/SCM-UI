@@ -394,22 +394,25 @@ async function startServer() {
   });
 
   app.post("/api/project/clear", (req, res) => {
-    import('fs').then((fs) => {
-      const dirs = [
-        path.join(scmPath, 'game', 'front'),
-        path.join(scmPath, 'game', 'back')
-      ];
-      dirs.forEach(dir => {
-        if (fs.existsSync(dir)) {
-          fs.readdirSync(dir).forEach(file => {
-            if (!file.startsWith('.')) {
-               try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
-            }
-          });
-        }
-      });
-      res.json({ success: true, message: "Project cleared." });
+    const dirs = [
+      path.join(scmPath, 'game', 'front'),
+      path.join(scmPath, 'game', 'back'),
+      path.join(scmPath, 'game', 'double_sided')
+    ];
+    dirs.forEach(dir => {
+      if (fs.existsSync(dir)) {
+        fs.readdirSync(dir).forEach(file => {
+          if (!file.startsWith('.')) {
+             try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
+          }
+        });
+      }
     });
+    // Also clear in-memory state if any
+    mockCards.fronts = [];
+    mockCards.backs = [];
+    mockCards.double_sided = [];
+    res.json({ success: true, message: "Project cleared." });
   });
 
   app.post("/api/duplicate", (req, res) => {
