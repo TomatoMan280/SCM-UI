@@ -3,9 +3,15 @@ import path from "path";
 import multer from "multer";
 import fs from "fs";
 import cors from "cors";
-import { createServer as createViteServer } from "vite";
 
 async function startServer() {
+  process.on('uncaughtException', (err) => {
+    console.error('CRITICAL: Uncaught Exception in server:', err);
+  });
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+  });
+
   const app = express();
   const PORT = 3000;
 
@@ -22,15 +28,23 @@ async function startServer() {
   // Writable directories should use APP_USER_DATA if in Electron production
   const writableRoot = process.env.APP_USER_DATA || baseAppPath;
 
-  let scmPath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
-  
-  // Handle Electron asarUnpack pathing
-  if (scmPath.includes('app.asar') && !scmPath.includes('app.asar.unpacked')) {
-    const unpackedPath = scmPath.replace('app.asar', 'app.asar.unpacked');
-    if (fs.existsSync(unpackedPath)) {
-      scmPath = unpackedPath;
+  // Ensure writable directories exist
+  ['uploads', 'temp-uploads', 'projects'].forEach(dir => {
+    const fullPath = path.join(writableRoot, dir);
+    if (!fs.existsSync(fullPath)) {
+      fs.mkdirSync(fullPath, { recursive: true });
     }
-  }
+  });
+
+  const resolveAppPath = (p: string) => {
+    if (p.includes('app.asar') && !p.includes('app.asar.unpacked')) {
+      const unpackedPath = p.replace('app.asar', 'app.asar.unpacked');
+      if (fs.existsSync(unpackedPath)) return unpackedPath;
+    }
+    return p;
+  };
+
+  let scmPath = resolveAppPath(path.join(baseAppPath, 'src', 'silhouette-card-maker-main'));
 
   // Only attempt auto-install if not in Electron production, or if explicitly requested
   if (process.env.NODE_ENV !== 'production') {
@@ -71,9 +85,9 @@ async function startServer() {
   let savedProjects: Record<string, typeof mockCards> = {};
 
   // Serve library static files
-  app.use('/library', express.static(path.join(baseAppPath, 'src', 'Library')));
+  app.use('/library', express.static(resolveAppPath(path.join(baseAppPath, 'src', 'Library'))));
   app.use('/game', express.static(path.join(scmPath, 'game')));
-  app.use('/plugins_staging', express.static(path.join(baseAppPath, 'src', 'Library', 'Plugins')));
+  app.use('/plugins_staging', express.static(resolveAppPath(path.join(baseAppPath, 'src', 'Library', 'Plugins'))));
   app.use('/uploads', express.static(path.join(writableRoot, 'uploads')));
 
   const upload = multer({ dest: path.join(writableRoot, 'temp-uploads') });
@@ -812,6 +826,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -825,7 +840,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, "127.0.0.1", () => {
+    console.log(`Server environment: NODE_ENV=${process.env.NODE_ENV}, APP_PATH=${process.env.APP_PATH}`);
+    console.log(`Base app path: ${baseAppPath}`);
+    console.log(`Writable root: ${writableRoot}`);
+    console.log(`SCM Path: ${scmPath}`);
     console.log(`Server running on http://127.0.0.1:${PORT}`);
     console.log(`Server running on http://localhost:${PORT}`);
   });
