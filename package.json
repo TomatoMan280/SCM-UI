@@ -13,6 +13,7 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "install-deps": "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confnew\" python3-pip && python3 -m pip install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests natsort pydantic pypdfium2 split-image pyautogui --break-system-packages",
     "lint": "tsc --noEmit",
     "desktop:build": "npm run build && electron-builder",
     "desktop:build:win": "npm run build && electron-builder --win",

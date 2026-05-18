@@ -1,4 +1,5 @@
 import sys
+import os
 from os import path
 from click import command, argument, Choice
 
@@ -10,7 +11,7 @@ from plugins.echoes_of_astra.deck_formats import DeckFormat, parse_deck
 from plugins.echoes_of_astra.api import get_handle_card
 from utilities import ensure_directory
 
-front_directory = path.join(REPO_ROOT, 'game', 'front')
+front_directory = os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), 'front')
 
 @command()
 @argument('deck_path')

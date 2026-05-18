@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
+  Loader2,
   Terminal, 
   Settings, 
   Book, 
@@ -22,7 +23,10 @@ import {
   Eye,
   Trash2,
   FileText,
-  Copy
+  Copy,
+  X,
+  RotateCcw,
+  PlusCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -36,6 +40,50 @@ interface AssetData {
   backs: string[];
   double_sided?: string[];
 }
+
+const FORMAT_HINTS: Record<string, string> = {
+  // MTG
+  simple: "List just the card names, one per line. Example: 4 Lightning Bolt",
+  mtga: "MTG Arena format. Example: 4 Shock (M19) 156",
+  mtgo: "Magic Online format. Example: 1 Abzan Battle Priest",
+  archidekt: "Archidekt format. Example: 1x Ashnod's Altar (ema) 218 *F*",
+  cubecobra_csv: "CubeCobra CSV formatted decklist.",
+  deckstats: "Deckstats format. Example: 1 [2XM#310] Ash Barrens",
+  moxfield: "Moxfield format. Example: 1 Abzan Battle Priest (IMA) 2",
+  scryfall_json: "Export as JSON from Scryfall.",
+  mpcfill_xml: "MPCFill XML file content.",
+  url: "Deck URL. Example: https://www.moxfield.com/decks/...",
+  
+  // Pokemon
+  limitless: "Limitless TCG format. Example: 4 Pikachu PAR 18",
+
+  // One Piece
+  egman: "Egman Events formatting.",
+  optcgsim: "OPTCG Sim text format.",
+
+  // Lorcana
+  dreamborn: "Dreamborn.ink text format.",
+
+  // SWU
+  melee: "Melee.gg decklist format.",
+  picklist: "A simple picklist format for SWU.",
+  swudb_json: "SWUDB exported JSON format.",
+
+  // Sorcery
+  curiosa_url: "Curiosa.io deck URL.",
+
+  // Riftbound
+  piltover_archive: "Piltover Archive exported text format.",
+  pixelborn: "Pixelborn deck code.",
+  tts: "Tabletop Simulator json format.",
+
+  // Digimon
+  digimoncard_dev: "Digimoncard.dev text output.",
+  digimoncard_app: "Digimoncard.app formatted text.",
+
+  // YGO
+  ydke: "YDKE deck string format."
+};
 
 interface PluginConfig {
   id: string;
@@ -176,24 +224,34 @@ interface AppStatus {
   dependenciesOk: boolean;
   assets?: AssetData;
   library?: AssetData;
+  plugins?: AssetData;
   savedProjects?: string[];
 }
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-  const [assetViewMode, setAssetViewMode] = useState<'project' | 'library'>('project');
+  const [assetViewMode, setAssetViewMode] = useState<'project' | 'library' | 'plugins'>('project');
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [logs, setLogs] = useState<string[]>(["[System] Initializing Silhouette Master Virtual Bridge..."]);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Computed state
+  const getCurrentAssets = () => {
+    if (assetViewMode === 'project') return status?.assets;
+    if (assetViewMode === 'library') return status?.library;
+    if (assetViewMode === 'plugins') return status?.plugins;
+    return undefined;
+  };
   const [assetSearch, setAssetSearch] = useState("");
   const [assetFilter, setAssetFilter] = useState<'all' | 'front' | 'back'>('all');
   const [pluginSearch, setPluginSearch] = useState("");
   const [verifyResult, setVerifyResult] = useState<{ missing: number, restored: number, check: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type?: string } | null>(null);
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
+  const [flippedAssets, setFlippedAssets] = useState<Set<string>>(new Set());
   const [uploadedImages, setUploadedImages] = useState<Record<string, string>>({});
-  const [localAssets, setLocalAssets] = useState<Array<{name: string, type: 'front' | 'back'}>>([]);
+  const [localAssets, setLocalAssets] = useState<Array<{name: string, type: 'front' | 'back' | 'double_sided', view: 'project' | 'library' | 'plugins'}>>([]);
   const [isReplaceBackDialogOpen, setIsReplaceBackDialogOpen] = useState(false);
   const [pendingBackFile, setPendingBackFile] = useState<File | null>(null);
   const [copiedBuffer, setCopiedBuffer] = useState<string[]>([]);
@@ -206,9 +264,29 @@ export default function App() {
   const [showPluginSaveModal, setShowPluginSaveModal] = useState(false);
   const [showPluginLoadModal, setShowPluginLoadModal] = useState(false);
   const [pluginSaveName, setPluginSaveName] = useState("");
+  const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
+
+  const fetchPluginConfigs = async () => {
+    try {
+      const res = await fetch('/api/library/load-decklists');
+      const data = await res.json();
+      if (data.configs) {
+        setPluginConfigs(data.configs);
+      }
+    } catch (err) { }
+  };
+
+  useEffect(() => {
+    if (showPluginLoadModal) fetchPluginConfigs();
+  }, [showPluginLoadModal]);
   const [currentTheme, setCurrentTheme] = useState<Theme>('indigo');
   const [pdfReady, setPdfReady] = useState(false);
+  const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
+  const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[]} | null>(null);
+  const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'>} | null>(null);
 
   useEffect(() => {
     setCurrentTheme(getTheme());
@@ -224,36 +302,55 @@ export default function App() {
     // Select All
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
       if (isInput) return;
-      // Prevent Ctrl+A if displaying back patterns to avoid selecting multiple
-      if (assetFilter === 'back') return;
       
       e.preventDefault();
-      const currentAssets = assetViewMode === 'project' ? status?.assets : status?.library;
-      const all = new Set([
-        ...(currentAssets?.fronts.map(n => `front:${n}`) || []),
-        ...(assetViewMode === 'project' ? currentAssets?.backs.map(n => `back:${n}`) : [])
-      ]);
-      setSelectedAssets(all);
-      addLog(`[System] Selected all ${assetViewMode} assets.`);
+      const currentAssets = getCurrentAssets();
+      if (!currentAssets) return;
+      
+      const toSelect = new Set<string>();
+      if (assetFilter === 'all' || assetFilter === 'front') {
+        currentAssets.fronts.forEach(f => toSelect.add(`front:${f}`));
+      }
+      setSelectedAssets(toSelect);
+      addLog(`[System] Selected all visible ${assetViewMode} assets.`);
     }
 
     // Copy
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
       if (isInput) return;
       if (selectedAssets.size > 0) {
-        const names = Array.from(selectedAssets).map((s: string) => s.split(':')[1]);
-        setCopiedBuffer(Array.from(selectedAssets));
+        const filtered = Array.from(selectedAssets).filter((s: string) => !s.startsWith('back:'));
+        const names = filtered.map((s: string) => s.split(':')[1]);
+        setCopiedBuffer(filtered);
         navigator.clipboard.writeText(names.join(', '));
-        addLog(`[System] Copied ${selectedAssets.size} asset names to internal buffer and clipboard.`);
+        addLog(`[System] Copied ${filtered.length} front assets to internal buffer and clipboard.`);
       }
     }
 
     // Paste
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
       if (isInput) return;
+      if (assetViewMode === 'plugins') return;
       if (copiedBuffer.length > 0) {
         addLog(`[Library] Duplicating ${copiedBuffer.length} assets from buffer...`);
-        runCommand('create_pdf.py', ['--duplicate-batch', copiedBuffer.join(',')]);
+        (async () => {
+          try {
+            for (let i = 0; i < copiedBuffer.length; i++) {
+              setTaskProgress({ current: i + 1, total: copiedBuffer.length, message: `Duplicating ${copiedBuffer[i].split(':')[1]}...` });
+              try {
+                await fetch('/api/duplicate', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ identity: copiedBuffer[i], assetViewMode })
+                });
+              } catch(e) {}
+            }
+            setTaskProgress({ current: copiedBuffer.length, total: copiedBuffer.length, message: `${copiedBuffer.length} card${copiedBuffer.length === 1 ? '' : 's'} duplicated` });
+            await fetchStatus();
+          } finally {
+            setTimeout(() => setTaskProgress(null), 1500);
+          }
+        })();
       } else {
         addLog(`[System] Paste failed: Internal buffer is empty.`);
       }
@@ -271,9 +368,28 @@ export default function App() {
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (selectedAssets.size > 0 && !isInput) {
         addLog(`[System] Deleting ${selectedAssets.size} selected items...`);
-        const args = ['--selected', Array.from(selectedAssets).join(',')];
-        if (assetViewMode === 'library') args.push('--library');
-        runCommand('clean_up.py', args);
+        
+        // Use API to delete instead of clear_up.py directly
+        (async () => {
+          try {
+            const arr = Array.from(selectedAssets);
+            for (let i = 0; i < arr.length; i++) {
+              setTaskProgress({ current: i + 1, total: arr.length, message: `Deleting ${arr[i].split(':')[1]}...` });
+              await fetch('/api/delete', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ identity: [arr[i]], assetViewMode })
+              });
+            }
+            setTaskProgress({ current: arr.length, total: arr.length, message: `${arr.length} card${arr.length === 1 ? '' : 's'} deleted` });
+            await fetchStatus();
+          } catch(err) {
+            addLog(`[Error] Delete failed: ${err}`);
+          } finally { 
+              setTimeout(() => setTaskProgress(null), 1500); 
+          }
+        })();
+        
         setSelectedAssets(new Set());
       }
     }
@@ -341,29 +457,38 @@ export default function App() {
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch('/api/status');
+      const res = await fetch('/api/status?_=' + new Date().getTime());
       const data = await res.json();
       setStatus(data);
-      // Pre-populate uploadedImages from server assets for consistent rendering
       if (data.assets) {
-        const initialImages: Record<string, string> = {};
-        data.assets.fronts.forEach((name: string) => initialImages[name] = `/game/front/${name}`);
-        data.assets.backs.forEach((name: string) => initialImages[name] = `/game/back/${name}`);
-        data.assets.double_sided?.forEach((name: string) => initialImages[name] = `/game/double_sided/${name}`);
-        setUploadedImages(prev => ({ ...initialImages, ...prev }));
-        setLocalAssets(prev => prev.filter(a => !data.assets.fronts.includes(a.name) && !data.assets.backs.includes(a.name)));
+        setLocalAssets(prev => prev.filter(a => {
+          const targetSet = a.view === 'project' ? data.assets : (a.view === 'library' ? data.library : data.plugins);
+          if (!targetSet) return true;
+          if (a.type === 'front' && targetSet.fronts?.includes(a.name)) return false;
+          if (a.type === 'back' && targetSet.backs?.includes(a.name)) return false;
+          if (a.type === 'double_sided' && targetSet.double_sided?.includes(a.name)) return false;
+          return true;
+        }));
       }
+      return data;
     } catch (err) {
       console.error("Failed to fetch status:", err);
+      return null;
     }
   };
 
-  const getAllAssets = (type: 'front' | 'back') => {
-    const serverAssets = (type === 'front' 
-      ? (assetViewMode === 'project' ? status?.assets?.fronts : status?.library?.fronts)
-      : (assetViewMode === 'project' ? status?.assets?.backs : status?.library?.backs)) || [];
+  const getAllAssets = (type: 'front' | 'back' | 'double_sided') => {
+    let serverAssets: string[] = [];
+    const current = getCurrentAssets();
+    if (type === 'front') {
+      serverAssets = current?.fronts || [];
+    } else if (type === 'back') {
+      serverAssets = current?.backs || [];
+    } else if (type === 'double_sided') {
+      serverAssets = current?.double_sided || [];
+    }
       
-    const local = localAssets.filter(a => a.type === type && !serverAssets.includes(a.name)).map(a => a.name);
+    const local = localAssets.filter(a => a.type === type && a.view === assetViewMode && !serverAssets.includes(a.name)).map(a => a.name);
     
     return [...serverAssets, ...local];
   };
@@ -374,37 +499,44 @@ export default function App() {
     setLogs(prev => [...prev, ...logArray]);
   };
   
-  const savePluginConfig = () => {
+  const savePluginConfig = async () => {
     if (!pluginSaveName) return;
-    const config = {
-      pluginId: pluginState.selectedPlugin.id,
-      format: pluginState.format,
-      options: pluginState.options,
-      decklist: pluginState.decklist
-    };
-    const saved = localStorage.getItem('scm_plugin_configs') || '{}';
-    const configs = JSON.parse(saved);
-    configs[pluginSaveName] = config;
-    localStorage.setItem('scm_plugin_configs', JSON.stringify(configs));
-    addLog(`[Plugins] Saved configuration '${pluginSaveName}' for ${pluginState.selectedPlugin.name}.`);
-    setPluginSaveName("");
-    setShowPluginSaveModal(false);
+    
+    setTaskProgress({ current: 1, total: 1, message: `Saving config...` });
+    try {
+      await fetch('/api/library/save-decklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          pluginId: pluginState.selectedPlugin.id,
+          saveName: pluginSaveName.replace(/[^a-zA-Z0-9_]/g, ''),
+          decklist: pluginState.decklist,
+          format: pluginState.format,
+          options: pluginState.options
+        })
+      });
+      addLog(`[Plugins] Saved configuration '${pluginSaveName}' for ${pluginState.selectedPlugin.name}.`);
+      setTaskProgress(prev => prev ? { ...prev, message: `Saved ${pluginSaveName} successfully.` } : null);
+    } catch(e) {
+      addLog(`[Error] Failed to save config: ${e}`);
+    } finally {
+      setPluginSaveName("");
+      setShowPluginSaveModal(false);
+      setTimeout(() => setTaskProgress(null), 1500);
+    }
   };
 
   const loadPluginConfig = (name: string) => {
-    const saved = localStorage.getItem('scm_plugin_configs') || '{}';
-    const configs = JSON.parse(saved);
+    const config = pluginConfigs[name];
+    if (!config) return;
     
-    if (!name || !configs[name]) return;
-    
-    const config = configs[name];
     const plugin = PLUGINS.find(p => p.id === config.pluginId);
     if (plugin) {
       setPluginState({
         selectedPlugin: plugin,
-        format: config.format,
-        options: config.options,
-        decklist: config.decklist
+        format: config.format || plugin.formats[0],
+        options: config.options || {},
+        decklist: config.decklist || ""
       });
       addLog(`[Plugins] Loaded configuration '${name}' for ${plugin.name}.`);
       setShowPluginLoadModal(false);
@@ -428,24 +560,36 @@ export default function App() {
     addLog("[Plugins] Exported configuration to JSON file.");
   };
 
-  const runCommand = async (command: string, args?: string[]) => {
+  const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string }) => {
+    setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     try {
       const res = await fetch('/api/run-command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, args })
+        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId })
       });
       if (!res.ok) {
         addLog(`[Error] Request failed with status ${res.status}`);
+        setTaskProgress(prev => prev ? { ...prev, message: 'Failed.' } : null);
+        setTimeout(() => setTaskProgress(null), 1500);
         return null;
       }
       const data = await res.json();
       addLog(`[Console] Output: ${data.output}`);
-      await fetchStatus();
-      return data.output;
+      
+      const assets = await fetchStatus();
+      
+      if (!options?.hideProgressOnComplete) {
+         setTaskProgress({ current: 1, total: 1, message: 'Complete.' });
+         setTimeout(() => setTaskProgress(null), 1500);
+      }
+      
+      return { output: data.output, assets, fetchedFiles: data.fetchedFiles };
     } catch (err) {
       addLog(`[Error] Execution failed: ${err}`);
+      setTaskProgress(prev => prev ? { ...prev, message: 'Failed.' } : null);
+      setTimeout(() => setTaskProgress(null), 1500);
       return null;
     }
   };
@@ -470,10 +614,36 @@ export default function App() {
     if (cmdOptions.label) { args.push('--label'); args.push(cmdOptions.label); }
     if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
-    const output = await runCommand('create_pdf.py', args);
-    if (output && output.some((line: string) => line.includes('Generated PDF'))) {
+    const result = await runCommand('create_pdf.py', args, { startMessage: 'Generating PDF...' });
+    if (result?.output && result.output.some((line: string) => line.includes('Generated PDF'))) {
       setPdfReady(true);
     }
+  };
+
+  const handleToggleFlip = (identity: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFlippedAssets(prev => {
+      const next = new Set(prev);
+      const isCurrentlyFlipped = next.has(identity);
+      
+      if (selectedAssets.size > 1 && selectedAssets.has(identity)) {
+        // Toggle all selected assets based on the state of the clicked one
+        selectedAssets.forEach(item => {
+           if (item.startsWith('front:') || item.startsWith('double_sided:')) {
+             if (isCurrentlyFlipped) {
+               next.delete(item);
+             } else {
+               next.add(item);
+             }
+           }
+        });
+      } else {
+        // Just toggle this one
+        if (isCurrentlyFlipped) next.delete(identity);
+        else next.add(identity);
+      }
+      return next;
+    });
   };
 
   const handleAssetSelect = (identity: string, e?: React.MouseEvent) => {
@@ -495,13 +665,15 @@ export default function App() {
         return next;
       }
 
-      const currentAssets = assetViewMode === 'project' ? status?.assets : status?.library;
+      const currentAssets = getCurrentAssets();
       const allOrderedAssets = [
         ...(currentAssets?.fronts.map(n => `front:${n}`) || []),
-        ...(currentAssets?.backs.map(n => `back:${n}`) || [])
+        ...(currentAssets?.backs.map(n => `back:${n}`) || []),
+        ...(currentAssets?.double_sided?.map(n => `double_sided:${n}`) || [])
       ];
 
       if (isRangeSelect && lastSelected) {
+        // Find indices in the appropriate list
         const startIdx = allOrderedAssets.indexOf(lastSelected);
         const endIdx = allOrderedAssets.indexOf(identity);
         if (startIdx !== -1 && endIdx !== -1) {
@@ -509,7 +681,11 @@ export default function App() {
             Math.min(startIdx, endIdx),
             Math.max(startIdx, endIdx) + 1
           );
-          range.forEach(item => next.add(item));
+          range.forEach((item: string) => {
+            if (!item.startsWith('back:')) {
+               next.add(item);
+            }
+          });
         }
       } else if (isMultiSelect) {
         if (next.has(identity)) next.delete(identity);
@@ -526,81 +702,70 @@ export default function App() {
   };
 
   const uploadToProject = async (forceReplaceBack = false, skipBack = false) => {
-    if (selectedAssets.size === 0 && pendingUploadItems.length === 0) {
-      addLog("[System] No assets selected for upload.");
-      return;
-    }
-    
-    let itemsToUpload = pendingUploadItems.length > 0 ? [...pendingUploadItems] : Array.from(selectedAssets);
-    
-    // Check for back card conflict
-    const backItems = itemsToUpload.filter(item => item.startsWith('back:'));
-    if (backItems.length > 1) {
-      addLog("[System] Error: Cannot stage multiple back cards at once.");
-      // prompt the user
-      alert("Only one back pattern card can be selected for staging at a time.");
-      return;
-    }
-    const hasBackSelected = backItems.length > 0;
-    const projectHasBack = (status?.assets?.backs.length || 0) > 0;
-
-    if (hasBackSelected && projectHasBack && !forceReplaceBack && !skipBack && !showConflictModal) {
-      setPendingUploadItems(itemsToUpload);
-      setShowConflictModal(true);
-      return;
-    }
-
-    if (skipBack) {
-      itemsToUpload = itemsToUpload.filter(item => !item.startsWith('back:'));
-    }
-
-    if (itemsToUpload.length === 0) {
-      setShowConflictModal(false);
-      setPendingUploadItems([]);
-      setSelectedAssets(new Set());
-      return;
-    }
-
-    addLog(`[Project] Uploading ${itemsToUpload.length} selected library assets to project...`);
     try {
-      const res = await fetch('/api/project/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          items: itemsToUpload,
-          replaceBack: forceReplaceBack
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        addLog(`[Project] Success: ${data.message}`);
-        await fetchStatus();
-        setSelectedAssets(new Set());
+      if (selectedAssets.size === 0 && pendingUploadItems.length === 0) {
+        addLog("[System] No assets selected for upload.");
+        return;
+      }
+      
+      let itemsToUpload = pendingUploadItems.length > 0 ? [...pendingUploadItems] : Array.from(selectedAssets);
+      
+      // Check for back card conflict
+      const backItems = itemsToUpload.filter(item => item.startsWith('back:'));
+      if (backItems.length > 1) {
+        addLog("[System] Error: Cannot stage multiple back cards at once.");
+        // prompt the user
+        alert("Only one back pattern card can be selected for staging at a time.");
+        return;
+      }
+      const hasBackSelected = backItems.length > 0;
+      const projectHasBack = (status?.assets?.backs.length || 0) > 0;
+  
+      if (hasBackSelected && projectHasBack && !forceReplaceBack && !skipBack && !showConflictModal) {
+        setPendingUploadItems(itemsToUpload);
+        setShowConflictModal(true);
+        return;
+      }
+  
+      if (skipBack) {
+        itemsToUpload = itemsToUpload.filter(item => !item.startsWith('back:'));
+      }
+  
+      if (itemsToUpload.length === 0) {
         setShowConflictModal(false);
         setPendingUploadItems([]);
+        setSelectedAssets(new Set());
+        return;
       }
-    } catch (err) {
+  
+      addLog(`[Project] Uploading ${itemsToUpload.length} selected library assets to project...`);
+      await performMoveOrCopy(itemsToUpload, 'project', 'library');
+    } catch(err) {
       addLog(`[Error] Upload failed: ${err}`);
     }
   };
 
   const clearProject = async () => {
     if (!confirm("Are you sure you want to clear all project assets? This cannot be undone.")) return;
+    setTaskProgress({ current: 1, total: 1, message: `Clearing project...` });
     addLog("[Project] Clearing project assets...");
     try {
       const res = await fetch('/api/project/clear', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         addLog(`[Project] Success: ${data.message}`);
+        setTaskProgress(prev => prev ? { ...prev, message: 'Cleared successfully.' } : null);
         await fetchStatus();
         setSelectedAssets(new Set());
       }
     } catch (err) {
       addLog(`[Error] Clear failed: ${err}`);
+    } finally {
+      setTimeout(() => setTaskProgress(null), 1500);
     }
   };
 
-  const handleUpload = async (file: File, type: 'front' | 'back', isLibrary: boolean = false) => {
+  const handleUpload = async (file: File, type: 'front' | 'back' | 'double_sided', isLibrary: boolean = false) => {
     if (type === 'back' && assetViewMode === 'project' && status?.assets?.backs && status.assets.backs.length > 0) {
       setPendingBackFile(file);
       setIsReplaceBackDialogOpen(true);
@@ -610,55 +775,101 @@ export default function App() {
     await performUpload(file, type, isLibrary);
   };
 
-  const performUpload = async (file: File, type: 'front' | 'back', isLibrary: boolean) => {
-    if (type === 'back') {
-      // Clear existing backs from state
-      setLocalAssets(prev => prev.filter(asset => asset.type !== 'back'));
-      
-      // Clear existing backs from server via command
-      if (assetViewMode === 'project' && status?.assets?.backs) {
-        addLog("[Uploader] Replacing existing back asset...");
-        for (const back of status.assets.backs) {
-          await runCommand('clean_up.py', ['--selected', `back:${back}`]);
+  const performUpload = async (file: File, type: 'front' | 'back' | 'double_sided', isLibrary: boolean) => {
+    try {
+      let replaceBack = false;
+      if (type === 'back' && !isLibrary) {
+        if (status?.assets?.backs && status.assets.backs.length > 0) {
+            replaceBack = true;
         }
       }
-    }
+  
+      const url = URL.createObjectURL(file);
+      const name = file.name;
+      setUploadedImages(prev => ({ ...prev, [name]: url }));
 
-    const url = URL.createObjectURL(file);
-    const name = file.name;
-    setUploadedImages(prev => ({ ...prev, [name]: url }));
-    if (!isLibrary) {
-      setLocalAssets(prev => [...prev, {name, type}]);
-    }
-    
-    addLog(`[Uploader] Uploading ${type} asset: ${file.name}`);
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('type', type);
-    if (isLibrary) formData.append('library', 'true');
-    
-    try {
+      // Optimistically add to localAssets regardless of library state
+      // (Since we fetchStatus 1s later anyway)
+      setLocalAssets(prev => {
+          if (!isLibrary && type === 'back' && replaceBack) {
+              return prev.filter(asset => asset.type !== 'back').concat({name, type, view: isLibrary ? 'library' : 'project'});
+          }
+          return [...prev, {name, type, view: isLibrary ? 'library' : 'project'}];
+      });
+      
+      addLog(`[Uploader] Uploading ${type} asset: ${file.name}`);
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', type);
+      if (isLibrary) formData.append('library', 'true');
+      if (replaceBack) formData.append('replaceBack', 'true');
+      
       const res = await fetch('/api/upload', {
         method: 'POST',
         body: formData
       });
       if (!res.ok) throw new Error("Upload failed");
       addLog(`[Uploader] Successfully uploaded ${name}`);
+      await fetchStatus();
     } catch (err) {
       addLog(`[Error] File upload failed: ${err}`);
       return;
     }
-    
-    const args = [`--type`, type, `--name`, name];
-    if (isLibrary) args.push('--library');
-    runCommand('upload_action.py', args);
-    
-    // Give server a moment to update before refreshing
-    setTimeout(fetchStatus, 1000);
+  };
+
+  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' = 'check') => {
+      let finalItems = [...items];
+      const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
+      
+      if (conflictResolution === 'check') {
+         if (targetObj) {
+            const collisions = items.filter(item => {
+                const [type, name] = item.split(':');
+                if (type === 'front' && targetObj.fronts.includes(name)) return true;
+                if (type === 'back' && targetObj.backs.includes(name)) return true;
+                if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return true;
+                return false;
+            });
+            if (collisions.length > 0) {
+               setImportConflictData({ items, destination, source, collisions });
+               return; // pause for user
+            }
+         }
+      } else if (conflictResolution === 'keep') {
+         if (targetObj) {
+            finalItems = items.filter(item => {
+                const [type, name] = item.split(':');
+                if (type === 'front' && targetObj.fronts.includes(name)) return false;
+                if (type === 'back' && targetObj.backs.includes(name)) return false;
+                if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return false;
+                return true;
+            });
+         }
+      }
+      
+      if (finalItems.length === 0) return;
+
+      for (let i = 0; i < finalItems.length; i++) {
+         setTaskProgress({ current: i + 1, total: finalItems.length, message: `Processing ${finalItems[i].split(':')[1]}...` });
+         await fetch('/api/plugin/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identity: finalItems[i], destination, source })
+         });
+      }
+      
+      const actionStr = destination === 'project' ? 'added' : 'copied';
+      setTaskProgress({ current: finalItems.length, total: finalItems.length, message: `${finalItems.length} card${finalItems.length === 1 ? '' : 's'} ${actionStr}` });
+      await fetchStatus();
+      setSelectedAssets(new Set());
+      setContextMenu(null);
+      setTimeout(() => setTaskProgress(null), 1500);
+      addLog(`[System] Moved ${finalItems.length} cards to ${destination}.`);
   };
 
   const saveProject = async () => {
     if (!saveName) return;
+    setTaskProgress({ current: 1, total: 1, message: `Saving project '${saveName}'...` });
     addLog(`[Project] Saving current assets as '${saveName}'...`);
     try {
       const res = await fetch('/api/project/save', {
@@ -671,14 +882,18 @@ export default function App() {
         addLog(`[Project] Success: ${data.message}`);
         setSaveName("");
         setShowSaveModal(false);
+        setTaskProgress(prev => prev ? { ...prev, message: 'Saved successfully.' } : null);
         await fetchStatus();
       }
     } catch (err) {
       addLog(`[Error] Save failed: ${err}`);
+    } finally {
+      setTimeout(() => setTaskProgress(null), 1500);
     }
   };
 
   const loadProject = async (name: string) => {
+    setTaskProgress({ current: 1, total: 1, message: `Loading project '${name}'...` });
     addLog(`[Project] Loading project '${name}'...`);
     try {
       const res = await fetch('/api/project/load', {
@@ -690,11 +905,14 @@ export default function App() {
       if (data.success) {
         addLog(`[Project] Success: ${data.message}`);
         setShowLoadModal(false);
+        setTaskProgress(prev => prev ? { ...prev, message: 'Loaded successfully.' } : null);
         await fetchStatus();
         setSelectedAssets(new Set());
       }
     } catch (err) {
       addLog(`[Error] Load failed: ${err}`);
+    } finally {
+      setTimeout(() => setTaskProgress(null), 1500);
     }
   };
 
@@ -705,22 +923,63 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-[#0a0a0c] text-[#e1e1e6] font-sans selection:bg-primary-500/30 overflow-hidden">
+      <AnimatePresence>
+        {isProcessing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-auto"
+          >
+            <div className="flex flex-col items-center gap-4 p-8 bg-[#0f0f13] rounded-2xl border border-white/10 shadow-2xl">
+              <Loader2 className="w-10 h-10 text-primary-500 animate-spin" />
+              <span className="text-white/80 font-medium tracking-wide">Processing...</span>
+            </div>
+          </motion.div>
+        )}
+
+        {taskProgress && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.9 }}
+            className="fixed bottom-6 right-6 z-[1000] flex items-center gap-4 p-4 bg-[#0f0f13] rounded-2xl border border-primary-500/30 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] min-w-[300px]"
+          >
+             <div className="relative">
+               <svg className="w-10 h-10 transform -rotate-90">
+                 <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
+                 <circle cx="20" cy="20" r="18" className="stroke-primary-500 transition-all duration-300" strokeWidth="4" fill="none" strokeDasharray={113} strokeDashoffset={113 - (113 * (taskProgress.current / taskProgress.total))} />
+               </svg>
+               <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                 {taskProgress.current}/{taskProgress.total}
+               </span>
+             </div>
+             <div className="flex flex-col">
+               <span className="text-sm font-bold text-white/90">{taskProgress.message}</span>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Sidebar */}
       <aside className={cn(
         "border-r border-white/5 flex flex-col bg-[#0f0f13] transition-all duration-300 relative",
         isSidebarCollapsed ? "w-20" : "w-64"
       )}>
         <div className={cn("p-6 pb-2", isSidebarCollapsed && "px-4")}>
-          <div className="flex items-center justify-between mb-8 overflow-hidden group">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="p-2.5 bg-primary-600 rounded-xl shadow-lg shadow-primary-600/30 shrink-0">
+          <div className="flex items-center justify-between mb-8 overflow-hidden group relative">
+            <div 
+              className={cn("flex items-center gap-3 overflow-hidden cursor-pointer", isSidebarCollapsed && "w-full justify-center")}
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              <div className="p-2.5 bg-primary-600 rounded-xl shadow-lg shadow-primary-600/30 shrink-0 select-none">
                 <Layers className="w-5 h-5 text-white" />
               </div>
               {!isSidebarCollapsed && (
                 <motion.h1 
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  className="font-extrabold text-base tracking-tighter whitespace-nowrap text-white"
+                  className="font-extrabold text-base tracking-tighter whitespace-nowrap text-white select-none"
                 >
                   Silhouette Master
                 </motion.h1>
@@ -730,19 +989,11 @@ export default function App() {
             {!isSidebarCollapsed && (
               <button 
                 onClick={() => setIsSidebarCollapsed(true)}
-                className="p-1.5 hover:bg-white/5 rounded-lg transition-all text-white/20 hover:text-white shrink-0 group-hover:opacity-100 opacity-20"
+                className="p-1.5 hover:bg-white/5 rounded-lg transition-all text-white/20 hover:text-white shrink-0 group-hover:opacity-100 opacity-20 hidden md:block"
                 title="Collapse"
               >
                 <ChevronRight size={16} className="rotate-180" />
               </button>
-            )}
-            
-            {isSidebarCollapsed && (
-              <button 
-                onClick={() => setIsSidebarCollapsed(false)}
-                className="absolute inset-0 z-50 opacity-0 cursor-pointer"
-                title="Expand"
-              />
             )}
           </div>
 
@@ -762,17 +1013,13 @@ export default function App() {
               collapsed={isSidebarCollapsed}
             />
             <SidebarItem 
-              icon={<Package size={18} />} 
-              label="Plugins" 
-              active={activeTab === 'plugins'} 
-              onClick={() => setActiveTab('plugins')} 
-              collapsed={isSidebarCollapsed}
-            />
-            <SidebarItem 
               icon={<ImageIcon size={18} />} 
               label="Asset Library" 
               active={activeTab === 'assets'} 
-              onClick={() => setActiveTab('assets')} 
+              onClick={() => {
+                setActiveTab('assets');
+                setAssetViewMode('library'); // Or project, depending on what they were viewing, but library is fine
+              }} 
               collapsed={isSidebarCollapsed}
             />
             <SidebarItem 
@@ -877,11 +1124,11 @@ export default function App() {
                 <div className="col-span-2 space-y-6">
                   <section className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                      <Package size={120} />
+                      <Layers size={120} />
                     </div>
                     <h2 className="text-2xl font-bold mb-2">Silhouette Master Studio</h2>
                     <p className="text-white/60 max-w-xl leading-relaxed mb-6">
-                      High-performance card generation engine. Utilize pre-built plugins for major TCGs or build custom PDFs with precision blade offset calibration.
+                      High-performance card generation engine. Build custom PDFs with precision blade offset calibration.
                     </p>
                     <div className="flex items-center gap-3">
                       <button 
@@ -909,7 +1156,7 @@ export default function App() {
                       Maintenance
                     </h3>
                     <div className="space-y-2">
-                       <CommandItem icon={<Trash2 size={14}/>} label="Purge Cache" onClick={() => runCommand('clean_up.py')} />
+                       <CommandItem icon={<Trash2 size={14}/>} label="Purge Cache" onClick={() => runCommand('clean_up.py', undefined, { startMessage: 'Purging cache...' })} />
                     </div>
                   </div>
 
@@ -1143,7 +1390,7 @@ export default function App() {
                                `--y_offset ${calibration.y}`,
                                `--angle ${calibration.angle}`,
                                '--save'
-                             ])}
+                             ], { startMessage: 'Saving offset...' })}
                              className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-[10px] font-bold transition-all text-emerald-400"
                           >
                             Save Offset
@@ -1154,7 +1401,7 @@ export default function App() {
                               `--x_offset ${calibration.x}`,
                               `--y_offset ${calibration.y}`,
                               `--angle ${calibration.angle}`
-                            ])}
+                            ], { startMessage: 'Generating offset sheet...' })}
                             className="w-full py-2 bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-[10px] font-bold transition-all text-primary-400"
                           >
                             Generate Offset Sheet
@@ -1203,7 +1450,7 @@ export default function App() {
                       <ToggleItem label="Only Fronts" checked={cmdOptions.only_fronts} onChange={(v) => setCmdOptions(p => ({...p, only_fronts: v}))} />
                       <ToggleItem label="Output Images" checked={cmdOptions.output_images} onChange={(v) => setCmdOptions(p => ({...p, output_images: v}))} />
                       <button 
-                        onClick={() => runCommand('clean_up.py', [])}
+                        onClick={() => runCommand('clean_up.py', [], { startMessage: 'Cleaning up outputs...' })}
                         className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-xs font-bold"
                       >
                         Run Clean Up
@@ -1264,7 +1511,7 @@ export default function App() {
                       if (e.key === 'Enter') {
                         const val = e.currentTarget.value;
                         if (val) {
-                          runCommand(val.split(' ')[0], val.split(' ').slice(1));
+                          runCommand(val.split(' ')[0], val.split(' ').slice(1), { startMessage: `Running ${val.split(' ')[0]}...` });
                           e.currentTarget.value = '';
                         }
                       }
@@ -1277,179 +1524,7 @@ export default function App() {
               </motion.div>
             )}
 
-            {activeTab === 'plugins' && (
-              <div 
-                key="plugins"
-                className="grid grid-cols-5 gap-8 items-stretch relative"
-              >
-                <div className="col-span-2 relative">
-                  <div className="space-y-6 sticky top-0 h-[calc(100vh-8rem)] flex flex-col">
-                    <div className="space-y-4 shrink-0">
-                      <h2 className="text-3xl font-bold tracking-tight">Game Plugins</h2>
-                      <p className="text-white/40 leading-relaxed">Streamline image acquisition by fetching card data directly from community database APIs.</p>
-                    </div>
-                  
-                    <div className="space-y-2 flex-1 min-h-0 flex flex-col">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/40 shrink-0">Select Integration</label>
-                      <div className="grid grid-cols-1 gap-2 flex-1 overflow-y-auto pr-2 pb-4">
-                        {PLUGINS.map(p => {
-                        const isSelected = pluginState.selectedPlugin.id === p.id;
-                        return (
-                          <button
-                            key={p.id}
-                            onClick={() => setPluginState({ 
-                              ...pluginState, 
-                              selectedPlugin: p, 
-                              format: p.formats[0],
-                              options: {} 
-                            })}
-                            className={cn(
-                              "group flex items-center justify-between p-4 rounded-xl border transition-all text-left relative overflow-hidden",
-                              isSelected
-                                ? "bg-primary-600/10 border-primary-500/50 text-white shadow-[0_0_20px_var(--color-primary-600)]" 
-                                : "bg-[#0f0f13] border-white/5 text-white/40 hover:border-white/20 hover:bg-white/[0.02]"
-                            )}
-                          >
-                            <div className="flex items-center gap-3 z-10">
-                              <div className={cn(
-                                "p-2 rounded-lg transition-colors",
-                                isSelected ? "bg-primary-600 text-white shadow-lg" : "bg-white/5 text-white/20 group-hover:text-white/40"
-                              )}>
-                                <Package size={18} />
-                              </div>
-                              <span className={cn("font-semibold", isSelected ? "text-white" : "group-hover:text-white/60 transition-colors")}>{p.name}</span>
-                            </div>
-                            {isSelected && (
-                              <motion.div 
-                                layoutId="active-plugin-blob"
-                                className="absolute right-[-20px] top-[-20px] w-24 h-24 bg-primary-500/10 blur-3xl rounded-full"
-                              />
-                            )}
-                            <ChevronRight size={14} className={cn(
-                              "transition-all",
-                              isSelected ? "text-primary-400 translate-x-1" : "text-white/10 group-hover:text-white/30"
-                            )} />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  </div>
-                </div>
 
-                <div className="col-span-3 space-y-6">
-                  <div className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 space-y-6">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <h3 className="font-bold text-lg">{pluginState.selectedPlugin.name}</h3>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-white/30 uppercase tracking-widest font-bold">Integration Settings</span>
-                            <div className="h-2 w-px bg-white/10" />
-                            <div className="flex items-center gap-1 bg-white/[0.03] p-0.5 rounded-lg border border-white/5">
-                              <button onClick={() => setShowPluginSaveModal(true)} className="px-2 py-0.5 text-[10px] font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Save</button>
-                              <button onClick={() => setShowPluginLoadModal(true)} className="px-2 py-0.5 text-[10px] font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Load</button>
-                              <button onClick={exportPluginConfig} className="px-2 py-0.5 text-[10px] font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Export</button>
-                            </div>
-                          </div>
-                        </div>
-                        <SelectGroup 
-                          label="Preferred Format" 
-                          value={pluginState.format} 
-                          onChange={(v) => setPluginState(prev => ({ ...prev, format: v }))}
-                          options={pluginState.selectedPlugin.formats} 
-                        />
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <label className="text-xs font-semibold text-white/40">Decklist Content</label>
-                          <span className="text-[10px] text-white/20 font-mono">game/decklist/current.txt</span>
-                        </div>
-                        <textarea 
-                          value={pluginState.decklist}
-                          onChange={(e) => setPluginState(prev => ({ ...prev, decklist: e.target.value }))}
-                          placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here (e.g. 4x Lightning Bolt)..."}
-                          className="w-full h-48 bg-black/40 border border-white/10 rounded-xl p-4 text-sm font-mono focus:outline-none focus:border-primary-500 transition-all resize-none shadow-inner"
-                        />
-                      </div>
-
-                      {pluginState.selectedPlugin.options.length > 0 && (
-                        <div className="space-y-4 pt-4 border-t border-white/5">
-                          <h4 className="text-[10px] font-bold uppercase tracking-widest text-primary-400">Plugin Specific Features</h4>
-                          <div className="grid grid-cols-2 gap-4">
-                            {pluginState.selectedPlugin.options.map((opt, i) => (
-                               <div key={i} className="p-4 bg-white/[0.03] border border-white/5 rounded-xl hover:bg-white/[0.05] transition-all">
-                                 {opt.type === 'toggle' ? (
-                                   <ToggleItem 
-                                     label={opt.label} 
-                                     checked={!!pluginState.options[opt.flag]} 
-                                     onChange={(v) => setPluginState(prev => ({
-                                       ...prev,
-                                       options: { ...prev.options, [opt.flag]: v }
-                                     }))} 
-                                   />
-                                 ) : (
-                                   <div className="space-y-2">
-                                     <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 block">{opt.label}</label>
-                                     <div className="relative">
-                                       <select
-                                         value={pluginState.options[opt.flag] || opt.choices?.[0]}
-                                         onChange={(e) => setPluginState(prev => ({
-                                           ...prev,
-                                           options: { ...prev.options, [opt.flag]: e.target.value }
-                                         }))}
-                                         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 appearance-none focus:outline-none focus:border-primary-500"
-                                       >
-                                         {opt.choices?.map(c => <option key={c} value={c} className="bg-[#1a1a20]">{c}</option>)}
-                                       </select>
-                                       <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
-                                     </div>
-                                   </div>
-                                 )}
-                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <button 
-                      onClick={async () => {
-                        // 1. Save decklist
-                        addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
-                        try {
-                          await fetch('/api/project/save-decklist', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ content: pluginState.decklist })
-                          });
-                        } catch (err) {
-                          addLog(`[Error] Failed to stage decklist: ${err}`);
-                          return;
-                        }
-
-                        // 2. Build and run command
-                        const args = [`game/decklist/current.txt`, pluginState.format];
-                        Object.entries(pluginState.options).forEach(([flag, val]) => {
-                          if (val === true) args.push(flag);
-                          else if (typeof val === 'string' && val !== "") {
-                            args.push(flag);
-                            args.push(val);
-                          }
-                        });
-                        
-                        runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args);
-                      }}
-                      className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-primary-600/20 transition-all active:scale-95 group"
-                    >
-                      <Download size={20} className="group-hover:translate-y-0.5 transition-transform" />
-                      Sync Card Artwork
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {activeTab === 'assets' && (
               <motion.div 
@@ -1461,11 +1536,15 @@ export default function App() {
                 <div className="flex flex-col gap-6">
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
-                      <h2 className="text-3xl font-bold tracking-tight">{assetViewMode === 'project' ? 'Project Workspace' : 'Library'}</h2>
+                      <h2 className="text-3xl font-bold tracking-tight">
+                        {assetViewMode === 'project' ? 'Project Workspace' : assetViewMode === 'library' ? 'Library' : 'Plugin Staging'}
+                      </h2>
                       <p className="text-white/40">
                         {assetViewMode === 'project' 
                           ? 'Managing card assets currently staged for PDF generation.' 
-                          : 'Source gallery of your card templates.'}
+                          : assetViewMode === 'library'
+                          ? 'Source gallery of your card templates.'
+                          : 'Manage and sync cards from community database integrations.'}
                       </p>
                     </div>
                     {assetViewMode === 'project' && (
@@ -1513,6 +1592,52 @@ export default function App() {
 
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-2">
+                        {assetViewMode === 'plugins' && selectedAssets.size > 0 && (
+                          <>
+                            <button 
+                              onClick={async () => {
+                                await performMoveOrCopy(Array.from(selectedAssets), 'project', 'plugins');
+                              }}
+                              className="flex items-center gap-2 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/40 text-primary-400 border border-primary-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
+                            >
+                              <FolderOpen size={14} />
+                              Add to Workspace
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                await performMoveOrCopy(Array.from(selectedAssets), 'library', 'plugins');
+                              }}
+                              className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
+                            >
+                              <FolderOpen size={14} />
+                              Add to Library
+                            </button>
+                          </>
+                        )}
+
+                        {assetViewMode === 'library' && selectedAssets.size > 0 && (
+                          <button 
+                            onClick={async () => {
+                              await performMoveOrCopy(Array.from(selectedAssets), 'project', 'library');
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/40 text-primary-400 border border-primary-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
+                          >
+                            <FolderOpen size={14} />
+                            Add to Workspace
+                          </button>
+                        )}
+
+                        {assetViewMode === 'project' && selectedAssets.size > 0 && (
+                          <button 
+                            onClick={async () => {
+                              await performMoveOrCopy(Array.from(selectedAssets), 'library', 'project');
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
+                          >
+                            <FolderOpen size={14} />
+                            Add to Library
+                          </button>
+                        )}
 
                         {assetViewMode === 'project' && status?.assets && (status.assets.fronts.length > 0 || status.assets.backs.length > 0) && (
                           <button 
@@ -1530,7 +1655,7 @@ export default function App() {
                         className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all shadow-inner shrink-0"
                         title="Refresh Assets"
                       >
-                        <RefreshCw size={16} />
+                        <RefreshCw size={16} className={cn(isProcessing && "animate-spin")} />
                       </button>
 
                       <div className="flex items-center bg-black/40 border border-white/5 rounded-xl p-1">
@@ -1568,6 +1693,7 @@ export default function App() {
                       <div className="bg-white/5 p-1 rounded-xl flex gap-1">
                         <button 
                           onClick={() => {
+                            setActiveTab('assets');
                             setAssetViewMode('project');
                             setSelectedAssets(new Set());
                           }}
@@ -1580,6 +1706,7 @@ export default function App() {
                         </button>
                         <button 
                           onClick={() => {
+                            setActiveTab('assets');
                             setAssetViewMode('library');
                             setSelectedAssets(new Set());
                           }}
@@ -1590,11 +1717,193 @@ export default function App() {
                         >
                           Library
                         </button>
+                        <button 
+                          onClick={() => {
+                            setActiveTab('assets');
+                            setAssetViewMode('plugins');
+                            setSelectedAssets(new Set());
+                          }}
+                          className={cn(
+                            "px-5 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
+                            assetViewMode === 'plugins' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" : "text-white/40 hover:text-white"
+                          )}
+                        >
+                          Plugins
+                        </button>
                       </div>
 
                       </div>
                     </div>
                   </div>
+
+                {assetViewMode === 'plugins' && (
+                  <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-8 opacity-5">
+                      <Package size={120} />
+                    </div>
+                    <div className="flex flex-col md:flex-row gap-6 relative z-10 items-stretch">
+                      <div className="w-full md:w-1/3 space-y-4">
+                        <h3 className="font-bold text-lg flex items-center gap-2">
+                          <Package size={20} className="text-primary-400" /> Game Plugins
+                        </h3>
+                        <p className="text-white/40 text-sm leading-relaxed">
+                          Fetch card data directly from community database APIs.
+                        </p>
+
+                        <div className="space-y-4 pt-2">
+                          <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Integration</label>
+                            <div className="relative">
+                              <select
+                                 value={pluginState.selectedPlugin.id}
+                                 onChange={(e) => {
+                                   const p = PLUGINS.find(pl => pl.id === e.target.value)!;
+                                   setPluginState({ ...pluginState, selectedPlugin: p, format: p.formats[0], options: {} });
+                                 }}
+                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
+                              >
+                                 {PLUGINS.map(p => <option key={p.id} value={p.id} className="bg-[#1a1a20]">{p.name}</option>)}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                            </div>
+                          </div>
+
+                          <div>
+                            <SelectGroup 
+                              label="Format"
+                              value={pluginState.format} 
+                              onChange={(v) => setPluginState(prev => ({ ...prev, format: v }))}
+                              options={pluginState.selectedPlugin.formats} 
+                            />
+                          </div>
+
+                          {pluginState.selectedPlugin.options.length > 0 && (
+                            <div className="pt-2">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Options</label>
+                              <div className="space-y-2">
+                                {pluginState.selectedPlugin.options.map((opt, i) => (
+                                   <div key={i}>
+                                     {opt.type === 'toggle' ? (
+                                       <ToggleItem 
+                                         label={opt.label} 
+                                         checked={!!pluginState.options[opt.flag]} 
+                                         onChange={(v) => setPluginState(prev => ({
+                                           ...prev,
+                                           options: { ...prev.options, [opt.flag]: v }
+                                         }))} 
+                                       />
+                                     ) : (
+                                       <div className="relative">
+                                         <select
+                                           value={pluginState.options[opt.flag] || opt.choices?.[0]}
+                                           onChange={(e) => setPluginState(prev => ({
+                                             ...prev,
+                                             options: { ...prev.options, [opt.flag]: e.target.value }
+                                           }))}
+                                           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 appearance-none focus:outline-none focus:border-primary-500"
+                                         >
+                                           {opt.choices?.map(c => <option key={c} value={c} className="bg-[#1a1a20]">{c}</option>)}
+                                         </select>
+                                         <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                                       </div>
+                                     )}
+                                   </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="hidden md:block w-px bg-white/5" />
+
+                      <div className="w-full md:w-2/3 flex flex-col mt-4 md:mt-0">
+                         <div className="flex items-center justify-between mb-4">
+                            <label className="text-xs font-semibold text-white/40">Decklist Content</label>
+                            <div className="flex items-center gap-2">
+                              <div className="flex gap-1" style={{ zoom: 0.85 }}>
+                                <button onClick={() => setShowPluginSaveModal(true)} className="px-2 py-0.5 text-xs font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Save</button>
+                                <button onClick={() => setShowPluginLoadModal(true)} className="px-2 py-0.5 text-xs font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Load</button>
+                                <button onClick={exportPluginConfig} className="px-2 py-0.5 text-xs font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Export</button>
+                              </div>
+                            </div>
+                          </div>
+                          <textarea 
+                            value={pluginState.decklist}
+                            onChange={(e) => setPluginState(prev => ({ ...prev, decklist: e.target.value }))}
+                            placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here (e.g. 4x Lightning Bolt)..."}
+                            className="flex-1 w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm font-mono focus:outline-none focus:border-primary-500 transition-all resize-none shadow-inner min-h-[160px] mb-4"
+                          />
+                          <button 
+                            onClick={async () => {
+                              // 1. Save decklist
+                              addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
+                              try {
+                                await fetch('/api/project/save-decklist', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ content: pluginState.decklist })
+                                });
+                              } catch (err) {
+                                addLog(`[Error] Failed to stage decklist: ${err}`);
+                                return;
+                              }
+
+                              // 2. Build and run command
+                              const args = [`game/decklist/current.txt`, pluginState.format];
+                              Object.entries(pluginState.options).forEach(([flag, val]) => {
+                                if (val === true) args.push(flag);
+                                else if (typeof val === 'string' && val !== "") {
+                                  args.push(flag);
+                                  args.push(val);
+                                }
+                              });
+                              
+                              const tempDirId = crypto.randomUUID();
+                              const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
+                                startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
+                                hideProgressOnComplete: true,
+                                tempDirId
+                              });
+                              
+                              if (result && result.fetchedFiles) {
+                                  const collisions = [];
+                                  const { fronts, backs, double_sided } = result.fetchedFiles;
+                                  
+                                  const targetFronts = status?.plugins?.fronts || [];
+                                  const targetBacks = status?.plugins?.backs || [];
+                                  const targetDob = status?.plugins?.double_sided || [];
+                                  
+                                  fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
+                                  backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
+                                  double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
+                                  
+                                  if (collisions.length > 0) {
+                                      setTaskProgress(null);
+                                      setFetchConflictData({ tempDirId, collisions, resolutions: {} });
+                                  } else {
+                                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                                      await fetch('/api/plugin/fetch-commit', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ tempDirId, resolutions: {} })
+                                      });
+                                      await fetchStatus();
+                                      setTaskProgress(null);
+                                  }
+                              } else {
+                                setTaskProgress(null);
+                              }
+                            }}
+                            className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg"
+                          >
+                            <Download size={20} />
+                            Sync Artwork
+                          </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-16">
                   {/* Back Patterns Section */}
@@ -1617,16 +1926,28 @@ export default function App() {
                       <DropZone 
                         label="Drag and drop area for backs"
                         isLibrary={assetViewMode === 'library'}
+                        disabled={assetViewMode === 'plugins'}
                         onDrop={(files, isLibrary) => {
-                          addLog(`[Uploader] Dropped ${files.length} back patterns. Starting upload...`);
-                          Array.from(files).forEach(file => handleUpload(file, 'back', isLibrary));
+                          const filesToUpload = isLibrary ? Array.from(files) : [files[0]];
+                          addLog(`[Uploader] Dropped ${filesToUpload.length} back patterns. Starting upload...`);
+                          filesToUpload.forEach(file => handleUpload(file, 'back', isLibrary));
                         }}
                       >
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px]">
-                          <TemplateCard 
-                            type="back" 
-                            onUpload={(file) => handleUpload(file, 'back', assetViewMode === 'library')} 
-                          />
+                          {assetViewMode !== 'plugins' && (
+                            <TemplateCard 
+                              type="back" 
+                              multiple={assetViewMode === 'library'}
+                              onUpload={async (files) => {
+                                for (let i = 0; i < files.length; i++) {
+                                  setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                  await handleUpload(files[i], 'back', assetViewMode === 'library');
+                                }
+                                setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                setTimeout(() => setTaskProgress(null), 1500);
+                              }} 
+                            />
+                          )}
                           {getAllAssets('back')
                             .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
                             .map((img: string, i: number) => (
@@ -1634,10 +1955,11 @@ export default function App() {
                                 key={`b-${i}`} 
                                 name={img} 
                                 type="back" 
-                                allAssets={assetViewMode === 'project' ? status?.assets : status?.library} 
+                                allAssets={getCurrentAssets()} 
                                 selected={selectedAssets.has(`back:${img}`)}
                                 onSelect={(e) => handleAssetSelect(`back:${img}`, e)}
                                 onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'back' })}
+                                onEnlarge={(src) => setEnlargedImage(src)}
                                 uploadedImages={uploadedImages}
                                 assetViewMode={assetViewMode}
                               />
@@ -1658,7 +1980,7 @@ export default function App() {
                           <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2">
                             Front Faces 
                             <span className="text-white/20 font-normal">
-                              ({(assetViewMode === 'project' ? status?.assets?.fronts.length : status?.library?.fronts.length) || 0})
+                              {(assetViewMode === 'project' ? status?.assets?.fronts.length : status?.library?.fronts.length) || 0}
                             </span>
                           </h3>
                         </div>
@@ -1667,16 +1989,27 @@ export default function App() {
                       <DropZone 
                         label="Drag and drop area for fronts"
                         isLibrary={assetViewMode === 'library'}
+                        disabled={assetViewMode === 'plugins'}
                         onDrop={(files, isLibrary) => {
                           addLog(`[Uploader] Dropped ${files.length} front faces. Starting upload...`);
                           Array.from(files).forEach(file => handleUpload(file, 'front', isLibrary));
                         }}
                       >
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px]">
-                          <TemplateCard 
-                            type="front" 
-                            onUpload={(file) => handleUpload(file, 'front', assetViewMode === 'library')} 
-                          />
+                          {assetViewMode !== 'plugins' && (
+                            <TemplateCard 
+                              type="front" 
+                              multiple={true}
+                              onUpload={async (files) => {
+                                for (let i = 0; i < files.length; i++) {
+                                  setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                  await handleUpload(files[i], 'front', assetViewMode === 'library');
+                                }
+                                setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                setTimeout(() => setTaskProgress(null), 1500);
+                              }} 
+                            />
+                          )}
                           {getAllAssets('front')
                             .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
                             .map((img: string, i: number) => (
@@ -1684,10 +2017,77 @@ export default function App() {
                                 key={`f-${i}`} 
                                 name={img} 
                                 type="front" 
-                                allAssets={assetViewMode === 'project' ? status?.assets : status?.library}
+                                allAssets={getCurrentAssets()}
                                 selected={selectedAssets.has(`front:${img}`)}
                                 onSelect={(e) => handleAssetSelect(`front:${img}`, e)}
                                 onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'front' })}
+                                onEnlarge={(src) => setEnlargedImage(src)}
+                                isFlipped={flippedAssets.has(`front:${img}`)}
+                                onToggleFlip={(e) => handleToggleFlip(`front:${img}`, e)}
+                                uploadedImages={uploadedImages}
+                                assetViewMode={assetViewMode}
+                              />
+                            ))}
+                        </div>
+                      </DropZone>
+                    </section>
+                  )}
+
+                  {/* Double-Sided Section */}
+                  {(assetFilter === 'all' || assetFilter === 'double_sided') && (
+                    <section className="space-y-6">
+                      <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400 shadow-inner">
+                            <Book size={18} />
+                          </div>
+                          <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2">
+                            Double-Sided 
+                            <span className="text-white/20 font-normal">
+                              {(assetViewMode === 'project' ? status?.assets?.double_sided?.length : status?.library?.double_sided?.length) || 0}
+                            </span>
+                          </h3>
+                        </div>
+                      </div>
+
+                      <DropZone 
+                        label="Drag and drop area for double-sided"
+                        isLibrary={assetViewMode === 'library'}
+                        disabled={assetViewMode === 'plugins'}
+                        onDrop={(files, isLibrary) => {
+                          addLog(`[Uploader] Dropped ${files.length} double-sided faces. Starting upload...`);
+                          Array.from(files).forEach(file => handleUpload(file, 'double_sided', isLibrary));
+                        }}
+                      >
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px]">
+                          {assetViewMode !== 'plugins' && (
+                            <TemplateCard 
+                              type="double_sided" 
+                              multiple={true}
+                              onUpload={async (files) => {
+                                for (let i = 0; i < files.length; i++) {
+                                  setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                  await handleUpload(files[i], 'double_sided', assetViewMode === 'library');
+                                }
+                                setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                setTimeout(() => setTaskProgress(null), 1500);
+                              }} 
+                            />
+                          )}
+                          {getAllAssets('double_sided')
+                            .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                            .map((img: string, i: number) => (
+                              <AssetItem 
+                                key={`d-${i}`} 
+                                name={img} 
+                                type="double_sided" 
+                                allAssets={getCurrentAssets()}
+                                selected={selectedAssets.has(`double_sided:${img}`)}
+                                onSelect={(e) => handleAssetSelect(`double_sided:${img}`, e)}
+                                onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'double_sided' })}
+                                onEnlarge={(src) => setEnlargedImage(src)}
+                                isFlipped={flippedAssets.has(`double_sided:${img}`)}
+                                onToggleFlip={(e) => handleToggleFlip(`double_sided:${img}`, e)}
                                 uploadedImages={uploadedImages}
                                 assetViewMode={assetViewMode}
                               />
@@ -1704,6 +2104,164 @@ export default function App() {
       </main>
 
       <AnimatePresence>
+        {importConflictData && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#0f0f13] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-white/5 bg-amber-500/10">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-500/20 rounded-lg">
+                    <ShieldCheck size={24} className="text-amber-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Item Exists</h2>
+                    <p className="text-amber-500 text-sm">
+                      {importConflictData.collisions.length} item(s) already exist in {importConflictData.destination}.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs text-white/60 max-h-32 overflow-y-auto">
+                  <ul className="space-y-1">
+                    {importConflictData.collisions.map(c => (
+                      <li key={c} className="truncate">• {c.split(':')[1]}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={async () => {
+                      const { items, destination, source } = importConflictData;
+                      setImportConflictData(null);
+                      await performMoveOrCopy(items, destination, source, 'keep');
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
+                  >
+                    Keep Existing (Skip Duplicates)
+                  </button>
+
+                  <button 
+                    onClick={async () => {
+                      const { items, destination, source } = importConflictData;
+                      setImportConflictData(null);
+                      await performMoveOrCopy(items, destination, source, 'replace');
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-bold transition-all"
+                  >
+                    Replace Existing
+                  </button>
+
+                  <button 
+                    onClick={() => setImportConflictData(null)}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {fetchConflictData && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#0f0f13] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-white/5 bg-amber-500/10">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-500/20 rounded-lg">
+                    <ShieldCheck size={24} className="text-amber-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Item Exists</h2>
+                    <p className="text-amber-500 text-sm">
+                      {fetchConflictData.collisions.length} fetched item(s) already exist in plugin gallery.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs text-white/60 max-h-32 overflow-y-auto">
+                  <ul className="space-y-1">
+                    {fetchConflictData.collisions.map(c => (
+                      <li key={c} className="truncate">• {c.split(':')[1]}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={async () => {
+                      const { tempDirId, collisions } = fetchConflictData;
+                      setFetchConflictData(null);
+                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      
+                      const resolutions: Record<string, 'skip'> = {};
+                      collisions.forEach(c => resolutions[c] = 'skip');
+                      
+                      await fetch('/api/plugin/fetch-commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tempDirId, resolutions })
+                      });
+                      await fetchStatus();
+                      setTaskProgress(null);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
+                  >
+                    Keep All Existing (Skip Duplicates)
+                  </button>
+
+                  <button 
+                    onClick={async () => {
+                      const { tempDirId } = fetchConflictData;
+                      setFetchConflictData(null);
+                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      await fetch('/api/plugin/fetch-commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tempDirId, resolutions: {} })
+                      });
+                      await fetchStatus();
+                      setTaskProgress(null);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-bold transition-all"
+                  >
+                    Replace All Existing
+                  </button>
+
+                  <button 
+                    onClick={async () => {
+                      const { tempDirId } = fetchConflictData;
+                      setFetchConflictData(null);
+                      await fetch('/api/plugin/fetch-commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tempDirId, abort: true })
+                      });
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
+                  >
+                    Cancel Fetch Entirely
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
         {showConflictModal && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
             <motion.div 
@@ -1875,8 +2433,8 @@ export default function App() {
               </div>
 
               <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                {Object.keys(JSON.parse(localStorage.getItem('scm_plugin_configs') || '{}')).length > 0 ? (
-                  Object.keys(JSON.parse(localStorage.getItem('scm_plugin_configs') || '{}')).map((name) => (
+                {Object.keys(pluginConfigs).length > 0 ? (
+                  Object.keys(pluginConfigs).map((name) => (
                     <button
                       key={name}
                       onClick={() => loadPluginConfig(name)}
@@ -2055,32 +2613,119 @@ export default function App() {
             }}
             className="fixed z-[100] pointer-events-auto flex items-center gap-1 p-1 bg-[#1a1b23]/90 backdrop-blur-xl border border-white/10 rounded-full shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)]"
           >
+            {(!contextMenu.type || contextMenu.type !== 'back') && (
+              <button 
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                  const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                  for (let i = 0; i < targets.length; i++) {
+                    setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
+                    try {
+                      await fetch('/api/duplicate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ identity: targets[i], assetViewMode })
+                      });
+                    } catch(err) {
+                      addLog(`[Error] Failed to duplicate: ${err}`);
+                    }
+                  }
+                  setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} duplicated` });
+                  await fetchStatus();
+                  setTimeout(() => setTaskProgress(null), 1500);
+                  setContextMenu(null);
+                }}
+                className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+              >
+                <Copy size={16} className="text-white/40 group-hover:text-white" />
+                <span className="font-bold text-[10px] uppercase tracking-widest">Duplicate</span>
+              </button>
+            )}
+
+            {assetViewMode === 'library' && (
+              <>
+                <div className="w-[1px] h-4 bg-white/10" />
+                <button 
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                    await performMoveOrCopy(targets, 'project', 'library');
+                  }}
+                  className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                >
+                  <PlusCircle size={16} className="text-white/40 group-hover:text-white" />
+                  <span className="font-bold text-[10px] uppercase tracking-widest">Add to Project</span>
+                </button>
+              </>
+            )}
+
+            {assetViewMode === 'project' && (
+              <>
+                <div className="w-[1px] h-4 bg-white/10" />
+                <button 
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                    await performMoveOrCopy(targets, 'library', 'project');
+                  }}
+                  className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                >
+                  <ImageIcon size={16} className="text-white/40 group-hover:text-white" />
+                  <span className="font-bold text-[10px] uppercase tracking-widest">Add to Library</span>
+                </button>
+              </>
+            )}
+
+            {assetViewMode === 'plugins' && (
+              <>
+                <div className="w-[1px] h-4 bg-white/10" />
+                <button 
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                    await performMoveOrCopy(targets, 'project', 'plugins');
+                  }}
+                  className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                >
+                  <PlusCircle size={16} className="text-white/40 group-hover:text-white" />
+                  <span className="font-bold text-[10px] uppercase tracking-widest">Add to Project</span>
+                </button>
+
+                <div className="w-[1px] h-4 bg-white/10" />
+                <button 
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                    await performMoveOrCopy(targets, 'library', 'plugins');
+                  }}
+                  className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                >
+                  <ImageIcon size={16} className="text-white/40 group-hover:text-white" />
+                  <span className="font-bold text-[10px] uppercase tracking-widest">Add to Library</span>
+                </button>
+              </>
+            )}
+
+            {true && (
+              <div className="w-[1px] h-4 bg-white/10" />
+            )}
+
             <button 
               onClick={(e) => {
                 e.stopPropagation();
-                const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                runCommand('create_pdf.py', ['--duplicate', identity]);
+                const currentAssets = getCurrentAssets();
+                const toSelect = new Set<string>();
+                if (currentAssets?.fronts) {
+                  currentAssets.fronts.forEach(f => toSelect.add(`front:${f}`));
+                }
+                setSelectedAssets(toSelect);
                 setContextMenu(null);
-              }}
-              className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
-            >
-              <Copy size={16} className="text-white/40 group-hover:text-white" />
-              <span className="font-bold text-[10px] uppercase tracking-widest">Duplicate</span>
-            </button>
-
-            <div className="w-[1px] h-4 bg-white/10" />
-
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                const currentAssets = assetViewMode === 'project' ? status?.assets : status?.library;
-                const all = new Set([
-                  ...(currentAssets?.fronts.map(n => `front:${n}`) || []),
-                  ...(currentAssets?.backs.map(n => `back:${n}`) || [])
-                ]);
-                setSelectedAssets(all);
-                setContextMenu(null);
-                addLog(`[System] Selected all ${assetViewMode} assets.`);
+                addLog(`[System] Selected all front ${assetViewMode} assets.`);
               }}
               className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
             >
@@ -2088,48 +2733,96 @@ export default function App() {
               <span className="font-bold text-[10px] uppercase tracking-widest">Select All</span>
             </button>
 
-            <div className="w-[1px] h-4 bg-white/10" />
+            {true && (
+              <>
+                <div className="w-[1px] h-4 bg-white/10" />
 
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                addLog(`[System] Deleting ${contextMenu.name}...`);
-                const args = ['--selected', identity];
-                if (assetViewMode === 'library') args.push('--library');
-                runCommand('clean_up.py', args);
-                setContextMenu(null);
-              }}
-              className="h-9 pl-4 pr-5 hover:bg-rose-500/10 text-rose-400 rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
-            >
-              <Trash2 size={16} className="text-rose-400/40 group-hover:text-rose-400" />
-              <span className="font-bold text-[10px] uppercase tracking-widest">Delete</span>
-            </button>
+                <button 
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                    
+                    for (let i = 0; i < targets.length; i++) {
+                      setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
+                      try {
+                        await fetch('/api/delete', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ identity: [targets[i]], assetViewMode })
+                        });
+                      } catch(err) {
+                        addLog(`[Error] Failed to delete: ${err}`);
+                      }
+                    }
+                    
+                    setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} deleted` });
+                    await fetchStatus();
+                    setTimeout(() => setTaskProgress(null), 1500);
+                    setContextMenu(null);
+                    setSelectedAssets(new Set());
+                  }}
+                  className="h-9 pl-4 pr-5 hover:bg-rose-500/10 text-rose-400 rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                >
+                  <Trash2 size={16} className="text-rose-400/40 group-hover:text-rose-400" />
+                  <span className="font-bold text-[10px] uppercase tracking-widest">Delete</span>
+                </button>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
       {assetViewMode === 'library' && selectedAssets.size > 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 50 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 50 }}
-          className="fixed bottom-6 right-6 z-[100]"
-        >
-          <button 
-            onClick={() => uploadToProject()}
-            className="flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95"
+           initial={{ opacity: 0, y: 50 }}
+           animate={{ opacity: 1, y: 0 }}
+           exit={{ opacity: 0, y: 50 }}
+           className="fixed bottom-6 right-6 z-[100]"
+         >
+           <button 
+             onClick={() => uploadToProject()}
+             className="flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95"
+           >
+             <Download size={16} />
+             Add to Project ({selectedAssets.size})
+           </button>
+         </motion.div>
+       )}
+
+      <AnimatePresence>
+        {enlargedImage && (
+          <div 
+            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-8"
+            onClick={() => setEnlargedImage(null)}
           >
-            <Download size={16} />
-            Add to Project ({selectedAssets.size})
-          </button>
-        </motion.div>
-      )}
-    </div>
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative max-h-full max-w-full outline-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img 
+                src={enlargedImage} 
+                alt="Enlarged asset" 
+                className="max-h-[90vh] max-w-full object-contain rounded-lg shadow-2xl" 
+              />
+              <button 
+                className="absolute -top-4 -right-4 p-2 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform"
+                onClick={() => setEnlargedImage(null)}
+              >
+                <X size={20} />
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+     </div>
   );
 }
 
 // Subcomponents
-function TemplateCard({ type, onUpload }: { type: 'front' | 'back', onUpload: (file: File) => void }) {
+function TemplateCard({ type, onUpload, multiple = false }: { type: 'front' | 'back' | 'double_sided', onUpload: (files: File[]) => void, multiple?: boolean }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -2142,9 +2835,10 @@ function TemplateCard({ type, onUpload }: { type: 'front' | 'back', onUpload: (f
         ref={fileInputRef} 
         className="hidden" 
         accept="image/*"
+        multiple={multiple}
         onChange={(e) => {
           if (e.target.files?.length) {
-            onUpload(e.target.files[0]);
+            onUpload(Array.from(e.target.files));
           }
         }}
       />
@@ -2156,9 +2850,13 @@ function TemplateCard({ type, onUpload }: { type: 'front' | 'back', onUpload: (f
   );
 }
 
-function DropZone({ children, onDrop, label, isLibrary }: { children: React.ReactNode, onDrop: (files: FileList, isLibrary: boolean) => void, label: string, isLibrary: boolean }) {
+function DropZone({ children, onDrop, label, isLibrary, disabled = false }: { children: React.ReactNode, onDrop: (files: FileList, isLibrary: boolean) => void, label: string, isLibrary: boolean, disabled?: boolean }) {
   const [isOver, setIsOver] = useState(false);
   
+  if (disabled) {
+    return <>{children}</>;
+  }
+
   return (
     <div 
       onDragOver={(e) => { e.preventDefault(); setIsOver(true); }}
@@ -2294,19 +2992,27 @@ function ToggleItem({ label, checked, onChange }: { label: string, checked: bool
 
 interface AssetItemProps {
   name: string;
-  type: 'front' | 'back';
+  type: 'front' | 'back' | 'double_sided';
   allAssets?: AssetData | null;
   onContextMenu?: (x: number, y: number) => void;
   selected?: boolean;
   onSelect?: (e: React.MouseEvent) => void;
+  onEnlarge?: (src: string) => void;
+  isFlipped?: boolean;
+  onToggleFlip?: (e: React.MouseEvent) => void;
   uploadedImages?: Record<string, string>;
   addLog?: (log: string) => void;
-  assetViewMode: 'library' | 'project';
+  assetViewMode: 'library' | 'project' | 'plugins';
 }
 
-const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, uploadedImages, addLog, assetViewMode }) => {
-  const [isFlipped, setIsFlipped] = useState(false);
+const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode }) => {
   
+  const getBaseUrl = () => {
+    if (assetViewMode === 'library') return '/library';
+    if (assetViewMode === 'plugins') return '/plugins_staging';
+    return '/game';
+  };
+
   const getImgSrc = () => {
     // 1. If we have a blob URL from a recent upload, use it.
     if (uploadedImages?.[name]) {
@@ -2315,18 +3021,19 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     }
     
     addLog?.(`AssetItem Debug: ${name} NOT found in uploadedImages. available keys: ${Object.keys(uploadedImages || {}).slice(0, 5).join(', ')}...`);
+    const baseUrl = getBaseUrl();
     // 2. Determine base path based on type/double-sided status
     if (type === 'back') {
-      return `/game/back/${name}`;
+      return `${baseUrl}/back/${name}`;
     }
     
     // 3. For front faces, check if it's double-sided first
     if (allAssets?.double_sided?.includes(name)) {
-      return `/game/double_sided/${name}`;
+      return `${baseUrl}/double_sided/${name}`;
     }
     
     // 4. Default to front
-    return `/game/front/${name}`;
+    return `${baseUrl}/front/${name}`;
   };
 
   const imgSrc = getImgSrc();
@@ -2339,6 +3046,8 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     if (isDoubleSided) {
       return { name, folder: 'double_sided' };
     }
+    
+    if (assetViewMode === 'library' || assetViewMode === 'plugins') return null;
     
     // Fallback to first back pattern
     if (allAssets?.backs && allAssets.backs.length > 0) {
@@ -2367,19 +3076,37 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
           "cursor-pointer"
         )}
         onClick={(e) => {
-          if (e.shiftKey || e.ctrlKey || e.metaKey || selected) {
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
             onSelect?.(e);
-          } else if (type === 'front' && !(assetViewMode === 'library')) {
-            setIsFlipped(!isFlipped);
           } else {
-            onSelect?.(e);
+            const baseUrl = getBaseUrl();
+            const backFaceFolder = getBackFace()?.folder;
+            
+            const enlargeSrc = isFlipped && getBackFace() 
+              ? (uploadedImages?.[getBackFace()!.name] || `${baseUrl}/${backFaceFolder}/${getBackFace()!.name}`) 
+              : imgSrc;
+            onEnlarge?.(enlargeSrc);
           }
         }}
       >
+        {type === 'front' && backFace && (
+          <button 
+            onClick={(e) => {
+              if (onToggleFlip) {
+                onToggleFlip(e);
+              }
+            }}
+            className="absolute top-2 right-2 z-30 w-7 h-7 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center transition-all shadow-md active:scale-95 hover:bg-primary-600 hover:border-primary-400 group/flip opacity-0 group-hover:opacity-100"
+            title="Flip Card"
+          >
+            <RotateCcw size={14} className="group-hover/flip:-rotate-180 transition-transform duration-500" />
+          </button>
+        )}
+
         <motion.div
-          className="w-full h-full transition-all duration-500 preserve-3d relative"
+          className="w-full h-full preserve-3d relative"
           animate={{ rotateY: isFlipped ? 180 : 0 }}
-          transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+          transition={{ type: 'tween', duration: 0.25, ease: 'easeInOut' }}
         >
           {/* Front Face / Static Back Pattern */}
           <div className={cn(
@@ -2402,23 +3129,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
             </div>
             
-            {/* Selection Button */}
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect?.(e);
-              }}
-              className={cn(
-                "absolute top-2 left-2 z-20 w-6 h-6 rounded-full border flex items-center justify-center transition-all shadow-md active:scale-95",
-                selected 
-                  ? "bg-primary-600 border-primary-400 text-white" 
-                  : "bg-black/40 border-white/10 text-white/0 group-hover:text-white/40 group-hover:border-white/40 hover:bg-black/60 hover:text-white/80"
-              )}
-            >
-              <CheckSquare size={12} />
-            </button>
-
-            {type === 'back' && selected && (
+             {type === 'back' && selected && (
               <div className="absolute top-2 right-2 z-20 px-2 py-0.5 bg-amber-500 rounded-full shadow-lg border border-amber-400">
                 <span className="text-[8px] font-bold text-black uppercase tracking-tighter">Default</span>
               </div>
@@ -2427,7 +3138,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
             {type === 'front' && !selected && assetViewMode !== 'library' && (
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                 <Eye size={18} className="text-white" />
-                <span className="text-[10px] font-bold text-white uppercase">Click to Flip</span>
+                <span className="text-[10px] font-bold text-white uppercase">Click to Enlarge</span>
               </div>
             )}
           </div>
@@ -2442,7 +3153,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 {backFace ? (
                   <>
                     <img 
-                      src={uploadedImages?.[backFace.name] || `/game/${backFace.folder}/${backFace.name}`}
+                      src={uploadedImages?.[backFace.name] || `${getBaseUrl()}/${backFace.folder}/${backFace.name}`}
                       alt={backFace.name}
                       loading="lazy"
                       className="w-full h-full object-cover opacity-60"
@@ -2470,6 +3181,22 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
             </div>
           )}
         </motion.div>
+        
+        {/* Selection Button */}
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect?.(e);
+          }}
+          className={cn(
+            "absolute top-2 left-2 z-30 w-6 h-6 rounded-full border flex items-center justify-center transition-all shadow-md active:scale-95",
+            selected 
+              ? "bg-primary-600 border-primary-400 text-white" 
+              : "bg-black/40 border-white/10 text-white/0 group-hover:text-white/40 group-hover:border-white/40 hover:bg-black/60 hover:text-white/80"
+          )}
+        >
+          <CheckSquare size={12} />
+        </button>
       </div>
       <div className="px-1">
         <p className="text-xs font-medium text-white/60 truncate">{name}</p>

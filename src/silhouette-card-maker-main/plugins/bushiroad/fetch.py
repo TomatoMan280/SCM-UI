@@ -1,4 +1,5 @@
 import sys
+import os
 from os import path
 from click import command, argument, Choice
 
@@ -10,8 +11,8 @@ from plugins.bushiroad.deck_formats import DeckFormat, parse_deck
 from plugins.bushiroad.bushiroad import get_handle_card
 from utilities import ensure_directory
 
-front_directory = path.join(REPO_ROOT, 'game', 'front')
-back_directory = path.join(REPO_ROOT, 'game', 'double_sided')
+front_directory = os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), 'front')
+back_directory = os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), 'double_sided')
 
 @command()
 @argument('deck_path')

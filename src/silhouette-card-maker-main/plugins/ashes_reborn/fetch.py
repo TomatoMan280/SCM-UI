@@ -1,4 +1,5 @@
 import sys
+import os
 from os import path
 from click import command, argument, Choice, option
 
@@ -10,7 +11,7 @@ from plugins.ashes_reborn.deck_formats import DeckFormat, parse_deck
 from plugins.ashes_reborn.ashes import get_handle_card, ImageServer
 from utilities import ensure_directory
 
-front_directory = path.join(REPO_ROOT, 'game', 'front')
+front_directory = os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), 'front')
 
 @command()
 @argument('deck_path')
