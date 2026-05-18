@@ -26,6 +26,11 @@
     "directories": {
       "output": "release/"
     },
+    "asar": true,
+    "asarUnpack": [
+      "src/silhouette-card-maker-main",
+      "src/Library"
+    ],
     "files": [
       "dist/**/*",
       "electron-main.cjs",

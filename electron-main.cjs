@@ -1,6 +1,6 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { fork } = require('child_process');
 
 let mainWindow;
 let serverProcess;
@@ -10,6 +10,7 @@ function createWindow() {
     width: 1280,
     height: 800,
     title: "Silhouette Card Maker",
+    autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -17,12 +18,16 @@ function createWindow() {
   });
 
   // Start the Express server
+  // When bundled, __dirname points to the folder containing electron-main.cjs
+  // We need to resolve dist/server.cjs
   const serverPath = path.join(__dirname, 'dist', 'server.cjs');
   const appPath = app.getAppPath();
   
-  serverProcess = spawn('node', [serverPath], {
+  // Use fork instead of spawn to use the internal Electron node runtime
+  serverProcess = fork(serverPath, [], {
     cwd: appPath,
-    env: { ...process.env, PORT: '3000', NODE_ENV: 'production' }
+    env: { ...process.env, PORT: '3000', NODE_ENV: 'production' },
+    silent: true // This allows us to pipe stdout/stderr
   });
 
   serverProcess.stdout.on('data', (data) => {
@@ -30,7 +35,7 @@ function createWindow() {
     const output = data.toString();
     if (output.includes('Server running') || output.includes('localhost:3000')) {
        // Load the local express server once it's up
-       mainWindow.loadURL('http://localhost:3000');
+       if (mainWindow) mainWindow.loadURL('http://localhost:3000');
     }
   });
   
@@ -40,10 +45,10 @@ function createWindow() {
 
   // Fallback if we miss the console log
   setTimeout(() => {
-    if (mainWindow && !mainWindow.getURL().includes('localhost')) {
+    if (mainWindow && !mainWindow.getURL()) {
       mainWindow.loadURL('http://localhost:3000');
     }
-  }, 2500);
+  }, 3500);
 
   mainWindow.on('closed', () => {
     mainWindow = null;

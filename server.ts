@@ -10,19 +10,35 @@ async function startServer() {
 
   app.use(express.json());
 
-  const scmPath = path.join(process.cwd(), 'src', 'silhouette-card-maker-main');
+  // More robust path resolution for standalone bundle
+  const baseAppPath = process.env.NODE_ENV === 'production' && !process.env.VITE_DEV_SERVER 
+    ? process.cwd() 
+    : process.cwd();
+
+  let scmPath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
   
-  try {
-    const { execSync } = require("child_process");
-    try {
-      execSync("python3 -m pip --version", { stdio: 'ignore' });
-    } catch {
-      console.log("Installing python3-pip...");
-      execSync("apt-get update && apt-get install -y python3-pip", { stdio: 'inherit' });
+  // Handle Electron asarUnpack pathing
+  if (scmPath.includes('app.asar') && !scmPath.includes('app.asar.unpacked')) {
+    const unpackedPath = scmPath.replace('app.asar', 'app.asar.unpacked');
+    if (fs.existsSync(unpackedPath)) {
+      scmPath = unpackedPath;
     }
-    execSync("python3 -m pip install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests --break-system-packages", { stdio: 'inherit' });
-  } catch (e: any) {
-    console.error("Warning: Failed to install python dependencies.", e.message);
+  }
+
+  // Only attempt auto-install if not in Electron production, or if explicitly requested
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      const { execSync } = require("child_process");
+      try {
+        execSync("python3 -m pip --version", { stdio: 'ignore' });
+      } catch {
+        console.log("Installing python3-pip...");
+        execSync("apt-get update && apt-get install -y python3-pip", { stdio: 'inherit' });
+      }
+      execSync("python3 -m pip install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests natsort pydantic pypdfium2 split-image pyautogui --break-system-packages", { stdio: 'inherit' });
+    } catch (e: any) {
+      console.error("Warning: Failed to install python dependencies.", e.message);
+    }
   }
   
   // Simulation of Python Tool State
