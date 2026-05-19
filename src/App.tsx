@@ -228,6 +228,8 @@ interface AppStatus {
   library?: AssetData;
   plugins?: AssetData;
   savedProjects?: string[];
+  integrityOk?: boolean;
+  isElectron?: boolean;
 }
 
 export default function App() {
@@ -1161,6 +1163,30 @@ export default function App() {
     window.open('/api/project/export', '_blank');
   };
 
+  const handleRepair = async () => {
+    setIsProcessing(true);
+    setTaskProgress({ current: 0, total: 1, message: 'Repairing local files...' });
+    addLog("[Admin] Initiating script repair from app bundle...");
+    try {
+      const res = await fetch('/api/admin/repair-scripts', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        addLog(`[Admin] Success: ${data.message}`);
+        setTaskProgress({ current: 1, total: 1, message: 'Repair Complete' });
+        await fetchStatus();
+        playDing();
+      } else {
+        throw new Error(data.error || "Repair failed");
+      }
+    } catch (err: any) {
+      addLog(`[Error] Repair failed: ${err.message}`);
+      setTaskProgress({ current: 1, total: 1, message: 'Repair Failed' });
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setTaskProgress(null), 2000);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-[#0a0a0c] text-[#e1e1e6] font-sans selection:bg-primary-500/30 overflow-hidden">
       <ErrorBanner logs={logs} />
@@ -1419,13 +1445,41 @@ export default function App() {
         <div className="flex-1 overflow-y-auto p-8 relative min-h-0">
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' && (
-              <motion.div 
-                key="dashboard"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="grid grid-cols-3 gap-6"
-              >
+              <div className="flex flex-col gap-6">
+                {status?.isElectron && status?.integrityOk === false && (
+                   <motion.div 
+                     initial={{ opacity: 0, y: -20 }}
+                     animate={{ opacity: 1, y: 0 }}
+                     className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6"
+                   >
+                     <div className="flex items-start gap-4 text-left">
+                       <div className="p-3 bg-rose-500/20 rounded-xl border border-rose-500/40">
+                         <ShieldCheck className="text-rose-400" size={24} />
+                       </div>
+                       <div>
+                         <h3 className="text-lg font-bold text-white mb-1">Local Scripts Missing</h3>
+                         <p className="text-sm text-white/60 max-w-xl">
+                           The core Python scripts aren't present in your local app data directory. This usually happens if initialization failed during first run.
+                         </p>
+                       </div>
+                     </div>
+                     <button
+                       onClick={handleRepair}
+                       className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold transition-all flex items-center gap-2 whitespace-nowrap"
+                     >
+                       <RefreshCw size={18} className={isProcessing ? "animate-spin" : ""} />
+                       {isProcessing ? 'Restoring...' : 'Repair Scripts'}
+                     </button>
+                   </motion.div>
+                )}
+
+                <motion.div 
+                  key="dashboard"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="grid grid-cols-3 gap-6"
+                >
                 <div className="col-span-2 space-y-6">
                   <section className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 relative overflow-hidden group">
                     <h2 className="text-2xl font-bold mb-2">Silhouette Master Studio</h2>
@@ -1477,6 +1531,7 @@ export default function App() {
                   </div>
                 </div>
               </motion.div>
+            </div>
             )}
 
             {activeTab === 'builder' && (
