@@ -820,11 +820,11 @@ async function startServer() {
       const customEnv = Object.assign({}, process.env);
       customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
       if (req.body.tempDirId) {
-        customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', `Temp_Fetch_${req.body.tempDirId}`);
+        customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
         ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
       } else if (command.startsWith('plugins/')) {
-        customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', 'Plugins');
+        customEnv.SCM_GAME_DIR = pluginsPath;
       }
 
       const child = spawn(pythonCmd, ['-u', command, ...(args || [])], { cwd: scmPath, env: customEnv });
@@ -935,11 +935,11 @@ async function startServer() {
       const customEnv = Object.assign({}, process.env);
       customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
       if (req.body.tempDirId) {
-        customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', `Temp_Fetch_${req.body.tempDirId}`);
+        customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
         ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
       } else if (command.startsWith('plugins/')) {
-        customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', 'Plugins');
+        customEnv.SCM_GAME_DIR = pluginsPath;
       }
 
       console.log(`[System] Executing: ${fullCommand} in ${scmPath}`);
