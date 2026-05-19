@@ -50,6 +50,17 @@
   }
 }
 
+:root[data-mode="light"] {
+  filter: invert(1) hue-rotate(180deg);
+  background-color: #0f0f13; /* to avoid un-inverted white background flashing */
+}
+
+:root[data-mode="light"] img,
+:root[data-mode="light"] video,
+:root[data-mode="light"] canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
+
 /* Custom Scrollbar Styles */
 ::-webkit-scrollbar {
   width: 6px;

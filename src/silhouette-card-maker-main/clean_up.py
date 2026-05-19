@@ -13,7 +13,7 @@ def delete_files():
         for item in os.listdir(working_path):
             full_path = os.path.join(working_path, item)
 
-            if os.path.basename(full_path) == 'EMPTY.md':
+            if os.path.basename(full_path) in ['EMPTY.md', 'README.md']:
                 continue
 
             if os.path.isfile(full_path):

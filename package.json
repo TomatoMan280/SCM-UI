@@ -1,6 +1,6 @@
 {
   "name": "silhouette-ui",
-  "productName": "Silhouette",
+  "productName": "SCMUI",
   "description": "Silhouette Card Maker UI",
   "author": "Alan-Cha",
   "private": true,
@@ -8,6 +8,7 @@
   "type": "module",
   "main": "electron-main.cjs",
   "scripts": {
+    "postinstall": "npm run install-deps || true",
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
@@ -23,6 +24,7 @@
   },
   "build": {
     "appId": "com.alancha.silhouette",
+    "productName": "SCMUI",
     "directories": {
       "output": "release/"
     },
@@ -39,6 +41,13 @@
     },
     "linux": {
       "target": "AppImage"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "SCMUI"
     }
   },
   "dependencies": {
@@ -46,6 +55,7 @@
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "adm-zip": "^0.5.17",
+    "archiver": "^8.0.0",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",

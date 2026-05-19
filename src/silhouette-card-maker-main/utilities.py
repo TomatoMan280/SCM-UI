@@ -1162,6 +1162,7 @@ def generate_pdf(
             print(f'Generated images: {output_path}')
 
         else:
+            print('Saving PDF, this may take a while depending on the number of pages...')
             pages[0].save(output_path, format='PDF', save_all=True, append_images=pages[1:], resolution=math.floor(300 * ppi_ratio), speed=0, subsampling=0, quality=quality)
             print(f'Generated PDF: {output_path}')
 

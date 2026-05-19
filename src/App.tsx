@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Loader2,
   Terminal, 
@@ -15,6 +15,7 @@ import {
   Package,
   Layers,
   ChevronRight,
+  Menu,
   Database,
   Image as ImageIcon,
   CheckSquare,
@@ -26,7 +27,8 @@ import {
   Copy,
   X,
   RotateCcw,
-  PlusCircle
+  PlusCircle,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -235,6 +237,60 @@ export default function App() {
   const [logs, setLogs] = useState<string[]>(["[System] Initializing Silhouette Master Virtual Bridge..."]);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  
+  // History State for Undo/Redo
+  const [history, setHistory] = useState<{ cmdOptions: any, pluginState: any }[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const isInternalUpdate = useRef(false);
+
+  const saveToHistory = useCallback((options: any, pState: any) => {
+    setHistory(prev => {
+      const next = prev.slice(0, historyIndex + 1);
+      const snapshot = JSON.parse(JSON.stringify({ cmdOptions: options, pluginState: pState }));
+      
+      if (next.length > 0) {
+        const last = next[next.length - 1];
+        if (JSON.stringify(last.cmdOptions) === JSON.stringify(snapshot.cmdOptions) && 
+            JSON.stringify(last.pluginState) === JSON.stringify(snapshot.pluginState)) {
+          return prev;
+        }
+      }
+      
+      next.push(snapshot);
+      if (next.length > 100) next.shift();
+      return next;
+    });
+    setHistoryIndex(prev => {
+      const nextIdx = prev + 1;
+      return nextIdx;
+    });
+  }, [historyIndex]);
+
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0) {
+      const prevIdx = historyIndex - 1;
+      const prevState = history[prevIdx];
+      isInternalUpdate.current = true;
+      setCmdOptions(prevState.cmdOptions);
+      isInternalUpdate.current = true;
+      setPluginState(prevState.pluginState);
+      setHistoryIndex(prevIdx);
+      addLog("[System] Undo performed.");
+    }
+  }, [historyIndex, history]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const nextIdx = historyIndex + 1;
+      const nextState = history[nextIdx];
+      isInternalUpdate.current = true;
+      setCmdOptions(nextState.cmdOptions);
+      isInternalUpdate.current = true;
+      setPluginState(nextState.pluginState);
+      setHistoryIndex(nextIdx);
+      addLog("[System] Redo performed.");
+    }
+  }, [historyIndex, history]);
 
   // Computed state
   const getCurrentAssets = () => {
@@ -260,12 +316,16 @@ export default function App() {
   const [pendingUploadItems, setPendingUploadItems] = useState<string[]>([]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const [loadedProject, setLoadedProject] = useState<string | null>(null);
+  const [pluginBoxCollapsed, setPluginBoxCollapsed] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [showPluginSaveModal, setShowPluginSaveModal] = useState(false);
   const [showPluginLoadModal, setShowPluginLoadModal] = useState(false);
   const [pluginSaveName, setPluginSaveName] = useState("");
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const [cardDimming, setCardDimming] = useState<'none' | 'tint' | 'dark'>('tint');
+  const [playDingSound, setPlayDingSound] = useState(true);
 
   const fetchPluginConfigs = async () => {
     try {
@@ -280,8 +340,22 @@ export default function App() {
   useEffect(() => {
     if (showPluginLoadModal) fetchPluginConfigs();
   }, [showPluginLoadModal]);
+  const [activeTaskController, setActiveTaskController] = useState<AbortController | null>(null);
+  
+  const getColorMode = () => {
+    return localStorage.getItem('scm_color_mode') || 'dark';
+  };
+  const [colorMode, setColorMode] = useState<'light' | 'dark'>(getColorMode() as any);
+  
+  useEffect(() => {
+    localStorage.setItem('scm_color_mode', colorMode);
+    document.documentElement.setAttribute('data-mode', colorMode);
+  }, [colorMode]);
+
   const [currentTheme, setCurrentTheme] = useState<Theme>('indigo');
   const [pdfReady, setPdfReady] = useState(false);
+  const [pdfReadyToastOpen, setPdfReadyToastOpen] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState({ fronts: false, backs: false, doubleSided: false });
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
@@ -298,6 +372,22 @@ export default function App() {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (activeTab !== 'assets') return;
     const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+
+    // Undo/Redo
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      if (isInput) return;
+      e.preventDefault();
+      if (e.shiftKey) {
+        handleRedo();
+      } else {
+        handleUndo();
+      }
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      if (isInput) return;
+      e.preventDefault();
+      handleRedo();
+    }
 
     // Select All
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
@@ -338,11 +428,15 @@ export default function App() {
             for (let i = 0; i < copiedBuffer.length; i++) {
               setTaskProgress({ current: i + 1, total: copiedBuffer.length, message: `Duplicating ${copiedBuffer[i].split(':')[1]}...` });
               try {
-                await fetch('/api/duplicate', {
+                const res = await fetch('/api/duplicate', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ identity: copiedBuffer[i], assetViewMode })
                 });
+                const data = await res.json();
+                if (data.newName) {
+                     addLog(`[Action: Duplicate] ${copiedBuffer[i]} -> ${data.newName} (Success)`);
+                }
               } catch(e) {}
             }
             setTaskProgress({ current: copiedBuffer.length, total: copiedBuffer.length, message: `${copiedBuffer.length} card${copiedBuffer.length === 1 ? '' : 's'} duplicated` });
@@ -372,14 +466,18 @@ export default function App() {
         // Use API to delete instead of clear_up.py directly
         (async () => {
           try {
-            const arr = Array.from(selectedAssets);
+            const arr = Array.from(selectedAssets) as string[];
             for (let i = 0; i < arr.length; i++) {
               setTaskProgress({ current: i + 1, total: arr.length, message: `Deleting ${arr[i].split(':')[1]}...` });
-              await fetch('/api/delete', {
+              const res = await fetch('/api/delete', {
                  method: 'POST',
                  headers: { 'Content-Type': 'application/json' },
                  body: JSON.stringify({ identity: [arr[i]], assetViewMode })
               });
+              const data = await res.json();
+              if (data.results) {
+                data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
+              }              
             }
             setTaskProgress({ current: arr.length, total: arr.length, message: `${arr.length} card${arr.length === 1 ? '' : 's'} deleted` });
             await fetchStatus();
@@ -450,10 +548,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (consoleEndRef.current) {
-      consoleEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (isInternalUpdate.current) {
+      isInternalUpdate.current = false;
+      return;
     }
-  }, [logs]);
+    const timeout = setTimeout(() => {
+      saveToHistory(cmdOptions, pluginState);
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [cmdOptions, pluginState, saveToHistory]);
 
   const fetchStatus = async () => {
     try {
@@ -495,7 +598,11 @@ export default function App() {
 
 
   const addLog = (newLogs: string | string[]) => {
-    const logArray = Array.isArray(newLogs) ? newLogs : [newLogs];
+    const logArray = (Array.isArray(newLogs) ? newLogs : [newLogs])
+      .filter(l => l !== null && l !== undefined && typeof l === 'string')
+      .filter(l => l.trim().length > 0);
+    
+    if (logArray.length === 0) return;
     setLogs(prev => [...prev, ...logArray]);
   };
   
@@ -563,11 +670,14 @@ export default function App() {
   const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string }) => {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
+    const abortController = new AbortController();
+    setActiveTaskController(abortController);
     try {
-      const res = await fetch('/api/run-command', {
+      const res = await fetch('/api/run-command-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId })
+        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId }),
+        signal: abortController.signal
       });
       if (!res.ok) {
         addLog(`[Error] Request failed with status ${res.status}`);
@@ -575,9 +685,64 @@ export default function App() {
         setTimeout(() => setTaskProgress(null), 1500);
         return null;
       }
-      const data = await res.json();
-      addLog(`[Console] Output: ${data.output}`);
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let output: string[] = [];
+      let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
+      let pendingData = "";
       
+      let totalCards = 0;
+      let currentCard = 0;
+      
+      if (options?.startMessage === 'Generating PDF...') {
+        const assets = getCurrentAssets();
+        totalCards = (assets?.fronts?.length || 0) + (assets?.double_sided?.length || 0);
+        setTaskProgress({ current: 0, total: totalCards, message: 'Starting PDF generation...' });
+      }
+
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        pendingData += decoder.decode(value, { stream: true });
+        const events = pendingData.split('\n\n');
+        pendingData = events.pop() || '';
+        
+        for (const event of events) {
+          const lines = event.split('\n');
+          let eventType = 'stdout';
+          let eventData = null;
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+               eventType = line.substring(7);
+            } else if (line.startsWith('data: ')) {
+               try { eventData = JSON.parse(line.substring(6)); } catch(e) {}
+            }
+          }
+          if (eventData !== null) {
+             if (eventType === 'stdout') {
+                 output.push(eventData as string);
+                 addLog(`[Console] ${eventData}`);
+                 const match = (eventData as string).match(/^Image (\d+):/);
+                 if (match) {
+                     currentCard = parseInt(match[1]);
+                     setTaskProgress({ current: currentCard, total: totalCards > 0 ? totalCards : currentCard + 1, message: `Processing card ${currentCard}${totalCards > 0 ? ` of ${totalCards}` : ''}...` });
+                 }
+             } else if (eventType === 'stderr') {
+                 output.push(`[Error] ${eventData}`);
+                 addLog(`[Console Error] ${eventData}`);
+             } else if (eventType === 'error') {
+                 output.push(eventData as string);
+                 addLog(`[Console Error] ${eventData}`);
+             } else if (eventType === 'fetched_files') {
+                 fetchedFiles = eventData as any;
+             }
+          }
+        }
+      }
+      
+      setActiveTaskController(null);
       const assets = await fetchStatus();
       
       if (!options?.hideProgressOnComplete) {
@@ -585,16 +750,74 @@ export default function App() {
          setTimeout(() => setTaskProgress(null), 1500);
       }
       
-      return { output: data.output, assets, fetchedFiles: data.fetchedFiles };
-    } catch (err) {
-      addLog(`[Error] Execution failed: ${err}`);
-      setTaskProgress(prev => prev ? { ...prev, message: 'Failed.' } : null);
+      return { output, assets, fetchedFiles };
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+         addLog(`[System] Task canceled by user.`);
+         setTaskProgress(prev => prev ? { ...prev, message: 'Canceled.' } : null);
+      } else {
+         addLog(`[Error] Execution failed: ${err}`);
+         setTaskProgress(prev => prev ? { ...prev, message: 'Failed.' } : null);
+      }
+      setActiveTaskController(null);
       setTimeout(() => setTaskProgress(null), 1500);
       return null;
     }
   };
 
+  const downloadFile = async (url: string, filename: string) => {
+    try {
+      addLog(`[System] Initiating download for ${filename}...`);
+      
+      // Verify endpoint exists without buffering the entire file into memory
+      const response = await fetch(url, { method: 'HEAD' });
+      if (!response.ok) {
+        throw new Error(`Server returned status: ${response.status}`);
+      }
+
+      // Trigger actual download via the browser to bypass RAM limits and iframe popup limits
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      addLog(`[System] Download started for ${filename}. Check your browser downloads.`);
+    } catch(e: any) {
+      console.error(e);
+      addLog(`[Error] Failed to trigger download for ${filename}: ${e.message}`);
+    }
+  };
+
+  const playDing = () => {
+    if (!playDingSound) return;
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.5);
+      gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } catch(e) {}
+  };
+
   const generatePDF = async () => {
+    const currentAssets = getCurrentAssets();
+    const hasFronts = (currentAssets?.fronts?.length || 0) > 0;
+    const hasDoubleSided = (currentAssets?.double_sided?.length || 0) > 0;
+    
+    if (!hasFronts && !hasDoubleSided) {
+        addLog("[Error] Cannot generate PDF: No card fronts found in project.");
+        return;
+    }
+
     addLog("[System] Launching PDF Generator...");
     setPdfReady(false);
     const args = [
@@ -615,8 +838,13 @@ export default function App() {
     if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
     const result = await runCommand('create_pdf.py', args, { startMessage: 'Generating PDF...' });
-    if (result?.output && result.output.some((line: string) => line.includes('Generated PDF'))) {
+    if (result?.output && result.output.some((line: string) => line.includes('PDF successfully moved') || line.includes('Generated PDF') || line.includes('PDF generated successfully'))) {
       setPdfReady(true);
+      setPdfReadyToastOpen(true);
+      playDing();
+      setTimeout(() => setPdfReadyToastOpen(false), 5000);
+    } else if (result?.output && result.output.some((line: string) => line.includes('[Error]'))) {
+      addLog("[Error] PDF Generation failed. Check console for details.");
     }
   };
 
@@ -757,6 +985,7 @@ export default function App() {
         setTaskProgress(prev => prev ? { ...prev, message: 'Cleared successfully.' } : null);
         await fetchStatus();
         setSelectedAssets(new Set());
+        setLoadedProject(null);
       }
     } catch (err) {
       addLog(`[Error] Clear failed: ${err}`);
@@ -809,7 +1038,8 @@ export default function App() {
         body: formData
       });
       if (!res.ok) throw new Error("Upload failed");
-      addLog(`[Uploader] Successfully uploaded ${name}`);
+      const data = await res.json();
+      addLog(`[Uploader] Successfully uploaded ${name} to ${data.targetPath || 'unknown'}`);
       await fetchStatus();
     } catch (err) {
       addLog(`[Error] File upload failed: ${err}`);
@@ -851,11 +1081,19 @@ export default function App() {
 
       for (let i = 0; i < finalItems.length; i++) {
          setTaskProgress({ current: i + 1, total: finalItems.length, message: `Processing ${finalItems[i].split(':')[1]}...` });
-         await fetch('/api/plugin/import', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identity: finalItems[i], destination, source })
-         });
+         try {
+             const res = await fetch('/api/plugin/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identity: finalItems[i], destination, source })
+             });
+             const data = await res.json();
+             if (data.results) {
+                 data.results.forEach((r: any) => {
+                     addLog(`[Action: Move/Copy] ${r.from} -> ${r.to} (Success)`);
+                 });
+             }
+         } catch(e) { }
       }
       
       const actionStr = destination === 'project' ? 'added' : 'copied';
@@ -880,6 +1118,7 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         addLog(`[Project] Success: ${data.message}`);
+        setLoadedProject(saveName);
         setSaveName("");
         setShowSaveModal(false);
         setTaskProgress(prev => prev ? { ...prev, message: 'Saved successfully.' } : null);
@@ -905,6 +1144,7 @@ export default function App() {
       if (data.success) {
         addLog(`[Project] Success: ${data.message}`);
         setShowLoadModal(false);
+        setLoadedProject(name);
         setTaskProgress(prev => prev ? { ...prev, message: 'Loaded successfully.' } : null);
         await fetchStatus();
         setSelectedAssets(new Set());
@@ -923,6 +1163,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-[#0a0a0c] text-[#e1e1e6] font-sans selection:bg-primary-500/30 overflow-hidden">
+      <ErrorBanner logs={logs} />
       <AnimatePresence>
         {isProcessing && (
           <motion.div
@@ -945,17 +1186,61 @@ export default function App() {
             exit={{ opacity: 0, y: 50, scale: 0.9 }}
             className="fixed bottom-6 right-6 z-[1000] flex items-center gap-4 p-4 bg-[#0f0f13] rounded-2xl border border-primary-500/30 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] min-w-[300px]"
           >
-             <div className="relative">
-               <svg className="w-10 h-10 transform -rotate-90">
-                 <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
-                 <circle cx="20" cy="20" r="18" className="stroke-primary-500 transition-all duration-300" strokeWidth="4" fill="none" strokeDasharray={113} strokeDashoffset={113 - (113 * (taskProgress.current / taskProgress.total))} />
-               </svg>
-               <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
-                 {taskProgress.current}/{taskProgress.total}
-               </span>
-             </div>
-             <div className="flex flex-col">
+              {taskProgress.total <= 1 && taskProgress.current === 0 ? (
+               <Loader2 className="w-10 h-10 text-primary-500 animate-spin flex-none" />
+             ) : (
+               <div className="relative">
+                 <svg className="w-10 h-10 transform -rotate-90">
+                   <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
+                   <circle cx="20" cy="20" r="18" className="stroke-primary-500 transition-all duration-300" strokeWidth="4" fill="none" strokeDasharray={113} strokeDashoffset={113 - (113 * ((taskProgress.total - taskProgress.current === 0 ? 1 : taskProgress.current) / (taskProgress.total === 0 ? 1 : taskProgress.total)))} />
+                 </svg>
+                 <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                   {taskProgress.current}/{taskProgress.total}
+                 </span>
+               </div>
+             )}
+             <div className="flex flex-col flex-1 pl-2">
                <span className="text-sm font-bold text-white/90">{taskProgress.message}</span>
+             </div>
+             {activeTaskController && (
+               <button
+                 onClick={() => activeTaskController.abort()}
+                 className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg text-xs font-bold transition-colors shrink-0"
+               >
+                 Cancel
+               </button>
+             )}
+          </motion.div>
+        )}
+
+        {pdfReadyToastOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -50, scale: 0.9 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] flex items-center justify-between gap-6 p-4 pl-5 bg-[#0f0f13] rounded-2xl border border-emerald-500/30 shadow-[0_8px_32px_-8px_rgba(16,185,129,0.3)] min-w-[340px]"
+          >
+             <div className="flex items-center gap-3">
+               <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-full">
+                 <CheckCircle size={24} />
+               </div>
+               <div className="flex flex-col">
+                 <span className="text-sm font-bold text-white">PDF Generation Complete</span>
+                 <span className="text-xs text-white/60 mt-0.5">Your document is ready to download.</span>
+               </div>
+             </div>
+             <div className="flex items-center gap-2">
+               <a
+                 href="/api/project/download-pdf" 
+                 download="game.pdf"
+                 onClick={() => setPdfReadyToastOpen(false)}
+                 className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-xs font-bold transition-colors"
+               >
+                 Download
+               </a>
+               <button onClick={() => setPdfReadyToastOpen(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/40 hover:text-white">
+                  <X size={16} />
+               </button>
              </div>
           </motion.div>
         )}
@@ -992,8 +1277,17 @@ export default function App() {
                 className="p-1.5 hover:bg-white/5 rounded-lg transition-all text-white/20 hover:text-white shrink-0 group-hover:opacity-100 opacity-20 hidden md:block"
                 title="Collapse"
               >
-                <ChevronRight size={16} className="rotate-180" />
+                <Menu size={16} />
               </button>
+            )}
+            {isSidebarCollapsed && (
+              <div 
+                className="p-1.5 absolute right-2 hover:bg-white/5 rounded-lg transition-all text-white/40 hover:text-white cursor-pointer"
+                onClick={() => setIsSidebarCollapsed(false)}
+                title="Expand"
+              >
+                <Menu size={16} />
+              </div>
             )}
           </div>
 
@@ -1034,35 +1328,15 @@ export default function App() {
 
         {!isSidebarCollapsed ? (
           <div className="mt-auto p-6 space-y-4">
-            <div className="p-4 rounded-xl bg-white/5 border border-white/5">
-              <div className="flex items-center gap-2 mb-2">
-                <div className={cn("w-2 h-2 rounded-full animate-pulse", status?.installed ? "bg-emerald-500" : "bg-amber-500")} />
-                <span className="text-xs font-medium text-white/60">System Status</span>
-              </div>
-              <p className="text-[10px] text-white/40 leading-relaxed">
-                {status?.installed ? `v${status.version} - Online` : 'Setup Required'}
-              </p>
-            </div>
             <a 
-              href="https://github.com/Alan-Cha/silhouette-card-maker" 
+              href="https://alan-cha.github.io/silhouette-card-maker/donate/" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="w-full flex items-center justify-between text-xs text-white/40 hover:text-white transition-colors px-2 mb-2"
-            >
-              <span>GitHub Repository</span>
-              <ExternalLink size={14} />
-            </a>
-            <button 
-              onClick={() => window.open('https://alan-cha.github.io/silhouette-card-maker/donate/', '_blank')}
               className="w-full flex items-center justify-between text-xs text-white/40 hover:text-white transition-colors px-2"
             >
               <span>Donate</span>
               <ExternalLink size={14} />
-            </button>
-            <button className="w-full flex items-center justify-between text-xs text-white/40 hover:text-white transition-colors px-2">
-              <span>Feedback & Support</span>
-              <MessageSquare size={14} />
-            </button>
+            </a>
           </div>
         ) : (
           <div className="mt-auto p-4 flex flex-col items-center gap-4 py-8 border-t border-white/5">
@@ -1079,26 +1353,57 @@ export default function App() {
         {/* Header */}
         <header className="h-16 border-b border-white/5 px-8 flex items-center justify-between bg-[#0f0f13]/50 backdrop-blur-sm z-10 font-mono">
           <div className="flex items-center gap-4">
-            <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Project</span>
-            <ChevronRight size={12} className="text-white/10" />
-            <span className="text-sm font-semibold text-white/60">{status?.rootDir || ""}</span>
+            {loadedProject && (
+              <>
+                <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Project</span>
+                <ChevronRight size={12} className="text-white/10" />
+                <span className="text-sm font-semibold text-white/60">{loadedProject}</span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-4">
-            {pdfReady && (
-              <a 
-                href="/game/output/game.pdf"
-                download="game.pdf"
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-all shadow-[0_0_20px_var(--color-emerald-500)] active:scale-95"
+            <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/5">
+              <button 
+                onClick={handleUndo}
+                disabled={historyIndex <= 0}
+                className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
+                title="Undo (Ctrl+Z)"
               >
-                <Download size={14} />
-                Download PDF
-              </a>
+                <RotateCcw size={16} />
+              </button>
+              <button 
+                onClick={handleRedo}
+                disabled={historyIndex >= history.length - 1}
+                className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
+                title="Redo (Ctrl+Y)"
+              >
+                <RotateCcw size={16} className="transform -scale-x-100" />
+              </button>
+            </div>
+            
+            {pdfReady && (
+              <div className="flex items-center gap-2">
+                <a 
+                  href="/api/project/download-pdf" 
+                  download="game.pdf"
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                >
+                  <Download size={14} />
+                  Download PDF
+                </a>
+                <a 
+                  href="/api/project/download-zip" 
+                  download="game_output.zip"
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                >
+                  <Download size={14} />
+                  Download Output (ZIP)
+                </a>
+              </div>
             )}
             <button 
               onClick={generatePDF}
-              className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-[0_0_20px_var(--color-primary-500)] active:scale-95 disabled:opacity-50 disabled:shadow-none"
+              className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:shadow-none"
             >
               <Play size={14} className="fill-current" />
               Generate PDF
@@ -1123,9 +1428,6 @@ export default function App() {
               >
                 <div className="col-span-2 space-y-6">
                   <section className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                      <Layers size={120} />
-                    </div>
                     <h2 className="text-2xl font-bold mb-2">Silhouette Master Studio</h2>
                     <p className="text-white/60 max-w-xl leading-relaxed mb-6">
                       High-performance card generation engine. Build custom PDFs with precision blade offset calibration.
@@ -1313,7 +1615,7 @@ export default function App() {
                             onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
                             className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/5 shadow-inner"
                           >
-                            {CALIBRATION_SHEETS.map(opt => <option key={opt.value} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
+                            {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
                           </select>
                           <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-amber-400/50 transition-colors" />
                         </div>
@@ -1458,20 +1760,29 @@ export default function App() {
                     </div>
 
                     {pdfReady && (
-                      <a 
-                        href="/game/output/game.pdf"
-                        download="game.pdf"
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="w-full py-4 mb-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/20 transition-all active:scale-95"
-                      >
-                        <Download size={20} />
-                        Download PDF
-                      </a>
+                      <div className="flex gap-2 mb-4">
+                        <a 
+                          href="/api/project/download-pdf" 
+                          download="game.pdf"
+                          className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                        >
+                          <Download size={20} />
+                          Download PDF
+                        </a>
+                        <a 
+                          href="/api/project/download-zip" 
+                          download="game_output.zip"
+                          className="flex-1 py-4 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/20 text-blue-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                          title="Download ZIP of all output files"
+                        >
+                          <Download size={20} />
+                          ZIP
+                        </a>
+                      </div>
                     )}
                     <button 
                       onClick={generatePDF}
-                      className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-xl shadow-primary-600/20 transition-all active:scale-95"
+                      className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-md transition-all active:scale-95"
                     >
                       <Play size={20} fill="currentColor" />
                       Generate PDF
@@ -1491,7 +1802,7 @@ export default function App() {
               >
                 <div className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-6 font-mono text-sm overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
                   {logs.map((log, i) => (
-                    <div key={i} className={cn(
+                    <div key={`log-${i}`} className={cn(
                       "mb-1 break-all",
                       log.startsWith('[Error]') ? "text-rose-400" : 
                       log.startsWith('[System]') ? "text-primary-400" :
@@ -1573,6 +1884,16 @@ export default function App() {
                           <Download size={14} />
                           Export
                         </button>
+                        {(status?.assets?.fronts?.length > 0 || status?.assets?.backs?.length > 0) && (
+                          <button 
+                            onClick={clearProject}
+                            className="flex items-center gap-2 px-3 py-2 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 rounded-lg text-xs font-bold transition-all text-rose-500 active:scale-95 ml-2"
+                            title="Clear Project Assets"
+                          >
+                            <Trash2 size={14} />
+                            Clear
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1636,16 +1957,6 @@ export default function App() {
                           >
                             <FolderOpen size={14} />
                             Add to Library
-                          </button>
-                        )}
-
-                        {assetViewMode === 'project' && status?.assets && (status.assets.fronts.length > 0 || status.assets.backs.length > 0) && (
-                          <button 
-                            onClick={clearProject}
-                            className="flex items-center gap-2 px-4 py-2 bg-rose-600/10 hover:bg-rose-600/20 text-rose-500 border border-rose-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
-                          >
-                            <Trash2 size={14} />
-                            Clear
                           </button>
                         )}
                       </div>
@@ -1738,17 +2049,22 @@ export default function App() {
 
                 {assetViewMode === 'plugins' && (
                   <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-8 opacity-5">
-                      <Package size={120} />
-                    </div>
-                    <div className="flex flex-col md:flex-row gap-6 relative z-10 items-stretch">
-                      <div className="w-full md:w-1/3 space-y-4">
-                        <h3 className="font-bold text-lg flex items-center gap-2">
-                          <Package size={20} className="text-primary-400" /> Game Plugins
-                        </h3>
-                        <p className="text-white/40 text-sm leading-relaxed">
-                          Fetch card data directly from community database APIs.
-                        </p>
+                    <div className="relative z-10 space-y-4">
+                      <div className="flex items-center justify-between cursor-pointer group" onClick={() => setPluginBoxCollapsed(!pluginBoxCollapsed)}>
+                        <div className="flex items-center gap-4">
+                          <h3 className="font-bold text-lg flex items-center gap-2">
+                            <Package size={20} className="text-primary-400" /> Game Plugins
+                          </h3>
+                        </div>
+                        <ChevronDown size={20} className={cn("text-white/40 group-hover:text-white transition-all duration-300", pluginBoxCollapsed && "rotate-180")} />
+                      </div>
+                      
+                      {!pluginBoxCollapsed && (
+                        <div className="flex flex-col md:flex-row gap-6 items-stretch border-t border-white/5 pt-4">
+                          <div className="w-full md:w-1/3 space-y-4">
+                            <p className="text-white/40 text-sm leading-relaxed">
+                              Fetch card data directly from community database APIs.
+                            </p>
 
                         <div className="space-y-4 pt-2">
                           <div>
@@ -1762,7 +2078,7 @@ export default function App() {
                                  }}
                                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
                               >
-                                 {PLUGINS.map(p => <option key={p.id} value={p.id} className="bg-[#1a1a20]">{p.name}</option>)}
+                                 {PLUGINS.map((p, i) => <option key={`${p.id}-${i}`} value={p.id} className="bg-[#1a1a20]">{p.name}</option>)}
                               </select>
                               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
                             </div>
@@ -1782,7 +2098,7 @@ export default function App() {
                               <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Options</label>
                               <div className="space-y-2">
                                 {pluginState.selectedPlugin.options.map((opt, i) => (
-                                   <div key={i}>
+                                   <div key={`${opt.flag}-${i}`}>
                                      {opt.type === 'toggle' ? (
                                        <ToggleItem 
                                          label={opt.label} 
@@ -1802,7 +2118,7 @@ export default function App() {
                                            }))}
                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 appearance-none focus:outline-none focus:border-primary-500"
                                          >
-                                           {opt.choices?.map(c => <option key={c} value={c} className="bg-[#1a1a20]">{c}</option>)}
+                                           {opt.choices?.map((c, idx) => <option key={`${c}-${idx}`} value={c} className="bg-[#1a1a20]">{c}</option>)}
                                          </select>
                                          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
                                        </div>
@@ -1900,71 +2216,82 @@ export default function App() {
                             <Download size={20} />
                             Sync Artwork
                           </button>
-                      </div>
-                    </div>
+                       </div>
+                     </div>
+                    )}
                   </div>
+                 </div>
                 )}
 
                 <div className="space-y-16">
                   {/* Back Patterns Section */}
                   {(assetFilter === 'all' || assetFilter === 'back') && (
                     <section className="space-y-6">
-                      <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-amber-500/20 rounded-lg text-amber-500 shadow-inner">
-                            <ImageIcon size={18} />
-                          </div>
-                          <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2">
-                            Back Patterns 
-                            <span className="text-white/20 font-normal">
-                              ({(assetViewMode === 'project' ? status?.assets?.backs.length : status?.library?.backs.length) || 0})
-                            </span>
-                          </h3>
-                        </div>
-                      </div>
-                      
                       <DropZone 
                         label="Drag and drop area for backs"
                         isLibrary={assetViewMode === 'library'}
                         disabled={assetViewMode === 'plugins'}
-                        onDrop={(files, isLibrary) => {
+                        onDrop={async (files, isLibrary) => {
                           const filesToUpload = isLibrary ? Array.from(files) : [files[0]];
                           addLog(`[Uploader] Dropped ${filesToUpload.length} back patterns. Starting upload...`);
-                          filesToUpload.forEach(file => handleUpload(file, 'back', isLibrary));
+                          for (const file of filesToUpload) {
+                            await handleUpload(file, 'back', isLibrary);
+                          }
+                          await fetchStatus();
                         }}
                       >
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px]">
-                          {assetViewMode !== 'plugins' && (
-                            <TemplateCard 
-                              type="back" 
-                              multiple={assetViewMode === 'library'}
-                              onUpload={async (files) => {
-                                for (let i = 0; i < files.length; i++) {
-                                  setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
-                                  await handleUpload(files[i], 'back', assetViewMode === 'library');
-                                }
-                                setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
-                                setTimeout(() => setTaskProgress(null), 1500);
-                              }} 
-                            />
-                          )}
-                          {getAllAssets('back')
-                            .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                            .map((img: string, i: number) => (
-                              <AssetItem 
-                                key={`b-${i}`} 
-                                name={img} 
-                                type="back" 
-                                allAssets={getCurrentAssets()} 
-                                selected={selectedAssets.has(`back:${img}`)}
-                                onSelect={(e) => handleAssetSelect(`back:${img}`, e)}
-                                onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'back' })}
-                                onEnlarge={(src) => setEnlargedImage(src)}
-                                uploadedImages={uploadedImages}
-                                assetViewMode={assetViewMode}
-                              />
-                            ))}
+                        <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
+                          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({...s, backs: !s.backs}))}>
+                            <div className="p-2 bg-amber-500/20 rounded-lg text-amber-500 shadow-inner">
+                              <ImageIcon size={18} />
+                            </div>
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
+                              Back Patterns 
+                              <span className="text-white/20 font-normal">
+                                ({(assetViewMode === 'project' ? status?.assets?.backs.length : status?.library?.backs.length) || 0})
+                              </span>
+                            </h3>
+                          </div>
+                          <button onClick={() => setCollapsedSections(s => ({...s, backs: !s.backs}))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                              <ChevronDown size={18} className={cn("transition-transform", collapsedSections.backs && "-rotate-90")} />
+                          </button>
                         </div>
+                        
+                        {!collapsedSections.backs && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6">
+                            {assetViewMode !== 'plugins' && (
+                              <TemplateCard 
+                                type="back" 
+                                multiple={assetViewMode === 'library'}
+                                onUpload={async (files) => {
+                                  for (let i = 0; i < files.length; i++) {
+                                    setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                    await handleUpload(files[i], 'back', assetViewMode === 'library');
+                                  }
+                                  setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                  setTimeout(() => setTaskProgress(null), 1500);
+                                }} 
+                              />
+                            )}
+                            {getAllAssets('back')
+                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((img: string, i: number) => (
+                                <AssetItem 
+                                  key={`b-${img}-${i}`} 
+                                  name={img} 
+                                  type="back" 
+                                  allAssets={getCurrentAssets()} 
+                                  selected={selectedAssets.has(`back:${img}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'back' })}
+                                  onSelect={(e) => handleAssetSelect(`back:${img}`, e)}
+                                  onEnlarge={(src) => setEnlargedImage(src)}
+                                  uploadedImages={uploadedImages}
+                                  assetViewMode={assetViewMode}
+                                  cardDimming={cardDimming}
+                                />
+                              ))}
+                          </div>
+                        )}
                       </DropZone>
                     </section>
                   )}
@@ -1972,63 +2299,72 @@ export default function App() {
                   {/* Front Faces Section */}
                   {(assetFilter === 'all' || assetFilter === 'front') && (
                     <section className="space-y-6">
-                      <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-primary-600/20 rounded-lg text-primary-400 shadow-inner">
-                            <Eye size={18} />
-                          </div>
-                          <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2">
-                            Front Faces 
-                            <span className="text-white/20 font-normal">
-                              {(assetViewMode === 'project' ? status?.assets?.fronts.length : status?.library?.fronts.length) || 0}
-                            </span>
-                          </h3>
-                        </div>
-                      </div>
-
                       <DropZone 
                         label="Drag and drop area for fronts"
                         isLibrary={assetViewMode === 'library'}
                         disabled={assetViewMode === 'plugins'}
-                        onDrop={(files, isLibrary) => {
+                        onDrop={async (files, isLibrary) => {
                           addLog(`[Uploader] Dropped ${files.length} front faces. Starting upload...`);
-                          Array.from(files).forEach(file => handleUpload(file, 'front', isLibrary));
+                          for (const file of Array.from(files)) {
+                            await handleUpload(file, 'front', isLibrary);
+                          }
+                          await fetchStatus();
                         }}
                       >
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px]">
-                          {assetViewMode !== 'plugins' && (
-                            <TemplateCard 
-                              type="front" 
-                              multiple={true}
-                              onUpload={async (files) => {
-                                for (let i = 0; i < files.length; i++) {
-                                  setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
-                                  await handleUpload(files[i], 'front', assetViewMode === 'library');
-                                }
-                                setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
-                                setTimeout(() => setTaskProgress(null), 1500);
-                              }} 
-                            />
-                          )}
-                          {getAllAssets('front')
-                            .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                            .map((img: string, i: number) => (
-                              <AssetItem 
-                                key={`f-${i}`} 
-                                name={img} 
-                                type="front" 
-                                allAssets={getCurrentAssets()}
-                                selected={selectedAssets.has(`front:${img}`)}
-                                onSelect={(e) => handleAssetSelect(`front:${img}`, e)}
-                                onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'front' })}
-                                onEnlarge={(src) => setEnlargedImage(src)}
-                                isFlipped={flippedAssets.has(`front:${img}`)}
-                                onToggleFlip={(e) => handleToggleFlip(`front:${img}`, e)}
-                                uploadedImages={uploadedImages}
-                                assetViewMode={assetViewMode}
-                              />
-                            ))}
+                        <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
+                          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({...s, fronts: !s.fronts}))}>
+                            <div className="p-2 bg-primary-600/20 rounded-lg text-primary-400 shadow-inner">
+                              <Eye size={18} />
+                            </div>
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
+                              Front Faces 
+                              <span className="text-white/20 font-normal">
+                                {(assetViewMode === 'project' ? status?.assets?.fronts.length : status?.library?.fronts.length) || 0}
+                              </span>
+                            </h3>
+                          </div>
+                          <button onClick={() => setCollapsedSections(s => ({...s, fronts: !s.fronts}))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                              <ChevronDown size={18} className={cn("transition-transform", collapsedSections.fronts && "-rotate-90")} />
+                          </button>
                         </div>
+
+                        {!collapsedSections.fronts && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6">
+                            {assetViewMode !== 'plugins' && (
+                              <TemplateCard 
+                                type="front" 
+                                multiple={true}
+                                onUpload={async (files) => {
+                                  for (let i = 0; i < files.length; i++) {
+                                    setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                    await handleUpload(files[i], 'front', assetViewMode === 'library');
+                                  }
+                                  setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                  setTimeout(() => setTaskProgress(null), 1500);
+                                }} 
+                              />
+                            )}
+                            {getAllAssets('front')
+                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((img: string, i: number) => (
+                                <AssetItem 
+                                  key={`f-${img}-${i}`} 
+                                  name={img} 
+                                  type="front" 
+                                  allAssets={getCurrentAssets()}
+                                  selected={selectedAssets.has(`front:${img}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'front' })}
+                                  onSelect={(e) => handleAssetSelect(`front:${img}`, e)}
+                                  onEnlarge={(src) => setEnlargedImage(src)}
+                                  isFlipped={flippedAssets.has(`front:${img}`)}
+                                  onToggleFlip={(e) => handleToggleFlip(`front:${img}`, e)}
+                                  uploadedImages={uploadedImages}
+                                  assetViewMode={assetViewMode}
+                                  cardDimming={cardDimming}
+                                />
+                              ))}
+                          </div>
+                        )}
                       </DropZone>
                     </section>
                   )}
@@ -2036,63 +2372,72 @@ export default function App() {
                   {/* Double-Sided Section */}
                   {(assetFilter === 'all' || assetFilter === 'double_sided') && (
                     <section className="space-y-6">
-                      <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400 shadow-inner">
-                            <Book size={18} />
-                          </div>
-                          <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2">
-                            Double-Sided 
-                            <span className="text-white/20 font-normal">
-                              {(assetViewMode === 'project' ? status?.assets?.double_sided?.length : status?.library?.double_sided?.length) || 0}
-                            </span>
-                          </h3>
-                        </div>
-                      </div>
-
                       <DropZone 
                         label="Drag and drop area for double-sided"
                         isLibrary={assetViewMode === 'library'}
                         disabled={assetViewMode === 'plugins'}
-                        onDrop={(files, isLibrary) => {
+                        onDrop={async (files, isLibrary) => {
                           addLog(`[Uploader] Dropped ${files.length} double-sided faces. Starting upload...`);
-                          Array.from(files).forEach(file => handleUpload(file, 'double_sided', isLibrary));
+                          for (const file of Array.from(files)) {
+                            await handleUpload(file, 'double_sided', isLibrary);
+                          }
+                          await fetchStatus();
                         }}
                       >
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px]">
-                          {assetViewMode !== 'plugins' && (
-                            <TemplateCard 
-                              type="double_sided" 
-                              multiple={true}
-                              onUpload={async (files) => {
-                                for (let i = 0; i < files.length; i++) {
-                                  setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
-                                  await handleUpload(files[i], 'double_sided', assetViewMode === 'library');
-                                }
-                                setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
-                                setTimeout(() => setTaskProgress(null), 1500);
-                              }} 
-                            />
-                          )}
-                          {getAllAssets('double_sided')
-                            .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                            .map((img: string, i: number) => (
-                              <AssetItem 
-                                key={`d-${i}`} 
-                                name={img} 
-                                type="double_sided" 
-                                allAssets={getCurrentAssets()}
-                                selected={selectedAssets.has(`double_sided:${img}`)}
-                                onSelect={(e) => handleAssetSelect(`double_sided:${img}`, e)}
-                                onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'double_sided' })}
-                                onEnlarge={(src) => setEnlargedImage(src)}
-                                isFlipped={flippedAssets.has(`double_sided:${img}`)}
-                                onToggleFlip={(e) => handleToggleFlip(`double_sided:${img}`, e)}
-                                uploadedImages={uploadedImages}
-                                assetViewMode={assetViewMode}
-                              />
-                            ))}
+                        <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
+                          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({...s, doubleSided: !s.doubleSided}))}>
+                            <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400 shadow-inner">
+                              <Book size={18} />
+                            </div>
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
+                              Double-Sided 
+                              <span className="text-white/20 font-normal">
+                                {(assetViewMode === 'project' ? status?.assets?.double_sided?.length : status?.library?.double_sided?.length) || 0}
+                              </span>
+                            </h3>
+                          </div>
+                          <button onClick={() => setCollapsedSections(s => ({...s, doubleSided: !s.doubleSided}))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                              <ChevronDown size={18} className={cn("transition-transform", collapsedSections.doubleSided && "-rotate-90")} />
+                          </button>
                         </div>
+
+                        {!collapsedSections.doubleSided && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6">
+                            {assetViewMode !== 'plugins' && (
+                              <TemplateCard 
+                                type="double_sided" 
+                                multiple={true}
+                                onUpload={async (files) => {
+                                  for (let i = 0; i < files.length; i++) {
+                                    setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                    await handleUpload(files[i], 'double_sided', assetViewMode === 'library');
+                                  }
+                                  setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                  setTimeout(() => setTaskProgress(null), 1500);
+                                }} 
+                              />
+                            )}
+                            {getAllAssets('double_sided')
+                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((img: string, i: number) => (
+                                <AssetItem 
+                                  key={`d-${img}-${i}`} 
+                                  name={img} 
+                                  type="double_sided" 
+                                  allAssets={getCurrentAssets()}
+                                  selected={selectedAssets.has(`double_sided:${img}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'double_sided' })}
+                                  onSelect={(e) => handleAssetSelect(`double_sided:${img}`, e)}
+                                  onEnlarge={(src) => setEnlargedImage(src)}
+                                  isFlipped={flippedAssets.has(`double_sided:${img}`)}
+                                  onToggleFlip={(e) => handleToggleFlip(`double_sided:${img}`, e)}
+                                  uploadedImages={uploadedImages}
+                                  assetViewMode={assetViewMode}
+                                  cardDimming={cardDimming}
+                                />
+                              ))}
+                          </div>
+                        )}
                       </DropZone>
                     </section>
                   )}
@@ -2129,8 +2474,8 @@ export default function App() {
               <div className="p-6 space-y-6">
                 <div className="bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs text-white/60 max-h-32 overflow-y-auto">
                   <ul className="space-y-1">
-                    {importConflictData.collisions.map(c => (
-                      <li key={c} className="truncate">• {c.split(':')[1]}</li>
+                    {importConflictData.collisions.map((c, i) => (
+                      <li key={`${c}-${i}`} className="truncate">• {c.split(':')[1]}</li>
                     ))}
                   </ul>
                 </div>
@@ -2195,8 +2540,8 @@ export default function App() {
               <div className="p-6 space-y-6">
                 <div className="bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs text-white/60 max-h-32 overflow-y-auto">
                   <ul className="space-y-1">
-                    {fetchConflictData.collisions.map(c => (
-                      <li key={c} className="truncate">• {c.split(':')[1]}</li>
+                    {fetchConflictData.collisions.map((c, i) => (
+                      <li key={`${c}-${i}`} className="truncate">• {c.split(':')[1]}</li>
                     ))}
                   </ul>
                 </div>
@@ -2434,13 +2779,13 @@ export default function App() {
 
               <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                 {Object.keys(pluginConfigs).length > 0 ? (
-                  Object.keys(pluginConfigs).map((name) => (
+                  Object.keys(pluginConfigs).map((name, idx) => (
                     <button
-                      key={name}
+                      key={`${name}-${idx}`}
                       onClick={() => loadPluginConfig(name)}
                       className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl text-left transition-all group"
                     >
-                      <span className="font-semibold text-white/80 group-hover:text-white">{name}</span>
+                      <span className="font-semibold text-white/80 group-hover:text-white break-all pr-4">{name}</span>
                       <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 translate-x-0 group-hover:translate-x-1 transition-all" />
                     </button>
                   ))
@@ -2516,12 +2861,24 @@ export default function App() {
               </div>
 
               <div className="space-y-4">
+                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-sm font-medium text-white block">Completion Sound</span>
+                    <span className="text-xs text-white/40 block">Play a sound when PDF generation is done.</span>
+                  </div>
+                  <ToggleItem 
+                    label=""
+                    checked={playDingSound} 
+                    onChange={setPlayDingSound} 
+                  />
+                </div>
+
                 <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
                   <span className="text-sm font-medium text-white block">Primary Color</span>
                   <div className="flex items-center gap-3">
-                    {(['indigo', 'emerald', 'rose', 'amber'] as Theme[]).map((t) => (
+                    {(['indigo', 'emerald', 'rose', 'amber'] as Theme[]).map((t, i) => (
                       <button
-                        key={t}
+                        key={`${t}-${i}`}
                         onClick={() => {
                           setCurrentTheme(t);
                           setTheme(t);
@@ -2539,15 +2896,80 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between opacity-50 cursor-not-allowed">
+                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between opacity-50 cursor-not-allowed hidden">
                   <span className="text-sm font-medium text-white">Background</span>
                   <span className="text-xs font-mono text-white/40">DARK/BLUR</span>
+                </div>
+
+                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                  <span className="text-sm font-medium text-white block">Appearance</span>
+                  <div className="flex bg-black/40 rounded-lg p-1.5 gap-1.5 focus-within:ring-2 ring-primary-500/50">
+                    <button
+                      onClick={() => setColorMode('dark')}
+                      className={cn(
+                        "flex-1 capitalize text-xs font-semibold py-2 rounded-md transition-all outline-none",
+                        colorMode === 'dark' ? "bg-primary-600 text-white shadow-md shadow-primary-600/30" : "text-white/40 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      Dark Mode
+                    </button>
+                    <button
+                      onClick={() => setColorMode('light')}
+                      className={cn(
+                        "flex-1 capitalize text-xs font-semibold py-2 rounded-md transition-all outline-none",
+                        colorMode === 'light' ? "bg-primary-600 text-white shadow-md shadow-primary-600/30" : "text-white/40 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      Light Mode
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                  <span className="text-sm font-medium text-white block">Card Dimming</span>
+                  <div className="flex bg-black/40 rounded-lg p-1.5 gap-1.5 focus-within:ring-2 ring-primary-500/50">
+                    {(['none', 'tint', 'dark'] as const).map((option, i) => (
+                      <button
+                        key={`${option}-${i}`}
+                        onClick={() => setCardDimming(option)}
+                        className={cn(
+                          "flex-1 capitalize text-xs font-semibold py-2 rounded-md transition-all outline-none",
+                          cardDimming === option
+                            ? "bg-primary-600 text-white shadow-md shadow-primary-600/30"
+                            : "text-white/40 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-white/10">
+                  <a
+                    href="https://github.com/Alan-Cha/silhouette"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
+                  >
+                    <span className="text-sm text-white/60 font-medium">GitHub Repository</span>
+                    <ExternalLink size={16} className="text-white/40" />
+                  </a>
+                  <a
+                    href="https://github.com/Alan-Cha/silhouette/issues"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
+                  >
+                    <span className="text-sm text-white/60 font-medium">Feedback & Support</span>
+                    <MessageSquare size={16} className="text-white/40" />
+                  </a>
                 </div>
               </div>
 
               <button 
                 onClick={() => setShowThemeSettings(false)}
-                className="w-full py-4 text-white hover:bg-white/5 transition-all font-bold rounded-xl"
+                className="w-full py-4 text-white bg-white/5 hover:bg-white/10 transition-all font-bold rounded-2xl"
               >
                 Done
               </button>
@@ -2572,9 +2994,9 @@ export default function App() {
 
               <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                 {(status?.savedProjects && status.savedProjects.length > 0) ? (
-                  status.savedProjects.map(name => (
+                  status.savedProjects.map((name, idx) => (
                     <button
-                      key={name}
+                      key={`${name}-${idx}`}
                       onClick={() => loadProject(name)}
                       className="w-full text-left p-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all flex items-center justify-between group"
                     >
@@ -2611,7 +3033,7 @@ export default function App() {
               left: contextMenu.x,
               transform: 'translate(-50%, -100%)' // Center horizontally and place above cursor
             }}
-            className="fixed z-[100] pointer-events-auto flex items-center gap-1 p-1 bg-[#1a1b23]/90 backdrop-blur-xl border border-white/10 rounded-full shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)]"
+            className="fixed z-[100] pointer-events-auto flex flex-col items-stretch gap-0.5 p-1.5 bg-[#1a1b23]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)] min-w-[180px]"
           >
             {(!contextMenu.type || contextMenu.type !== 'back') && (
               <button 
@@ -2622,11 +3044,15 @@ export default function App() {
                   for (let i = 0; i < targets.length; i++) {
                     setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
                     try {
-                      await fetch('/api/duplicate', {
+                      const res = await fetch('/api/duplicate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ identity: targets[i], assetViewMode })
                       });
+                      const data = await res.json();
+                      if (data.newName) {
+                        addLog(`[Action: Duplicate] ${targets[i]} -> ${data.newName} (Success)`);
+                      }
                     } catch(err) {
                       addLog(`[Error] Failed to duplicate: ${err}`);
                     }
@@ -2636,16 +3062,16 @@ export default function App() {
                   setTimeout(() => setTaskProgress(null), 1500);
                   setContextMenu(null);
                 }}
-                className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
               >
-                <Copy size={16} className="text-white/40 group-hover:text-white" />
-                <span className="font-bold text-[10px] uppercase tracking-widest">Duplicate</span>
+                <Copy size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                <span className="font-bold text-xs">Duplicate</span>
               </button>
             )}
 
             {assetViewMode === 'library' && (
               <>
-                <div className="w-[1px] h-4 bg-white/10" />
+                <div className="h-[1px] w-full bg-white/10 my-1" />
                 <button 
                   onClick={async (e) => {
                     e.stopPropagation();
@@ -2653,17 +3079,17 @@ export default function App() {
                     const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
                     await performMoveOrCopy(targets, 'project', 'library');
                   }}
-                  className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
                 >
-                  <PlusCircle size={16} className="text-white/40 group-hover:text-white" />
-                  <span className="font-bold text-[10px] uppercase tracking-widest">Add to Project</span>
+                  <PlusCircle size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                  <span className="font-bold text-xs">Add to Project</span>
                 </button>
               </>
             )}
 
             {assetViewMode === 'project' && (
               <>
-                <div className="w-[1px] h-4 bg-white/10" />
+                <div className="h-[1px] w-full bg-white/10 my-1" />
                 <button 
                   onClick={async (e) => {
                     e.stopPropagation();
@@ -2671,17 +3097,17 @@ export default function App() {
                     const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
                     await performMoveOrCopy(targets, 'library', 'project');
                   }}
-                  className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
                 >
-                  <ImageIcon size={16} className="text-white/40 group-hover:text-white" />
-                  <span className="font-bold text-[10px] uppercase tracking-widest">Add to Library</span>
+                  <ImageIcon size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                  <span className="font-bold text-xs">Add to Library</span>
                 </button>
               </>
             )}
 
             {assetViewMode === 'plugins' && (
               <>
-                <div className="w-[1px] h-4 bg-white/10" />
+                <div className="h-[1px] w-full bg-white/10 my-1" />
                 <button 
                   onClick={async (e) => {
                     e.stopPropagation();
@@ -2689,13 +3115,13 @@ export default function App() {
                     const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
                     await performMoveOrCopy(targets, 'project', 'plugins');
                   }}
-                  className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
                 >
-                  <PlusCircle size={16} className="text-white/40 group-hover:text-white" />
-                  <span className="font-bold text-[10px] uppercase tracking-widest">Add to Project</span>
+                  <PlusCircle size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                  <span className="font-bold text-xs">Add to Project</span>
                 </button>
 
-                <div className="w-[1px] h-4 bg-white/10" />
+                <div className="h-[1px] w-full bg-white/10 my-1" />
                 <button 
                   onClick={async (e) => {
                     e.stopPropagation();
@@ -2703,16 +3129,16 @@ export default function App() {
                     const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
                     await performMoveOrCopy(targets, 'library', 'plugins');
                   }}
-                  className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
                 >
-                  <ImageIcon size={16} className="text-white/40 group-hover:text-white" />
-                  <span className="font-bold text-[10px] uppercase tracking-widest">Add to Library</span>
+                  <ImageIcon size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                  <span className="font-bold text-xs">Add to Library</span>
                 </button>
               </>
             )}
 
             {true && (
-              <div className="w-[1px] h-4 bg-white/10" />
+              <div className="h-[1px] w-full bg-white/10 my-1" />
             )}
 
             <button 
@@ -2727,15 +3153,15 @@ export default function App() {
                 setContextMenu(null);
                 addLog(`[System] Selected all front ${assetViewMode} assets.`);
               }}
-              className="h-9 pl-4 pr-5 hover:bg-white/5 text-white rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+              className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
             >
-              <CheckSquare size={16} className="text-white/40 group-hover:text-white" />
-              <span className="font-bold text-[10px] uppercase tracking-widest">Select All</span>
+              <CheckSquare size={16} className="text-white/40 group-hover:text-white shrink-0" />
+              <span className="font-bold text-xs">Select All</span>
             </button>
 
             {true && (
               <>
-                <div className="w-[1px] h-4 bg-white/10" />
+                <div className="h-[1px] w-full bg-white/10 my-1" />
 
                 <button 
                   onClick={async (e) => {
@@ -2746,11 +3172,15 @@ export default function App() {
                     for (let i = 0; i < targets.length; i++) {
                       setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
                       try {
-                        await fetch('/api/delete', {
+                        const res = await fetch('/api/delete', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ identity: [targets[i]], assetViewMode })
                         });
+                        const data = await res.json();
+                        if (data.results) {
+                          data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
+                        }
                       } catch(err) {
                         addLog(`[Error] Failed to delete: ${err}`);
                       }
@@ -2762,10 +3192,10 @@ export default function App() {
                     setContextMenu(null);
                     setSelectedAssets(new Set());
                   }}
-                  className="h-9 pl-4 pr-5 hover:bg-rose-500/10 text-rose-400 rounded-full flex items-center gap-2 transition-all active:scale-95 group shrink-0"
+                  className="w-full h-9 px-3 hover:bg-rose-500/10 text-rose-400 rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
                 >
-                  <Trash2 size={16} className="text-rose-400/40 group-hover:text-rose-400" />
-                  <span className="font-bold text-[10px] uppercase tracking-widest">Delete</span>
+                  <Trash2 size={16} className="text-rose-400/40 group-hover:text-rose-400 shrink-0" />
+                  <span className="font-bold text-xs">Delete</span>
                 </button>
               </>
             )}
@@ -2952,6 +3382,46 @@ function DocsCmd({ name, desc }: { name: string, desc: string }) {
   );
 }
 
+const ErrorBanner: React.FC<{ logs: string[] }> = ({ logs }) => {
+  const [visible, setVisible] = useState(false);
+  const lastError = [...logs].reverse().find(l => l.startsWith('[Error]'));
+  
+  useEffect(() => {
+    if (lastError) {
+      setVisible(true);
+      const timer = setTimeout(() => setVisible(false), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [lastError]);
+
+  if (!lastError || !visible) return null;
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 20 }}
+      className="fixed bottom-8 right-8 z-[100] max-w-sm w-full bg-[#1a1a20]/90 backdrop-blur-xl border border-rose-500/30 rounded-2xl p-5 shadow-2xl flex items-start gap-4 ring-1 ring-white/5"
+    >
+      <div className="p-2.5 bg-rose-500/20 rounded-xl shrink-0 border border-rose-500/40">
+        <AlertCircle size={20} className="text-rose-400" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <h4 className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1.5 flex items-center gap-2">
+          System Error
+        </h4>
+        <p className="text-[11px] text-white/70 font-mono leading-relaxed break-words">{lastError.replace('[Error] ', '')}</p>
+      </div>
+      <button 
+        onClick={() => setVisible(false)}
+        className="text-white/20 hover:text-white transition-colors"
+      >
+        <X size={14} />
+      </button>
+    </motion.div>
+  );
+};
+
 function SelectGroup({ label, value, options, onChange }: { label: string, value: string, options: string[], onChange: (v: string) => void }) {
   return (
     <div className="space-y-1.5 flex-1">
@@ -2962,7 +3432,7 @@ function SelectGroup({ label, value, options, onChange }: { label: string, value
           onChange={(e) => onChange(e.target.value)}
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/10"
         >
-          {options.map(opt => <option key={opt} value={opt} className="bg-[#1a1a20]">{opt}</option>)}
+          {options.map((opt, i) => <option key={`${opt}-${i}`} value={opt} className="bg-[#1a1a20]">{opt}</option>)}
         </select>
         <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-primary-400 transition-colors" />
       </div>
@@ -3003,9 +3473,11 @@ interface AssetItemProps {
   uploadedImages?: Record<string, string>;
   addLog?: (log: string) => void;
   assetViewMode: 'library' | 'project' | 'plugins';
+  cardDimming?: 'none' | 'tint' | 'dark';
 }
 
-const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode }) => {
+const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint' }) => {
+
   
   const getBaseUrl = () => {
     if (assetViewMode === 'library') return '/library';
@@ -3120,10 +3592,12 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                  alt={name}
                  loading="lazy"
                   className={cn(
-                    "w-full h-full object-cover transition-opacity",
-                    assetViewMode === 'library' 
+                    "w-full h-full object-cover transition-opacity duration-300",
+                    cardDimming === 'dark' 
                       ? "opacity-50 group-hover:opacity-100" 
-                      : "opacity-60 group-hover:opacity-100"
+                      : cardDimming === 'tint'
+                        ? "opacity-75 group-hover:opacity-100"
+                        : "opacity-100"
                   )}
                />
                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />

@@ -3,6 +3,10 @@ import path from "path";
 import multer from "multer";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const archiver = require("archiver");
+import { execSync, exec } from "child_process";
 
 async function startServer() {
   const app = express();
@@ -12,17 +16,61 @@ async function startServer() {
 
   const scmPath = path.join(process.cwd(), 'src', 'silhouette-card-maker-main');
   
-  try {
-    const { execSync } = require("child_process");
-    try {
-      execSync("python3 -m pip --version", { stdio: 'ignore' });
-    } catch {
-      console.log("Installing python3-pip...");
-      execSync("apt-get update && apt-get install -y python3-pip", { stdio: 'inherit' });
+  // Ensure all required directories exist
+  const requiredPaths = [
+    path.join(scmPath, 'game', 'front'),
+    path.join(scmPath, 'game', 'back'),
+    path.join(scmPath, 'game', 'double_sided'),
+    path.join(scmPath, 'game', 'output'),
+    path.join(scmPath, 'game', 'decklist'),
+    path.join(process.cwd(), 'src', 'Library', 'front'),
+    path.join(process.cwd(), 'src', 'Library', 'back'),
+    path.join(process.cwd(), 'src', 'Library', 'double_sided'),
+    path.join(process.cwd(), 'src', 'Library', 'output'),
+    path.join(process.cwd(), 'src', 'Library', 'Plugins', 'front'),
+    path.join(process.cwd(), 'src', 'Library', 'Plugins', 'back'),
+    path.join(process.cwd(), 'src', 'Library', 'Plugins', 'double_sided'),
+    path.join(process.cwd(), 'src', 'Library', 'Plugins', 'decklist'),
+    path.join(process.cwd(), 'src', 'projects')
+  ];
+
+  requiredPaths.forEach(p => {
+    if (!fs.existsSync(p)) {
+      fs.mkdirSync(p, { recursive: true });
+      console.log(`[System] Created missing directory: ${p}`);
     }
-    execSync("python3 -m pip install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests --break-system-packages", { stdio: 'inherit' });
+    // Also create a README.md file in the directory to ensure it is tracked by SC
+    const readmeFile = path.join(p, 'README.md');
+    if (!fs.existsSync(readmeFile)) {
+       try {
+         fs.writeFileSync(readmeFile, '# Placeholder');
+       } catch (e) {
+         console.warn(`Could not write README to ${p}`);
+       }
+    }
+  });
+  
+  try {
+    
+    // Check if click is installed to skip apt-get and pip if already set up
+    let skipInstall = false;
+    try {
+      execSync("python3 -c 'import click'", { stdio: 'ignore' });
+      skipInstall = true;
+    } catch(e) {}
+
+    if (!skipInstall) {
+      console.log("Python dependencies not found. Installing in background...");
+      exec("export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y python3-pip && python3 -m pip install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests natsort pydantic pypdfium2 split-image --break-system-packages", (err, stdout, stderr) => {
+        if (err) {
+           console.error("Background python installation failed.", err.message);
+        } else {
+           console.log("Background python installation successful.");
+        }
+      });
+    }
   } catch (e: any) {
-    console.error("Warning: Failed to install python dependencies.", e.message);
+    console.error("Warning: Failed to setup python installation routine.", e.message);
   }
   
   // Simulation of Python Tool State
@@ -62,10 +110,8 @@ async function startServer() {
     const type = req.body.type === 'back' ? 'back' : (req.body.type === 'double_sided' ? 'double_sided' : 'front');
     const replaceBack = req.body.replaceBack === 'true';
     
-    // Capitalize correctly for Library
-    const libraryType = type === 'back' ? 'Back' : type;
     const targetBase = isLibrary ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game');
-    const targetDir = path.join(targetBase, isLibrary ? libraryType : type);
+    const targetDir = path.join(targetBase, type);
     
     fs.mkdirSync(targetDir, { recursive: true });
     
@@ -82,7 +128,7 @@ async function startServer() {
     fs.copyFileSync(req.file.path, targetPath);
     try { fs.unlinkSync(req.file.path); } catch (e) {}
 
-    res.json({ success: true, message: `Uploaded ${req.file.originalname}`, file: req.file.originalname });
+    res.json({ success: true, message: `Uploaded ${req.file.originalname}`, file: req.file.originalname, targetPath });
   });
 
   app.post("/api/project/save-decklist", (req, res) => {
@@ -100,9 +146,10 @@ async function startServer() {
     const libraryDecklistDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'decklist');
     fs.mkdirSync(libraryDecklistDir, { recursive: true });
     
-    // Save as JSON metadata to store options and decklist text
-    const payload = { pluginId, format, options, decklist };
-    fs.writeFileSync(path.join(libraryDecklistDir, `${pluginId}_${saveName}.json`), JSON.stringify(payload, null, 2));
+    // Save as JSON metadata to store options and decklist text inside a .txt file header
+    const payload = { pluginId, format, options };
+    const content = `// METADATA: ${JSON.stringify(payload)}\n${decklist}`;
+    fs.writeFileSync(path.join(libraryDecklistDir, `${pluginId}_${saveName}.txt`), content);
     res.json({ success: true, message: `Decklist saved for ${pluginId}.` });
   });
 
@@ -110,11 +157,23 @@ async function startServer() {
     const libraryDecklistDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'decklist');
     let configs: Record<string, any> = {};
     if (fs.existsSync(libraryDecklistDir)) {
-      const files = fs.readdirSync(libraryDecklistDir).filter(f => f.endsWith('.json'));
+      const files = fs.readdirSync(libraryDecklistDir).filter(f => f.endsWith('.json') || f.endsWith('.txt'));
       files.forEach(f => {
          try {
-            const data = JSON.parse(fs.readFileSync(path.join(libraryDecklistDir, f), 'utf-8'));
-            const name = f.replace('.json', '').split('_').slice(1).join('_'); // assuming pluginId_saveName
+            const rawContent = fs.readFileSync(path.join(libraryDecklistDir, f), 'utf-8');
+            let data: any = {};
+            if (f.endsWith('.json')) {
+               data = JSON.parse(rawContent);
+            } else if (f.endsWith('.txt')) {
+               const lines = rawContent.split('\n');
+               if (lines[0].startsWith('// METADATA: ')) {
+                  data = JSON.parse(lines[0].replace('// METADATA: ', ''));
+                  data.decklist = lines.slice(1).join('\n');
+               } else {
+                  data.decklist = rawContent;
+               }
+            }
+            const name = data.pluginId ? f.replace('.json', '').replace('.txt', '').replace(data.pluginId + '_', '') : f.replace('.json', '').replace('.txt', '').substring(f.indexOf('_') + 1);
             if (name) {
                configs[name] = data;
             }
@@ -325,6 +384,29 @@ async function startServer() {
     res.send(JSON.stringify(exportData, null, 2));
   });
 
+  app.get("/api/project/download-pdf", (req, res) => {
+    const pdfPath = path.join(scmPath, 'game', 'output', 'game.pdf');
+    if (!fs.existsSync(pdfPath)) return res.status(404).json({ error: "PDF not found" });
+    if (req.method === 'HEAD') return res.status(200).end();
+    res.download(pdfPath, 'game.pdf');
+  });
+
+  app.get("/api/project/download-zip", (req, res) => {
+    const outputDir = path.join(scmPath, 'game', 'output');
+    if (!fs.existsSync(outputDir)) return res.status(404).json({ error: "Output directory not found" });
+
+    if (req.method === 'HEAD') {
+      return res.status(200).end();
+    }
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    res.attachment('game_output.zip');
+    archive.pipe(res);
+    archive.directory(outputDir, false);
+    archive.finalize();
+  });
+
   app.post("/api/project/upload", (req, res) => {
     try {
       const { items, replaceBack } = req.body;
@@ -336,7 +418,6 @@ async function startServer() {
         mockCards.backs = [];
       }
 
-      const fs = require('fs');
       items.forEach(item => {
         const [type, name] = item.split(':');
         if (type === 'front') {
@@ -402,9 +483,9 @@ async function startServer() {
       dirs.forEach(dir => {
         if (fs.existsSync(dir)) {
           fs.readdirSync(dir).forEach(file => {
-            if (!file.startsWith('.')) {
-               try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
-            }
+              if (!file.startsWith('.') && file !== 'README.md' && file !== 'EMPTY.md') {
+                 try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
+              }
           });
         }
       });
@@ -472,6 +553,7 @@ async function startServer() {
     const isPlugins = assetViewMode === 'plugins';
     const targetBase = isPlugins ? path.join(process.cwd(), 'src', 'Library', 'Plugins') : (isLibrary ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game'));
     
+    const results: Array<{name: string, from: string}> = [];
     identities.forEach(id => {
         const [type, name] = id.split(':');
         
@@ -488,20 +570,24 @@ async function startServer() {
         
         const dir = path.join(targetBase, dirType);
         const srcPath = path.join(dir, name);
-        try { fs.unlinkSync(srcPath); } catch(e) {}
+        let success = true;
+        try { fs.unlinkSync(srcPath); console.log('Deleted:', srcPath); } catch(e) { console.error('Delete fail:', srcPath, e); success = false; }
         
-        if (isLibrary) {
-            mockLibrary.fronts = mockLibrary.fronts.filter(n => n !== name);
-            mockLibrary.backs = mockLibrary.backs.filter(n => n !== name);
-            mockLibrary.double_sided = mockLibrary.double_sided.filter(n => n !== name);
-        } else if (!isPlugins) {
-            mockCards.fronts = mockCards.fronts.filter(n => n !== name);
-            mockCards.backs = mockCards.backs.filter(n => n !== name);
-            mockCards.double_sided = mockCards.double_sided.filter(n => n !== name);
+        if (success) {
+            results.push({ name, from: srcPath });
+            if (isLibrary) {
+                mockLibrary.fronts = mockLibrary.fronts.filter(n => n !== name);
+                mockLibrary.backs = mockLibrary.backs.filter(n => n !== name);
+                mockLibrary.double_sided = mockLibrary.double_sided.filter(n => n !== name);
+            } else if (!isPlugins) {
+                mockCards.fronts = mockCards.fronts.filter(n => n !== name);
+                mockCards.backs = mockCards.backs.filter(n => n !== name);
+                mockCards.double_sided = mockCards.double_sided.filter(n => n !== name);
+            }
         }
     });
 
-    res.json({ success: true, message: `Deleted ${identities.length} items.` });
+    res.json({ success: true, message: `Deleted ${results.length} items.`, results });
   });
 
   app.post("/api/plugin/import", (req, res) => {
@@ -512,6 +598,7 @@ async function startServer() {
     const targetBase = destination === 'library' ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game');
     const sourceBase = source === 'plugins' ? path.join(process.cwd(), 'src', 'Library', 'Plugins') : (source === 'project' ? path.join(scmPath, 'game') : path.join(process.cwd(), 'src', 'Library'));
 
+    const results: Array<{name: string, from: string, to: string}> = [];
     identities.forEach(id => {
       const [type, name] = id.split(':');
       let sourceFolder = type;
@@ -540,12 +627,13 @@ async function startServer() {
             fs.mkdirSync(path.dirname(targetPath), { recursive: true });
         }
         fs.copyFileSync(sourcePath, targetPath);
+        results.push({ name, from: sourcePath, to: targetPath });
       } catch (e) {
          console.error("Error copy plugin card:", e);
       }
     });
 
-    res.json({ success: true, message: `Imported ${identities.length} cards to ${destination}.` });
+    res.json({ success: true, message: `Imported ${identities.length} cards to ${destination}.`, results });
   });
 
   app.post("/api/install", (req, res) => {
@@ -671,6 +759,128 @@ async function startServer() {
     }).catch(() => res.json(mockCards));
   });
 
+  app.post("/api/run-command-stream", (req, res) => {
+    const { command, args } = req.body;
+    
+    // Set up SSE
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    const sendEvent = (type: string, data: any) => {
+        res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    const argString = (args || []).map((arg: any) => {
+        return arg.toString().includes(' ') ? `"${arg}"` : arg;
+    }).join(" ");
+    
+    import('child_process').then(({ spawn, spawnSync }) => {
+      let pythonCmd = "python";
+      try {
+        const check = spawnSync("python3", ["--version"]);
+        if (check.status === 0) pythonCmd = "python3";
+      } catch (e) {}
+
+      if (pythonCmd === "python") {
+        try {
+          const check2 = spawnSync("python", ["--version"]);
+          if (check2.status !== 0) pythonCmd = "";
+        } catch (e) {}
+      }
+
+      if (!pythonCmd) {
+          const fullCommand = `python3 ${command} ${argString}`;
+          sendEvent('stdout', `$ ${fullCommand}`);
+          sendEvent('error', "[System Error] Python interpreter not found in the environment.");
+          res.end();
+          return;
+      }
+
+      const fullCommand = `${pythonCmd} ${command} ${argString}`;
+      sendEvent('stdout', `$ ${fullCommand}`);
+
+      if (command === 'create_pdf.py') {
+        const pdfPath = path.join(scmPath, 'game', 'output', 'game.pdf');
+        if (fs.existsSync(pdfPath)) {
+          try {
+            fs.unlinkSync(pdfPath);
+            sendEvent('stdout', "[System] Cleaned up existing PDF for fresh generation.");
+          } catch (e: any) {
+            sendEvent('stdout', `[Warning] Could not delete existing PDF: ${e.message}`);
+          }
+        }
+      }
+
+      const customEnv = Object.assign({}, process.env);
+      customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
+      if (req.body.tempDirId) {
+        customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', `Temp_Fetch_${req.body.tempDirId}`);
+        fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
+      } else if (command.startsWith('plugins/')) {
+        customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', 'Plugins');
+      }
+
+      const child = spawn(pythonCmd, ['-u', command, ...(args || [])], { cwd: scmPath, env: customEnv });
+      let hasError = false;
+      
+      const pingInterval = setInterval(() => {
+          sendEvent('ping', { time: Date.now() });
+      }, 5000);
+
+      req.on('close', () => {
+          child.kill();
+      });
+
+      child.stdout.on('data', (data) => {
+          const lines = data.toString().split('\n').filter(Boolean);
+          lines.forEach((line: string) => sendEvent('stdout', line));
+      });
+
+      child.stderr.on('data', (data) => {
+          const lines = data.toString().split('\n').filter(Boolean);
+          lines.forEach((line: string) => sendEvent('stderr', line));
+      });
+
+      child.on('close', (code) => {
+          clearInterval(pingInterval);
+          if (command === 'create_pdf.py') {
+            const srcPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+            if (code === 0 && fs.existsSync(srcPdf)) {
+              sendEvent('stdout', "[System] PDF generated successfully.");
+            } else {
+              sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+              hasError = true;
+              if (fs.existsSync(srcPdf)) {
+                try {
+                  fs.unlinkSync(srcPdf);
+                  sendEvent('stdout', "[System] Corrupted incomplete PDF was deleted.");
+                } catch (e) {}
+              }
+            }
+          }
+          sendEvent('close', { code, hasError });
+          
+          if (req.body.tempDirId) {
+             const getFiles = (dir: string) => {
+               try {
+                 return fs.readdirSync(path.join(customEnv.SCM_GAME_DIR, dir)).filter(f => !f.startsWith('.'));
+               } catch(e) { return []; }
+             };
+             const fetchedFiles = {
+               fronts: getFiles('front'),
+               backs: getFiles('back'),
+               double_sided: getFiles('double_sided')
+             };
+             sendEvent('fetched_files', fetchedFiles);
+          }
+          
+          res.end();
+      });
+    });
+  });
+
   app.post("/api/run-command", (req, res) => {
     const { command, args } = req.body;
     
@@ -704,7 +914,21 @@ async function startServer() {
       const fullCommand = `${pythonCmd} ${command} ${argString}`;
       let output = [`$ ${fullCommand}`];
 
+      // Clean up old PDF if generating PDF
+      if (command === 'create_pdf.py') {
+        const pdfPath = path.join(scmPath, 'game', 'output', 'game.pdf');
+        if (fs.existsSync(pdfPath)) {
+          try {
+            fs.unlinkSync(pdfPath);
+            output.push("[System] Cleaned up existing PDF for fresh generation.");
+          } catch (e: any) {
+            output.push(`[Warning] Could not delete existing PDF: ${e.message}`);
+          }
+        }
+      }
+
       const customEnv = Object.assign({}, process.env);
+      customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
       if (req.body.tempDirId) {
         customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', `Temp_Fetch_${req.body.tempDirId}`);
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
@@ -713,15 +937,39 @@ async function startServer() {
         customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', 'Plugins');
       }
 
-      exec(fullCommand, { cwd: scmPath, env: customEnv }, (error, stdout, stderr) => {
+      console.log(`[System] Executing: ${fullCommand} in ${scmPath}`);
+      exec(fullCommand, { cwd: scmPath, env: customEnv, timeout: 900000, maxBuffer: 1024 * 1024 * 500 }, (error, stdout, stderr) => {
         if (stdout) {
+          console.log(`[SCM STDOUT] ${stdout}`);
           output.push(...stdout.split('\n').filter(Boolean));
         }
         if (stderr) {
+          console.error(`[SCM STDERR] ${stderr}`);
           output.push(...stderr.split('\n').map(line => `[Error] ${line}`).filter(line => line !== '[Error] '));
         }
         if (error) {
+          console.error(`[SCM EXEC ERROR] ${error.message}`);
           output.push(`[System Error] ${error.message}`);
+        }
+
+        // Post-command actions (Moving PDF omitted, kept in place)
+        if (command === 'create_pdf.py') {
+          const srcPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+          
+          if (!error && fs.existsSync(srcPdf)) {
+            const successMsg = "[System] PDF generated successfully.";
+            console.log(successMsg);
+            output.push(successMsg);
+          } else {
+            console.warn(`[System] Warning: create_pdf.py finished with error or ${srcPdf} was not found.`);
+            output.push("[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+            if (fs.existsSync(srcPdf)) {
+              try {
+                fs.unlinkSync(srcPdf);
+                output.push("[System] Corrupted incomplete PDF was deleted.");
+              } catch (e) {}
+            }
+          }
         }
 
         let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
