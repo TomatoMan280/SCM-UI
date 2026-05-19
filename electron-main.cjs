@@ -47,9 +47,9 @@ function createWindow() {
   serverProcess.stdout.on('data', (data) => {
     const output = data.toString();
     console.log(`[Server] ${output}`);
-    if (output.includes('SCMUI_READY') || output.includes('Server running') || output.includes('localhost:3000')) {
+    if (output.includes('SCMUI_READY') || output.includes('Server running') || output.includes('127.0.0.1:3000')) {
        console.log('[Main] Server is ready. Loading app...');
-       mainWindow.loadURL('http://localhost:3000');
+       mainWindow.loadURL('http://127.0.0.1:3000');
     }
   });
   
@@ -67,9 +67,9 @@ function createWindow() {
 
   // Fallback if we miss the console log or it's quiet
   const timeoutId = setTimeout(() => {
-    if (mainWindow && !mainWindow.getURL().includes('localhost:3000')) {
+    if (mainWindow && !mainWindow.getURL().includes('127.0.0.1:3000')) {
       console.log('[Main] 10s timeout reached, attempting fallback load...');
-      mainWindow.loadURL('http://localhost:3000').catch(err => {
+      mainWindow.loadURL('http://127.0.0.1:3000').catch(err => {
         console.error('[Main] Failed fallback load:', err);
       });
     }

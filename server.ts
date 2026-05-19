@@ -12,10 +12,11 @@ async function startServer() {
 
   app.use(express.json());
 
-  // In Electron production, we use passed env vars for path resolution
-  const isProd = process.env.NODE_ENV === 'production' && process.env.USER_DATA_PATH;
-  const baseDataPath = isProd ? process.env.USER_DATA_PATH! : process.cwd();
-  const baseAppPath = isProd ? process.env.APP_PATH! : process.cwd();
+  const isProd = process.env.NODE_ENV === 'production';
+  const isElectron = isProd && !!process.env.USER_DATA_PATH;
+  
+  const baseDataPath = isElectron ? process.env.USER_DATA_PATH! : process.cwd();
+  const baseAppPath = isElectron ? process.env.APP_PATH! : process.cwd();
 
   const scmPath = path.join(baseDataPath, 'src', 'silhouette-card-maker-main');
   const projectsDir = path.join(baseDataPath, 'src', 'projects');
@@ -53,9 +54,9 @@ async function startServer() {
     }
   });
 
-  // If in production, we should check if our python scripts exist in the writable location
+  // If in Electron production, we should check if our python scripts exist in the writable location
   // and if not, copy them from the app bundle (ASAR)
-  if (isProd) {
+  if (isElectron) {
     const scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
     if (fs.existsSync(scmSourcePath) && !fs.existsSync(path.join(scmPath, 'create_pdf.py'))) {
        console.log("[System] Initializing application scripts in user data directory...");
@@ -1042,31 +1043,35 @@ async function startServer() {
   });
 
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (!isProd) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = __dirname;
+    // In production bundled mode (dist/server.cjs), __dirname is the dist folder itself.
+    // In other production modes, it might be the project root.
+    const distPath = fs.existsSync(path.join(__dirname, 'index.html')) 
+      ? __dirname 
+      : path.join(baseAppPath, 'dist');
+
     if (fs.existsSync(path.join(distPath, 'index.html'))) {
       app.use(express.static(distPath));
       app.get('*', (req, res) => {
         res.sendFile(path.join(distPath, 'index.html'));
       });
     } else {
-      // Fallback if bundled differently
-      const altDistPath = path.join(process.cwd(), 'dist');
-      app.use(express.static(altDistPath));
       app.get('*', (req, res) => {
-        res.sendFile(path.join(altDistPath, 'index.html'));
+        res.status(404).send("SCMUI: Could not find application assets. Checked: " + distPath);
       });
     }
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`SCMUI_READY: Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
+    // Support Electron's readiness check
+    if (isElectron) console.log('SCMUI_READY');
   });
 }
 
