@@ -32,8 +32,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { Theme, setTheme, getTheme } from './lib/theme';
 
-const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:3000' : '';
-
 // Types
 type Tab = 'dashboard' | 'console' | 'assets' | 'builder' | 'plugins';
 
@@ -234,7 +232,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [assetViewMode, setAssetViewMode] = useState<'project' | 'library' | 'plugins'>('project');
   const [status, setStatus] = useState<AppStatus | null>(null);
-  const [logs, setLogs] = useState<string[]>(["[System] Initializing SCMUI Virtual Bridge..."]);
+  const [logs, setLogs] = useState<string[]>(["[System] Initializing Silhouette Master Virtual Bridge..."]);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -266,13 +264,12 @@ export default function App() {
   const [showPluginSaveModal, setShowPluginSaveModal] = useState(false);
   const [showPluginLoadModal, setShowPluginLoadModal] = useState(false);
   const [pluginSaveName, setPluginSaveName] = useState("");
-  const [showPreFetchWarning, setShowPreFetchWarning] = useState<{ matches: string[], args: any[] } | null>(null);
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
 
   const fetchPluginConfigs = async () => {
     try {
-      const res = await fetch(API_BASE + '/api/library/load-decklists');
+      const res = await fetch('/api/library/load-decklists');
       const data = await res.json();
       if (data.configs) {
         setPluginConfigs(data.configs);
@@ -341,7 +338,7 @@ export default function App() {
             for (let i = 0; i < copiedBuffer.length; i++) {
               setTaskProgress({ current: i + 1, total: copiedBuffer.length, message: `Duplicating ${copiedBuffer[i].split(':')[1]}...` });
               try {
-                await fetch(API_BASE + '/api/duplicate', {
+                await fetch('/api/duplicate', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ identity: copiedBuffer[i], assetViewMode })
@@ -375,10 +372,10 @@ export default function App() {
         // Use API to delete instead of clear_up.py directly
         (async () => {
           try {
-            const arr = Array.from(selectedAssets) as string[];
+            const arr = Array.from(selectedAssets);
             for (let i = 0; i < arr.length; i++) {
               setTaskProgress({ current: i + 1, total: arr.length, message: `Deleting ${arr[i].split(':')[1]}...` });
-              await fetch(API_BASE + '/api/delete', {
+              await fetch('/api/delete', {
                  method: 'POST',
                  headers: { 'Content-Type': 'application/json' },
                  body: JSON.stringify({ identity: [arr[i]], assetViewMode })
@@ -460,7 +457,7 @@ export default function App() {
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch(API_BASE + '/api/status?_=' + new Date().getTime());
+      const res = await fetch('/api/status?_=' + new Date().getTime());
       const data = await res.json();
       setStatus(data);
       if (data.assets) {
@@ -507,7 +504,7 @@ export default function App() {
     
     setTaskProgress({ current: 1, total: 1, message: `Saving config...` });
     try {
-      await fetch(API_BASE + '/api/library/save-decklist', {
+      await fetch('/api/library/save-decklist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -567,7 +564,7 @@ export default function App() {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     try {
-      const res = await fetch(API_BASE + '/api/run-command', {
+      const res = await fetch('/api/run-command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command, args, tempDirId: options?.tempDirId })
@@ -630,11 +627,9 @@ export default function App() {
       const isCurrentlyFlipped = next.has(identity);
       
       if (selectedAssets.size > 1 && selectedAssets.has(identity)) {
-        const [targetType] = identity.split(':');
-        // Toggle all selected assets of the same type based on the state of the clicked one
+        // Toggle all selected assets based on the state of the clicked one
         selectedAssets.forEach(item => {
-           const [itemType] = item.split(':');
-           if (itemType === targetType && (itemType === 'front' || itemType === 'double_sided')) {
+           if (item.startsWith('front:') || item.startsWith('double_sided:')) {
              if (isCurrentlyFlipped) {
                next.delete(item);
              } else {
@@ -755,7 +750,7 @@ export default function App() {
     setTaskProgress({ current: 1, total: 1, message: `Clearing project...` });
     addLog("[Project] Clearing project assets...");
     try {
-      const res = await fetch(API_BASE + '/api/project/clear', { method: 'POST' });
+      const res = await fetch('/api/project/clear', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         addLog(`[Project] Success: ${data.message}`);
@@ -809,7 +804,7 @@ export default function App() {
       if (isLibrary) formData.append('library', 'true');
       if (replaceBack) formData.append('replaceBack', 'true');
       
-      const res = await fetch(API_BASE + '/api/upload', {
+      const res = await fetch('/api/upload', {
         method: 'POST',
         body: formData
       });
@@ -856,7 +851,7 @@ export default function App() {
 
       for (let i = 0; i < finalItems.length; i++) {
          setTaskProgress({ current: i + 1, total: finalItems.length, message: `Processing ${finalItems[i].split(':')[1]}...` });
-         await fetch(API_BASE + '/api/plugin/import', {
+         await fetch('/api/plugin/import', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ identity: finalItems[i], destination, source })
@@ -877,7 +872,7 @@ export default function App() {
     setTaskProgress({ current: 1, total: 1, message: `Saving project '${saveName}'...` });
     addLog(`[Project] Saving current assets as '${saveName}'...`);
     try {
-      const res = await fetch(API_BASE + '/api/project/save', {
+      const res = await fetch('/api/project/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: saveName })
@@ -901,7 +896,7 @@ export default function App() {
     setTaskProgress({ current: 1, total: 1, message: `Loading project '${name}'...` });
     addLog(`[Project] Loading project '${name}'...`);
     try {
-      const res = await fetch(API_BASE + '/api/project/load', {
+      const res = await fetch('/api/project/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
@@ -986,7 +981,7 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="font-extrabold text-base tracking-tighter whitespace-nowrap text-white select-none"
                 >
-                  SCMUI Studio
+                  Silhouette Master
                 </motion.h1>
               )}
             </div>
@@ -1131,7 +1126,7 @@ export default function App() {
                     <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
                       <Layers size={120} />
                     </div>
-                    <h2 className="text-2xl font-bold mb-2">SCMUI Studio</h2>
+                    <h2 className="text-2xl font-bold mb-2">Silhouette Master Studio</h2>
                     <p className="text-white/60 max-w-xl leading-relaxed mb-6">
                       High-performance card generation engine. Build custom PDFs with precision blade offset calibration.
                     </p>
@@ -1841,87 +1836,64 @@ export default function App() {
                           />
                           <button 
                             onClick={async () => {
-                              // Pre-flight duplicate check (Heuristic based on decklist text)
-                              if (pluginState.format !== 'url' && !pluginState.format.includes('url')) {
-                                  const cleanedDecklistWords = pluginState.decklist.split('\n')
-                                    .map(line => line.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().replace(/^[0-9]+x?/, ''))
-                                    .filter(w => w.length > 3);
-                                    
-                                  if (cleanedDecklistWords.length > 0) {
-                                      const possibleMatches = (status?.plugins?.fronts || []).filter(name => {
-                                         const lowerName = name.toLowerCase().replace(/^[0-9]+/, '');
-                                         return cleanedDecklistWords.some(w => lowerName.includes(w));
-                                      });
-                                      
-                                      if (possibleMatches.length > 0) {
-                                          setShowPreFetchWarning({ matches: possibleMatches, args: [] }); // We will save the logic for 'proceed'
-                                          return;
-                                      }
-                                  }
+                              // 1. Save decklist
+                              addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
+                              try {
+                                await fetch('/api/project/save-decklist', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ content: pluginState.decklist })
+                                });
+                              } catch (err) {
+                                addLog(`[Error] Failed to stage decklist: ${err}`);
+                                return;
                               }
-                              
-                              const proceedWithFetch = async () => {
-                                // 1. Save decklist
-                                addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
-                                try {
-                                  await fetch(API_BASE + '/api/project/save-decklist', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ content: pluginState.decklist })
-                                  });
-                                } catch (err) {
-                                  addLog(`[Error] Failed to stage decklist: ${err}`);
-                                  return;
+
+                              // 2. Build and run command
+                              const args = [`game/decklist/current.txt`, pluginState.format];
+                              Object.entries(pluginState.options).forEach(([flag, val]) => {
+                                if (val === true) args.push(flag);
+                                else if (typeof val === 'string' && val !== "") {
+                                  args.push(flag);
+                                  args.push(val);
                                 }
-  
-                                // 2. Build and run command
-                                const args = [`game/decklist/current.txt`, pluginState.format];
-                                Object.entries(pluginState.options).forEach(([flag, val]) => {
-                                  if (val === true) args.push(flag);
-                                  else if (typeof val === 'string' && val !== "") {
-                                    args.push(flag);
-                                    args.push(val);
+                              });
+                              
+                              const tempDirId = crypto.randomUUID();
+                              const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
+                                startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
+                                hideProgressOnComplete: true,
+                                tempDirId
+                              });
+                              
+                              if (result && result.fetchedFiles) {
+                                  const collisions = [];
+                                  const { fronts, backs, double_sided } = result.fetchedFiles;
+                                  
+                                  const targetFronts = status?.plugins?.fronts || [];
+                                  const targetBacks = status?.plugins?.backs || [];
+                                  const targetDob = status?.plugins?.double_sided || [];
+                                  
+                                  fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
+                                  backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
+                                  double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
+                                  
+                                  if (collisions.length > 0) {
+                                      setTaskProgress(null);
+                                      setFetchConflictData({ tempDirId, collisions, resolutions: {} });
+                                  } else {
+                                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                                      await fetch('/api/plugin/fetch-commit', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ tempDirId, resolutions: {} })
+                                      });
+                                      await fetchStatus();
+                                      setTaskProgress(null);
                                   }
-                                });
-                                
-                                const tempDirId = crypto.randomUUID();
-                                const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
-                                  startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
-                                  hideProgressOnComplete: true,
-                                  tempDirId
-                                });
-                                
-                                if (result && result.fetchedFiles) {
-                                    const collisions = [];
-                                    const { fronts, backs, double_sided } = result.fetchedFiles;
-                                    
-                                    const targetFronts = status?.plugins?.fronts || [];
-                                    const targetBacks = status?.plugins?.backs || [];
-                                    const targetDob = status?.plugins?.double_sided || [];
-                                    
-                                    fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
-                                    backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
-                                    double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
-                                    
-                                    if (collisions.length > 0) {
-                                        setTaskProgress(null);
-                                        setFetchConflictData({ tempDirId, collisions, resolutions: {} });
-                                    } else {
-                                        setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                                        await fetch(API_BASE + '/api/plugin/fetch-commit', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ tempDirId, resolutions: {} })
-                                        });
-                                        await fetchStatus();
-                                        setTaskProgress(null);
-                                    }
-                                } else {
-                                  setTaskProgress(null);
-                                }
-                              };
-                              
-                              proceedWithFetch();
+                              } else {
+                                setTaskProgress(null);
+                              }
                             }}
                             className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg"
                           >
@@ -1935,7 +1907,7 @@ export default function App() {
 
                 <div className="space-y-16">
                   {/* Back Patterns Section */}
-                  {(assetFilter === 'all' || assetFilter === 'back') && (getAllAssets('back').some(img => img.toLowerCase().includes(assetSearch.toLowerCase())) || !assetSearch) && (
+                  {(assetFilter === 'all' || assetFilter === 'back') && (
                     <section className="space-y-6">
                       <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
                         <div className="flex items-center gap-3">
@@ -1998,7 +1970,7 @@ export default function App() {
                   )}
 
                   {/* Front Faces Section */}
-                  {(assetFilter === 'all' || assetFilter === 'front') && (getAllAssets('front').some(img => img.toLowerCase().includes(assetSearch.toLowerCase())) || !assetSearch) && (
+                  {(assetFilter === 'all' || assetFilter === 'front') && (
                     <section className="space-y-6">
                       <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
                         <div className="flex items-center gap-3">
@@ -2062,7 +2034,7 @@ export default function App() {
                   )}
 
                   {/* Double-Sided Section */}
-                  {(assetFilter === 'all' || assetFilter === 'double_sided') && (getAllAssets('double_sided').some(img => img.toLowerCase().includes(assetSearch.toLowerCase())) || !assetSearch) && (
+                  {(assetFilter === 'all' || assetFilter === 'double_sided') && (
                     <section className="space-y-6">
                       <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
                         <div className="flex items-center gap-3">
@@ -2198,128 +2170,6 @@ export default function App() {
           </div>
         )}
 
-        {showPreFetchWarning && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[#0f0f13] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden"
-            >
-              <div className="p-6 border-b border-white/5 bg-amber-500/10">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-amber-500/20 rounded-lg">
-                    <ShieldCheck size={24} className="text-amber-500" />
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-white">Cards Might Already Exist</h2>
-                    <p className="text-amber-500 text-sm">
-                      We found {showPreFetchWarning.matches.length} file(s) in your plugin gallery that look suspiciously similar to cards in your decklist!
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="p-6 space-y-6">
-                <div className="text-sm text-white/70 space-y-3">
-                  <p>
-                    If you proceed, the system will still download API data (which can take a minute) and temporarily fetch all images, then prompt you to choose whether to replace duplicates or skip them.
-                  </p>
-                  <p>
-                    <strong>Some potential matches:</strong>
-                  </p>
-                  <div className="bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs text-white/60 max-h-24 overflow-y-auto">
-                    <ul className="space-y-1">
-                      {showPreFetchWarning.matches.slice(0, 10).map(c => (
-                        <li key={c} className="truncate">• {c.split(':')[0]}</li>
-                      ))}
-                      {showPreFetchWarning.matches.length > 10 && <li>...and {showPreFetchWarning.matches.length - 10} more.</li>}
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3">
-                  <button 
-                    onClick={async () => {
-                      setShowPreFetchWarning(null);
-                      // Since we can't easily re-invoke proceedWithFetch from here without refactoring, we'll
-                      // just copy the identical proceed logic
-                      const proceedWithFetch = async () => {
-                        addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
-                        try {
-                          await fetch(API_BASE + '/api/project/save-decklist', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ content: pluginState.decklist })
-                          });
-                        } catch (err) {
-                          addLog(`[Error] Failed to stage decklist: ${err}`);
-                          return;
-                        }
-
-                        const args = [`game/decklist/current.txt`, pluginState.format];
-                        Object.entries(pluginState.options).forEach(([flag, val]) => {
-                          if (val === true) args.push(flag);
-                          else if (typeof val === 'string' && val !== "") {
-                            args.push(flag);
-                            args.push(val);
-                          }
-                        });
-                        
-                        const tempDirId = crypto.randomUUID();
-                        const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
-                          startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
-                          hideProgressOnComplete: true,
-                          tempDirId
-                        });
-                        
-                        if (result && result.fetchedFiles) {
-                            const collisions = [];
-                            const { fronts, backs, double_sided } = result.fetchedFiles;
-                            const targetFronts = status?.plugins?.fronts || [];
-                            const targetBacks = status?.plugins?.backs || [];
-                            const targetDob = status?.plugins?.double_sided || [];
-                            
-                            fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
-                            backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
-                            double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
-                            
-                            if (collisions.length > 0) {
-                                setTaskProgress(null);
-                                setFetchConflictData({ tempDirId, collisions, resolutions: {} });
-                            } else {
-                                setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                                await fetch(API_BASE + '/api/plugin/fetch-commit', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ tempDirId, resolutions: {} })
-                                });
-                                await fetchStatus();
-                                setTaskProgress(null);
-                            }
-                        } else {
-                          setTaskProgress(null);
-                        }
-                      };
-                      proceedWithFetch();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
-                  >
-                    Proceed with Fetch
-                  </button>
-
-                  <button 
-                    onClick={() => setShowPreFetchWarning(null)}
-                    className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
-                  >
-                    Cancel Fetch
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-
         {fetchConflictData && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
             <motion.div 
@@ -2361,7 +2211,7 @@ export default function App() {
                       const resolutions: Record<string, 'skip'> = {};
                       collisions.forEach(c => resolutions[c] = 'skip');
                       
-                      await fetch(API_BASE + '/api/plugin/fetch-commit', {
+                      await fetch('/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, resolutions })
@@ -2379,7 +2229,7 @@ export default function App() {
                       const { tempDirId } = fetchConflictData;
                       setFetchConflictData(null);
                       setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                      await fetch(API_BASE + '/api/plugin/fetch-commit', {
+                      await fetch('/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, resolutions: {} })
@@ -2396,7 +2246,7 @@ export default function App() {
                     onClick={async () => {
                       const { tempDirId } = fetchConflictData;
                       setFetchConflictData(null);
-                      await fetch(API_BASE + '/api/plugin/fetch-commit', {
+                      await fetch('/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, abort: true })
@@ -2588,10 +2438,10 @@ export default function App() {
                     <button
                       key={name}
                       onClick={() => loadPluginConfig(name)}
-                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl text-left transition-all group overflow-hidden"
+                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl text-left transition-all group"
                     >
-                      <span className="font-semibold text-white/80 group-hover:text-white truncate pr-4">{name}</span>
-                      <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 translate-x-0 group-hover:translate-x-1 transition-all shrink-0" />
+                      <span className="font-semibold text-white/80 group-hover:text-white">{name}</span>
+                      <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 translate-x-0 group-hover:translate-x-1 transition-all" />
                     </button>
                   ))
                 ) : (
@@ -2772,7 +2622,7 @@ export default function App() {
                   for (let i = 0; i < targets.length; i++) {
                     setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
                     try {
-                      await fetch(API_BASE + '/api/duplicate', {
+                      await fetch('/api/duplicate', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ identity: targets[i], assetViewMode })
@@ -2896,7 +2746,7 @@ export default function App() {
                     for (let i = 0; i < targets.length; i++) {
                       setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
                       try {
-                        await fetch(API_BASE + '/api/delete', {
+                        await fetch('/api/delete', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ identity: [targets[i]], assetViewMode })
@@ -3158,10 +3008,9 @@ interface AssetItemProps {
 const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode }) => {
   
   const getBaseUrl = () => {
-    const base = API_BASE;
-    if (assetViewMode === 'library') return `${base}/library`;
-    if (assetViewMode === 'plugins') return `${base}/plugins_staging`;
-    return `${base}/game`;
+    if (assetViewMode === 'library') return '/library';
+    if (assetViewMode === 'plugins') return '/plugins_staging';
+    return '/game';
   };
 
   const getImgSrc = () => {

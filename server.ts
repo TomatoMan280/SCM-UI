@@ -2,64 +2,27 @@ import express from "express";
 import path from "path";
 import multer from "multer";
 import fs from "fs";
-import cors from "cors";
+import { createServer as createViteServer } from "vite";
 
 async function startServer() {
-  process.on('uncaughtException', (err) => {
-    console.error('CRITICAL: Uncaught Exception in server:', err);
-  });
-  process.on('unhandledRejection', (reason, promise) => {
-    console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
-  });
-
   const app = express();
   const PORT = 3000;
 
-  app.use(cors());
   app.use(express.json());
 
-  // More robust path resolution for standalone bundle
-  let baseAppPath = process.env.APP_PATH || process.cwd();
-  if (process.env.NODE_ENV === 'production' && !process.env.VITE_DEV_SERVER && !process.env.APP_PATH) {
-    // server.ts is compiled to dist/server.cjs, so __dirname is [appRoot]/dist
-    baseAppPath = path.join(__dirname, '..');
-  }
-
-  // Writable directories should use APP_USER_DATA if in Electron production
-  const writableRoot = process.env.APP_USER_DATA || baseAppPath;
-
-  // Ensure writable directories exist
-  ['uploads', 'temp-uploads', 'projects'].forEach(dir => {
-    const fullPath = path.join(writableRoot, dir);
-    if (!fs.existsSync(fullPath)) {
-      fs.mkdirSync(fullPath, { recursive: true });
-    }
-  });
-
-  const resolveAppPath = (p: string) => {
-    if (p.includes('app.asar') && !p.includes('app.asar.unpacked')) {
-      const unpackedPath = p.replace('app.asar', 'app.asar.unpacked');
-      if (fs.existsSync(unpackedPath)) return unpackedPath;
-    }
-    return p;
-  };
-
-  let scmPath = resolveAppPath(path.join(baseAppPath, 'src', 'silhouette-card-maker-main'));
-
-  // Only attempt auto-install if not in Electron production, or if explicitly requested
-  if (process.env.NODE_ENV !== 'production') {
+  const scmPath = path.join(process.cwd(), 'src', 'silhouette-card-maker-main');
+  
+  try {
+    const { execSync } = require("child_process");
     try {
-      const { execSync } = require("child_process");
-      try {
-        execSync("python3 -m pip --version", { stdio: 'ignore' });
-      } catch {
-        console.log("Installing python3-pip...");
-        execSync("apt-get update && apt-get install -y python3-pip", { stdio: 'inherit' });
-      }
-      execSync("python3 -m pip install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests natsort pydantic pypdfium2 split-image pyautogui --break-system-packages", { stdio: 'inherit' });
-    } catch (e: any) {
-      console.error("Warning: Failed to install python dependencies.", e.message);
+      execSync("python3 -m pip --version", { stdio: 'ignore' });
+    } catch {
+      console.log("Installing python3-pip...");
+      execSync("apt-get update && apt-get install -y python3-pip", { stdio: 'inherit' });
     }
+    execSync("python3 -m pip install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests --break-system-packages", { stdio: 'inherit' });
+  } catch (e: any) {
+    console.error("Warning: Failed to install python dependencies.", e.message);
   }
   
   // Simulation of Python Tool State
@@ -85,12 +48,12 @@ async function startServer() {
   let savedProjects: Record<string, typeof mockCards> = {};
 
   // Serve library static files
-  app.use('/library', express.static(resolveAppPath(path.join(baseAppPath, 'src', 'Library'))));
+  app.use('/library', express.static(path.join(process.cwd(), 'src', 'Library')));
   app.use('/game', express.static(path.join(scmPath, 'game')));
-  app.use('/plugins_staging', express.static(resolveAppPath(path.join(baseAppPath, 'src', 'Library', 'Plugins'))));
-  app.use('/uploads', express.static(path.join(writableRoot, 'uploads')));
+  app.use('/plugins_staging', express.static(path.join(process.cwd(), 'src', 'Library', 'Plugins')));
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-  const upload = multer({ dest: path.join(writableRoot, 'temp-uploads') });
+  const upload = multer({ dest: path.join(process.cwd(), 'temp-uploads') });
 
   app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -101,7 +64,7 @@ async function startServer() {
     
     // Capitalize correctly for Library
     const libraryType = type === 'back' ? 'Back' : type;
-    const targetBase = isLibrary ? path.join(baseAppPath, 'src', 'Library') : path.join(scmPath, 'game');
+    const targetBase = isLibrary ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game');
     const targetDir = path.join(targetBase, isLibrary ? libraryType : type);
     
     fs.mkdirSync(targetDir, { recursive: true });
@@ -134,7 +97,7 @@ async function startServer() {
   app.post("/api/library/save-decklist", (req, res) => {
     const { pluginId, saveName, decklist, format, options } = req.body;
     if (!pluginId || !saveName || decklist === undefined) return res.status(400).json({ error: "Missing fields" });
-    const libraryDecklistDir = path.join(baseAppPath, 'src', 'Library', 'Plugins', 'decklist');
+    const libraryDecklistDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'decklist');
     fs.mkdirSync(libraryDecklistDir, { recursive: true });
     
     // Save as JSON metadata to store options and decklist text
@@ -144,7 +107,7 @@ async function startServer() {
   });
 
   app.get("/api/library/load-decklists", (req, res) => {
-    const libraryDecklistDir = path.join(baseAppPath, 'src', 'Library', 'Plugins', 'decklist');
+    const libraryDecklistDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'decklist');
     let configs: Record<string, any> = {};
     if (fs.existsSync(libraryDecklistDir)) {
       const files = fs.readdirSync(libraryDecklistDir).filter(f => f.endsWith('.json'));
@@ -167,9 +130,9 @@ async function startServer() {
       const backsDir = path.join(scmPath, 'game', 'back');
       const doubleSidedDir = path.join(scmPath, 'game', 'double_sided');
 
-      const libFrontsDir = path.join(baseAppPath, 'src', 'Library', 'front');
-      const libBacksDir = path.join(baseAppPath, 'src', 'Library', 'back');
-      const libDoubleSidedDir = path.join(baseAppPath, 'src', 'Library', 'double_sided');
+      const libFrontsDir = path.join(process.cwd(), 'src', 'Library', 'front');
+      const libBacksDir = path.join(process.cwd(), 'src', 'Library', 'back');
+      const libDoubleSidedDir = path.join(process.cwd(), 'src', 'Library', 'double_sided');
       
       const getFiles = (dir: string) => {
         try {
@@ -217,9 +180,9 @@ async function startServer() {
       actualLibDoubleSided.forEach(file => {
         if (!mockLibrary.double_sided.includes(file)) mockLibrary.double_sided.push(file);
       });
-      const pluginsFrontsDir = path.join(baseAppPath, 'src', 'Library', 'Plugins', 'front');
-      const pluginsBacksDir = path.join(baseAppPath, 'src', 'Library', 'Plugins', 'back');
-      const pluginsDoubleSidedDir = path.join(baseAppPath, 'src', 'Library', 'Plugins', 'double_sided');
+      const pluginsFrontsDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'front');
+      const pluginsBacksDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'back');
+      const pluginsDoubleSidedDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'double_sided');
 
       const actualPluginsFronts = getFiles(pluginsFrontsDir);
       const actualPluginsBacks = getFiles(pluginsBacksDir);
@@ -266,7 +229,7 @@ async function startServer() {
     });
   });
 
-  const projectsDir = path.join(writableRoot, 'projects');
+  const projectsDir = path.join(process.cwd(), 'src', 'projects');
 
   app.post("/api/project/save", (req, res) => {
     const { name } = req.body;
@@ -383,7 +346,7 @@ async function startServer() {
           try {
             // Double sided check
             const isDouble = mockLibrary.double_sided.includes(name);
-            const libPath = path.join(baseAppPath, 'src', 'Library', isDouble ? 'double_sided' : 'front', name);
+            const libPath = path.join(process.cwd(), 'src', 'Library', isDouble ? 'double_sided' : 'front', name);
             const destDir = path.join(scmPath, 'game', isDouble ? 'double_sided' : 'front');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
@@ -399,8 +362,8 @@ async function startServer() {
           if (!mockCards.backs.includes(name)) mockCards.backs.push(name);
 
           try {
-            const libPath = path.join(baseAppPath, 'src', 'Library', 'back', name);
-            const altLibPath = path.join(baseAppPath, 'src', 'Library', 'Back', name); // Keep fallback if old files exist
+            const libPath = path.join(process.cwd(), 'src', 'Library', 'back', name);
+            const altLibPath = path.join(process.cwd(), 'src', 'Library', 'Back', name); // Keep fallback if old files exist
             const destDir = path.join(scmPath, 'game', 'back');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
@@ -413,7 +376,7 @@ async function startServer() {
           if (!mockCards.double_sided.includes(name)) mockCards.double_sided.push(name);
           
           try {
-            const libPath = path.join(baseAppPath, 'src', 'Library', 'double_sided', name);
+            const libPath = path.join(process.cwd(), 'src', 'Library', 'double_sided', name);
             const destDir = path.join(scmPath, 'game', 'double_sided');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
@@ -431,25 +394,22 @@ async function startServer() {
   });
 
   app.post("/api/project/clear", (req, res) => {
-    const dirs = [
-      path.join(scmPath, 'game', 'front'),
-      path.join(scmPath, 'game', 'back'),
-      path.join(scmPath, 'game', 'double_sided')
-    ];
-    dirs.forEach(dir => {
-      if (fs.existsSync(dir)) {
-        fs.readdirSync(dir).forEach(file => {
-          if (!file.startsWith('.')) {
-             try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
-          }
-        });
-      }
+    import('fs').then((fs) => {
+      const dirs = [
+        path.join(scmPath, 'game', 'front'),
+        path.join(scmPath, 'game', 'back')
+      ];
+      dirs.forEach(dir => {
+        if (fs.existsSync(dir)) {
+          fs.readdirSync(dir).forEach(file => {
+            if (!file.startsWith('.')) {
+               try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
+            }
+          });
+        }
+      });
+      res.json({ success: true, message: "Project cleared." });
     });
-    // Also clear in-memory state if any
-    mockCards.fronts = [];
-    mockCards.backs = [];
-    mockCards.double_sided = [];
-    res.json({ success: true, message: "Project cleared." });
   });
 
   app.post("/api/duplicate", (req, res) => {
@@ -460,7 +420,7 @@ async function startServer() {
     
     let isLibrary = assetViewMode === 'library';
     let isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? path.join(baseAppPath, 'src', 'Library', 'Plugins') : (isLibrary ? path.join(baseAppPath, 'src', 'Library') : path.join(scmPath, 'game'));
+    const targetBase = isPlugins ? path.join(process.cwd(), 'src', 'Library', 'Plugins') : (isLibrary ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game'));
     
     // Check if double sided
     let dirType = type;
@@ -510,7 +470,7 @@ async function startServer() {
     const identities = Array.isArray(identity) ? identity : [identity];
     const isLibrary = assetViewMode === 'library';
     const isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? path.join(baseAppPath, 'src', 'Library', 'Plugins') : (isLibrary ? path.join(baseAppPath, 'src', 'Library') : path.join(scmPath, 'game'));
+    const targetBase = isPlugins ? path.join(process.cwd(), 'src', 'Library', 'Plugins') : (isLibrary ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game'));
     
     identities.forEach(id => {
         const [type, name] = id.split(':');
@@ -549,8 +509,8 @@ async function startServer() {
     if (!identity) return res.status(400).json({error: "No identity"});
     
     const identities = Array.isArray(identity) ? identity : [identity];
-    const targetBase = destination === 'library' ? path.join(baseAppPath, 'src', 'Library') : path.join(scmPath, 'game');
-    const sourceBase = source === 'plugins' ? path.join(baseAppPath, 'src', 'Library', 'Plugins') : (source === 'project' ? path.join(scmPath, 'game') : path.join(baseAppPath, 'src', 'Library'));
+    const targetBase = destination === 'library' ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game');
+    const sourceBase = source === 'plugins' ? path.join(process.cwd(), 'src', 'Library', 'Plugins') : (source === 'project' ? path.join(scmPath, 'game') : path.join(process.cwd(), 'src', 'Library'));
 
     identities.forEach(id => {
       const [type, name] = id.split(':');
@@ -690,93 +650,99 @@ async function startServer() {
   });
 
   app.get("/api/assets", (req, res) => {
-    const frontsDir = path.join(scmPath, 'game', 'front');
-    const backsDir = path.join(scmPath, 'game', 'back');
-    
-    const getFiles = (dir: string) => {
-      try {
-        if (fs.existsSync(dir)) {
-          return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
-        }
-      } catch (e) { }
-      return [];
-    };
+    import('fs').then((fs) => {
+      const frontsDir = path.join(scmPath, 'game', 'front');
+      const backsDir = path.join(scmPath, 'game', 'back');
+      
+      const getFiles = (dir: string) => {
+        try {
+          if (fs.existsSync(dir)) {
+            return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+          }
+        } catch (e) { }
+        return [];
+      };
 
-    res.json({
-      fronts: getFiles(frontsDir),
-      backs: getFiles(backsDir),
-      double_sided: []
-    });
+      res.json({
+        fronts: getFiles(frontsDir),
+        backs: getFiles(backsDir),
+        double_sided: []
+      });
+    }).catch(() => res.json(mockCards));
   });
 
   app.post("/api/run-command", (req, res) => {
     const { command, args } = req.body;
-    const { exec, spawnSync } = require('child_process');
     
     // Construct CLI string from args array
     const argString = (args || []).map((arg: any) => {
-      // Simple quoting for strings containing spaces
-      return arg.toString().includes(' ') ? `"${arg}"` : arg;
+        // Simple quoting for strings containing spaces
+        return arg.toString().includes(' ') ? `"${arg}"` : arg;
     }).join(" ");
-
-    // Find whether to use python3 or python or none
-    let pythonCmd = "python";
-    try {
-      const check = spawnSync("python3", ["--version"]);
-      if (check.status === 0) pythonCmd = "python3";
-    } catch (e) {}
-
-    if (pythonCmd === "python") {
+    
+    // Check if python is available and run the child process based on it.
+    import('child_process').then(({ exec, spawnSync }) => {
+      // Find whether to use python3 or python or none
+      let pythonCmd = "python";
       try {
-        const check2 = spawnSync("python", ["--version"]);
-        if (check2.status !== 0) pythonCmd = "";
+        const check = spawnSync("python3", ["--version"]);
+        if (check.status === 0) pythonCmd = "python3";
       } catch (e) {}
-    }
 
-    if (!pythonCmd) {
-      const fullCommand = `python3 ${command} ${argString}`;
-      return res.json({ output: [`$ ${fullCommand}`, "[System Error] Python interpreter not found in the environment. This environment only runs Node.js natively. Please use mock mode or verify python installation."] });
-    }
-
-    const fullCommand = `${pythonCmd} ${command} ${argString}`;
-    let output = [`$ ${fullCommand}`];
-
-    const customEnv = Object.assign({}, process.env);
-    if (req.body.tempDirId) {
-      customEnv.SCM_GAME_DIR = path.join(baseAppPath, 'src', 'Library', `Temp_Fetch_${req.body.tempDirId}`);
-      fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-      ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
-    } else if (command.startsWith('plugins/')) {
-      customEnv.SCM_GAME_DIR = path.join(baseAppPath, 'src', 'Library', 'Plugins');
-    }
-
-    exec(fullCommand, { cwd: scmPath, env: customEnv }, (error: any, stdout: string, stderr: string) => {
-      if (stdout) {
-        output.push(...stdout.split('\n').filter(Boolean));
-      }
-      if (stderr) {
-        output.push(...stderr.split('\n').map(line => `[Error] ${line}`).filter(line => line !== '[Error] '));
-      }
-      if (error) {
-        output.push(`[System Error] ${error.message}`);
+      if (pythonCmd === "python") {
+        try {
+          const check2 = spawnSync("python", ["--version"]);
+          if (check2.status !== 0) pythonCmd = "";
+        } catch (e) {}
       }
 
-      let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
+      if (!pythonCmd) {
+          const fullCommand = `python3 ${command} ${argString}`;
+          return res.json({ output: [`$ ${fullCommand}`, "[System Error] Python interpreter not found in the environment. This environment only runs Node.js natively. Please use mock mode or verify python installation."] });
+      }
+
+      const fullCommand = `${pythonCmd} ${command} ${argString}`;
+      let output = [`$ ${fullCommand}`];
+
+      const customEnv = Object.assign({}, process.env);
       if (req.body.tempDirId) {
-         const getFiles = (dir: string) => {
-           try {
-             if (fs.existsSync(dir)) {
-               return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
-             }
-           } catch (e) { }
-           return [];
-         };
-         fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'front'));
-         fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'back'));
-         fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'double_sided'));
+        customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', `Temp_Fetch_${req.body.tempDirId}`);
+        fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
+      } else if (command.startsWith('plugins/')) {
+        customEnv.SCM_GAME_DIR = path.join(process.cwd(), 'src', 'Library', 'Plugins');
       }
 
-      res.json({ output, fetchedFiles });
+      exec(fullCommand, { cwd: scmPath, env: customEnv }, (error, stdout, stderr) => {
+        if (stdout) {
+          output.push(...stdout.split('\n').filter(Boolean));
+        }
+        if (stderr) {
+          output.push(...stderr.split('\n').map(line => `[Error] ${line}`).filter(line => line !== '[Error] '));
+        }
+        if (error) {
+          output.push(`[System Error] ${error.message}`);
+        }
+
+        let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
+        if (req.body.tempDirId) {
+           const getFiles = (dir: string) => {
+             try {
+               if (fs.existsSync(dir)) {
+                 return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+               }
+             } catch (e) { }
+             return [];
+           };
+           fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'front'));
+           fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'back'));
+           fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'double_sided'));
+        }
+
+        res.json({ output, fetchedFiles });
+      });
+    }).catch(err => {
+      res.json({ output: [`[System Error] Failed to load child_process: ${err}`] });
     });
   });
 
@@ -784,8 +750,8 @@ async function startServer() {
     const { tempDirId, resolutions, abort } = req.body;
     if (!tempDirId) return res.status(400).json({ error: "No tempDirId" });
     
-    const tempBasePath = path.join(baseAppPath, 'src', 'Library', `Temp_Fetch_${tempDirId}`);
-    const pluginsBasePath = path.join(baseAppPath, 'src', 'Library', 'Plugins');
+    const tempBasePath = path.join(process.cwd(), 'src', 'Library', `Temp_Fetch_${tempDirId}`);
+    const pluginsBasePath = path.join(process.cwd(), 'src', 'Library', 'Plugins');
     
     if (!fs.existsSync(tempBasePath)) {
        return res.status(404).json({ error: "Temp dir not found" });
@@ -826,26 +792,20 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(baseAppPath, 'dist');
+    const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, "127.0.0.1", () => {
-    console.log(`Server environment: NODE_ENV=${process.env.NODE_ENV}, APP_PATH=${process.env.APP_PATH}`);
-    console.log(`Base app path: ${baseAppPath}`);
-    console.log(`Writable root: ${writableRoot}`);
-    console.log(`SCM Path: ${scmPath}`);
-    console.log(`Server running on http://127.0.0.1:${PORT}`);
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

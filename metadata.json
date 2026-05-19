@@ -1,6 +1,6 @@
 {
-  "name": "SCMUI",
-  "description": "SCMUI - A high-performance PDF builder and plugin manager for custom trading card proxies.",
+  "name": "Silhouette Master Studio",
+  "description": "Silhouette Card Maker UI - A high-performance PDF builder and plugin manager for custom trading card proxies.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

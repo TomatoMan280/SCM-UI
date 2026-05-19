@@ -1,5 +1,6 @@
-const { app, BrowserWindow, utilityProcess } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const path = require('path');
+const { spawn } = require('child_process');
 
 let mainWindow;
 let serverProcess;
@@ -8,59 +9,39 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: "SCMUI",
-    autoHideMenuBar: true,
+    title: "Silhouette Card Maker",
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
     },
   });
 
-  // Load the built app directly
-  const indexPath = path.join(__dirname, 'dist', 'index.html');
-  mainWindow.loadFile(indexPath).catch(err => {
-    console.error("Failed to load index.html:", err);
+  // Start the Express server
+  const serverPath = path.join(__dirname, 'dist', 'server.cjs');
+  
+  serverProcess = spawn('node', [serverPath], {
+    env: { ...process.env, PORT: '3000', NODE_ENV: 'production' }
   });
 
-  // Start the Express server as a background service
-  const serverPath = path.join(__dirname, 'dist', 'server.cjs');
-  const appPath = app.getAppPath();
-  
-  const launchServer = () => {
-    try {
-      serverProcess = utilityProcess.fork(serverPath, [], {
-        cwd: appPath,
-        env: { 
-          ...process.env, 
-          PORT: '3000', 
-          NODE_ENV: 'production',
-          APP_USER_DATA: app.getPath('userData'),
-          APP_PATH: appPath,
-          ELECTRON_RUN_AS_NODE: '1'
-        },
-        stdio: 'pipe'
-      });
-
-      serverProcess.stdout.on('data', (data) => {
-        process.stdout.write(`[Server] ${data}`);
-      });
-      
-      serverProcess.stderr.on('data', (data) => {
-        process.stderr.write(`[Server Error] ${data}`);
-      });
-
-      serverProcess.on('exit', (code) => {
-        console.log(`Server process exited with code ${code}`);
-        if (code !== 0 && code !== null) {
-          setTimeout(launchServer, 5000);
-        }
-      });
-    } catch (err) {
-      console.error("Failed to launch server process:", err);
+  serverProcess.stdout.on('data', (data) => {
+    console.log(`Server: ${data}`);
+    const output = data.toString();
+    if (output.includes('Server running') || output.includes('localhost:3000')) {
+       // Load the local express server once it's up
+       mainWindow.loadURL('http://localhost:3000');
     }
-  };
+  });
+  
+  serverProcess.stderr.on('data', (data) => {
+    console.error(`Server Error: ${data}`);
+  });
 
-  launchServer();
+  // Fallback if we miss the console log
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.getURL().includes('localhost')) {
+      mainWindow.loadURL('http://localhost:3000');
+    }
+  }, 2500);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
