@@ -1,12 +1,17 @@
+console.log("[System] Server script starting...");
 import express from "express";
 import path from "path";
 import multer from "multer";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
-import archiver from "archiver";
+import * as archiverModule from "archiver";
 import { execSync, exec } from "child_process";
 
+const archiver = (archiverModule as any).default || archiverModule;
+
+console.log("[System] Modules imported successfully.");
+
 async function startServer() {
+  console.log("[System] Initializing server on port...");
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
@@ -1044,6 +1049,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (!isProd) {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

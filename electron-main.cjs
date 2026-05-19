@@ -31,6 +31,9 @@ function createWindow() {
   // Start the Express server
   // When packaged, server.cjs is in dist folder inside resources/app.asar
   const serverPath = path.join(__dirname, 'dist', 'server.cjs');
+  const logPath = path.join(app.getPath('userData'), 'scmui-server-error.log');
+  const fs = require('fs');
+  fs.writeFileSync(logPath, '--- App Startup ---\\n');
   
   // Use fork instead of spawn to ensure it runs with the same node version
   serverProcess = fork(serverPath, [], {
@@ -47,22 +50,44 @@ function createWindow() {
   serverProcess.stdout.on('data', (data) => {
     const output = data.toString();
     console.log(`[Server] ${output}`);
+    fs.appendFileSync(logPath, `[Server] ${output}\\n`);
     if (output.includes('SCMUI_READY') || output.includes('Server running') || output.includes('127.0.0.1:3000')) {
        console.log('[Main] Server is ready. Loading app...');
-       mainWindow.loadURL('http://127.0.0.1:3000');
+       mainWindow.loadURL('http://127.0.0.1:3000').then(() => {
+           mainWindow.webContents.openDevTools();
+       });
     }
   });
   
   serverProcess.stderr.on('data', (data) => {
     console.error(`[Server Error] ${data}`);
+    fs.appendFileSync(logPath, `[Server Error] ${data}\\n`);
   });
 
   serverProcess.on('error', (err) => {
     console.error('[Main] Failed to start server process:', err);
+    fs.appendFileSync(logPath, `[Main Error] Failed to start server: ${err}\\n`);
   });
 
   serverProcess.on('exit', (code, signal) => {
     console.log(`[Main] Server process exited with code ${code}, signal ${signal}`);
+    fs.appendFileSync(logPath, `[Main] Server process exited with code ${code}, signal ${signal}\\n`);
+    if (code !== 0 && code !== null) {
+      const { dialog } = require('electron');
+      dialog.showErrorBox('SCMUI Server Crashed', `Server exited with code ${code}.\\nCheck logs at: ${logPath}`);
+    }
+  });
+
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level === 2 || level === 3) {
+      fs.appendFileSync(logPath, `[Web Error] ${message} at ${sourceId}:${line}\\n`);
+    }
+  });
+
+  mainWindow.webContents.on('did-fail-load', (e, errCode, errDesc) => {
+    fs.appendFileSync(logPath, `[Web Fail Load] ${errCode} ${errDesc}\\n`);
+    const { dialog } = require('electron');
+    dialog.showErrorBox('Page failed to load', `Error ${errCode}: ${errDesc}\\nCheck logs at: ${logPath}`);
   });
 
   // Fallback if we miss the console log or it's quiet
