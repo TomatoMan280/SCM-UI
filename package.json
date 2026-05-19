@@ -31,7 +31,10 @@
     "files": [
       "dist/**/*",
       "electron-main.cjs",
-      "package.json"
+      "package.json",
+      "src/Library/**/*",
+      "src/silhouette-card-maker-main/**/*",
+      "src/projects/**/*"
     ],
     "mac": {
       "target": "dmg"
@@ -47,7 +50,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "SCMUI"
+      "shortcutName": "SCMUI",
+      "artifactName": "SCMUI-Setup-${version}.${ext}",
+      "uninstallDisplayName": "SCMUI"
     }
   },
   "dependencies": {

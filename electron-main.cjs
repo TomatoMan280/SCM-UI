@@ -1,6 +1,6 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { fork } = require('child_process');
 
 let mainWindow;
 let serverProcess;
@@ -9,25 +9,45 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    title: "Silhouette Card Maker",
+    title: "SCMUI",
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
     },
   });
 
+  // Load a simple loading message first
+  mainWindow.loadURL(`data:text/html;charset=utf-8,
+    <body style="background: #111; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">
+      <div style="text-align: center;">
+        <h1 style="margin-bottom: 20px;">SCMUI</h1>
+        <p>Initializing local engine...</p>
+        <div style="margin-top: 20px; width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid #fff; border-radius: 50%; display: inline-block; animation: spin 1s linear infinite;"></div>
+        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+      </div>
+    </body>
+  `);
+
   // Start the Express server
+  // When packaged, server.cjs is in dist folder inside resources/app.asar
   const serverPath = path.join(__dirname, 'dist', 'server.cjs');
   
-  serverProcess = spawn('node', [serverPath], {
-    env: { ...process.env, PORT: '3000', NODE_ENV: 'production' }
+  // Use fork instead of spawn to ensure it runs with the same node version
+  serverProcess = fork(serverPath, [], {
+    env: { 
+      ...process.env, 
+      PORT: '3000', 
+      NODE_ENV: 'production',
+      USER_DATA_PATH: app.getPath('userData'),
+      APP_PATH: app.getAppPath()
+    },
+    stdio: 'pipe' // Listen to pipe to catch logs
   });
 
   serverProcess.stdout.on('data', (data) => {
-    console.log(`Server: ${data}`);
     const output = data.toString();
+    console.log(`Server: ${output}`);
     if (output.includes('Server running') || output.includes('localhost:3000')) {
-       // Load the local express server once it's up
        mainWindow.loadURL('http://localhost:3000');
     }
   });
@@ -36,15 +56,18 @@ function createWindow() {
     console.error(`Server Error: ${data}`);
   });
 
-  // Fallback if we miss the console log
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.getURL().includes('localhost')) {
-      mainWindow.loadURL('http://localhost:3000');
+  // Fallback if we miss the console log or it's quiet
+  const timeoutId = setTimeout(() => {
+    if (mainWindow && !mainWindow.getURL().includes('localhost:3000')) {
+      mainWindow.loadURL('http://localhost:3000').catch(err => {
+        console.error('Failed to load localhost:3000', err);
+      });
     }
-  }, 2500);
+  }, 5000);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    clearTimeout(timeoutId);
   });
 }
 

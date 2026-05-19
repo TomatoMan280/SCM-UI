@@ -14,94 +14,101 @@ async function startServer() {
 
   app.use(express.json());
 
-  const scmPath = path.join(process.cwd(), 'src', 'silhouette-card-maker-main');
+  // In Electron production, we use passed env vars for path resolution
+  const isProd = process.env.NODE_ENV === 'production' && process.env.USER_DATA_PATH;
+  const baseDataPath = isProd ? process.env.USER_DATA_PATH! : process.cwd();
+  const baseAppPath = isProd ? process.env.APP_PATH! : process.cwd();
+
+  const scmPath = path.join(baseDataPath, 'src', 'silhouette-card-maker-main');
+  const projectsDir = path.join(baseDataPath, 'src', 'projects');
+  const libraryPath = path.join(baseDataPath, 'src', 'Library');
+  const pluginsPath = path.join(libraryPath, 'Plugins');
   
-  // Ensure all required directories exist
+  // Ensure all required directories exist (in writable location)
   const requiredPaths = [
+    scmPath,
     path.join(scmPath, 'game', 'front'),
     path.join(scmPath, 'game', 'back'),
     path.join(scmPath, 'game', 'double_sided'),
     path.join(scmPath, 'game', 'output'),
     path.join(scmPath, 'game', 'decklist'),
-    path.join(process.cwd(), 'src', 'Library', 'front'),
-    path.join(process.cwd(), 'src', 'Library', 'back'),
-    path.join(process.cwd(), 'src', 'Library', 'double_sided'),
-    path.join(process.cwd(), 'src', 'Library', 'output'),
-    path.join(process.cwd(), 'src', 'Library', 'Plugins', 'front'),
-    path.join(process.cwd(), 'src', 'Library', 'Plugins', 'back'),
-    path.join(process.cwd(), 'src', 'Library', 'Plugins', 'double_sided'),
-    path.join(process.cwd(), 'src', 'Library', 'Plugins', 'decklist'),
-    path.join(process.cwd(), 'src', 'projects')
+    path.join(baseDataPath, 'src', 'Library', 'front'),
+    path.join(baseDataPath, 'src', 'Library', 'back'),
+    path.join(baseDataPath, 'src', 'Library', 'double_sided'),
+    path.join(baseDataPath, 'src', 'Library', 'output'),
+    path.join(baseDataPath, 'src', 'Library', 'Plugins', 'front'),
+    path.join(baseDataPath, 'src', 'Library', 'Plugins', 'back'),
+    path.join(baseDataPath, 'src', 'Library', 'Plugins', 'double_sided'),
+    path.join(baseDataPath, 'src', 'Library', 'Plugins', 'decklist'),
+    projectsDir,
+    path.join(baseDataPath, 'temp-uploads')
   ];
 
   requiredPaths.forEach(p => {
     if (!fs.existsSync(p)) {
-      fs.mkdirSync(p, { recursive: true });
-      console.log(`[System] Created missing directory: ${p}`);
-    }
-    // Also create a README.md file in the directory to ensure it is tracked by SC
-    const readmeFile = path.join(p, 'README.md');
-    if (!fs.existsSync(readmeFile)) {
-       try {
-         fs.writeFileSync(readmeFile, '# Placeholder');
-       } catch (e) {
-         console.warn(`Could not write README to ${p}`);
-       }
+      try {
+        fs.mkdirSync(p, { recursive: true });
+        console.log(`[System] Created missing directory: ${p}`);
+      } catch (e: any) {
+        console.error(`[Error] Failed to create directory ${p}: ${e.message}`);
+      }
     }
   });
+
+  // If in production, we should check if our python scripts exist in the writable location
+  // and if not, copy them from the app bundle (ASAR)
+  if (isProd) {
+    const scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
+    if (fs.existsSync(scmSourcePath) && !fs.existsSync(path.join(scmPath, 'create_pdf.py'))) {
+       console.log("[System] Initializing application scripts in user data directory...");
+       try {
+         fs.cpSync(scmSourcePath, scmPath, { recursive: true });
+       } catch (e: any) {
+         console.error("[Error] Failed to initialize scripts:", e.message);
+       }
+    }
+  }
   
   try {
-    
-    // Check if click is installed to skip apt-get and pip if already set up
-    let skipInstall = false;
-    try {
-      execSync("python3 -c 'import click'", { stdio: 'ignore' });
-      skipInstall = true;
-    } catch(e) {}
-
-    if (!skipInstall) {
-      console.log("Python dependencies not found. Installing in background...");
-      exec("export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y python3-pip && python3 -m pip install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests natsort pydantic pypdfium2 split-image --break-system-packages", (err, stdout, stderr) => {
-        if (err) {
-           console.error("Background python installation failed.", err.message);
-        } else {
-           console.log("Background python installation successful.");
-        }
-      });
+    if (process.platform !== 'win32') {
+      let skipInstall = false;
+      try {
+        execSync("python3 -c 'import click'", { stdio: 'ignore' });
+        skipInstall = true;
+      } catch(e) {}
+  
+      if (!skipInstall) {
+        console.log("Python dependencies not found. Installing in background...");
+        exec("which apt-get && export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y python3-pip && python3 -m pip install click cloudscraper --break-system-packages", (err) => {
+          if (err) console.log("Python background installation skipped.");
+        });
+      }
     }
   } catch (e: any) {
     console.error("Warning: Failed to setup python installation routine.", e.message);
   }
   
-  // Simulation of Python Tool State
+  // Simulation labels
   let toolInstalled = true;
   let toolVersion = "1.0.0";
   let rootDir = "src/silhouette-card-maker-main";
 
   // Simulation of Card Assets (The "Project")
-  let mockCards = {
-    fronts: [],
-    backs: [],
-    double_sided: []
-  };
+  let mockCards = { fronts: [], backs: [], double_sided: [] };
 
   // Simulation of available cards to pick from (The "Library")
-  let mockLibrary = {
-    fronts: [],
-    backs: [],
-    double_sided: []
-  };
+  let mockLibrary = { fronts: [], backs: [], double_sided: [] };
 
   // Persistent storage simulation
   let savedProjects: Record<string, typeof mockCards> = {};
 
   // Serve library static files
-  app.use('/library', express.static(path.join(process.cwd(), 'src', 'Library')));
+  app.use('/library', express.static(path.join(baseDataPath, 'src', 'Library')));
   app.use('/game', express.static(path.join(scmPath, 'game')));
-  app.use('/plugins_staging', express.static(path.join(process.cwd(), 'src', 'Library', 'Plugins')));
-  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+  app.use('/plugins_staging', express.static(path.join(baseDataPath, 'src', 'Library', 'Plugins')));
+  app.use('/uploads', express.static(path.join(baseDataPath, 'uploads')));
 
-  const upload = multer({ dest: path.join(process.cwd(), 'temp-uploads') });
+  const upload = multer({ dest: path.join(baseDataPath, 'temp-uploads') });
 
   app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -110,7 +117,7 @@ async function startServer() {
     const type = req.body.type === 'back' ? 'back' : (req.body.type === 'double_sided' ? 'double_sided' : 'front');
     const replaceBack = req.body.replaceBack === 'true';
     
-    const targetBase = isLibrary ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game');
+    const targetBase = isLibrary ? libraryPath : path.join(scmPath, 'game');
     const targetDir = path.join(targetBase, type);
     
     fs.mkdirSync(targetDir, { recursive: true });
@@ -143,7 +150,7 @@ async function startServer() {
   app.post("/api/library/save-decklist", (req, res) => {
     const { pluginId, saveName, decklist, format, options } = req.body;
     if (!pluginId || !saveName || decklist === undefined) return res.status(400).json({ error: "Missing fields" });
-    const libraryDecklistDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'decklist');
+    const libraryDecklistDir = path.join(pluginsPath, 'decklist');
     fs.mkdirSync(libraryDecklistDir, { recursive: true });
     
     // Save as JSON metadata to store options and decklist text inside a .txt file header
@@ -154,7 +161,7 @@ async function startServer() {
   });
 
   app.get("/api/library/load-decklists", (req, res) => {
-    const libraryDecklistDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'decklist');
+    const libraryDecklistDir = path.join(pluginsPath, 'decklist');
     let configs: Record<string, any> = {};
     if (fs.existsSync(libraryDecklistDir)) {
       const files = fs.readdirSync(libraryDecklistDir).filter(f => f.endsWith('.json') || f.endsWith('.txt'));
@@ -189,9 +196,9 @@ async function startServer() {
       const backsDir = path.join(scmPath, 'game', 'back');
       const doubleSidedDir = path.join(scmPath, 'game', 'double_sided');
 
-      const libFrontsDir = path.join(process.cwd(), 'src', 'Library', 'front');
-      const libBacksDir = path.join(process.cwd(), 'src', 'Library', 'back');
-      const libDoubleSidedDir = path.join(process.cwd(), 'src', 'Library', 'double_sided');
+      const libFrontsDir = path.join(libraryPath, 'front');
+      const libBacksDir = path.join(libraryPath, 'back');
+      const libDoubleSidedDir = path.join(libraryPath, 'double_sided');
       
       const getFiles = (dir: string) => {
         try {
@@ -239,9 +246,9 @@ async function startServer() {
       actualLibDoubleSided.forEach(file => {
         if (!mockLibrary.double_sided.includes(file)) mockLibrary.double_sided.push(file);
       });
-      const pluginsFrontsDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'front');
-      const pluginsBacksDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'back');
-      const pluginsDoubleSidedDir = path.join(process.cwd(), 'src', 'Library', 'Plugins', 'double_sided');
+      const pluginsFrontsDir = path.join(pluginsPath, 'front');
+      const pluginsBacksDir = path.join(pluginsPath, 'back');
+      const pluginsDoubleSidedDir = path.join(pluginsPath, 'double_sided');
 
       const actualPluginsFronts = getFiles(pluginsFrontsDir);
       const actualPluginsBacks = getFiles(pluginsBacksDir);
@@ -287,8 +294,6 @@ async function startServer() {
       savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
     });
   });
-
-  const projectsDir = path.join(process.cwd(), 'src', 'projects');
 
   app.post("/api/project/save", (req, res) => {
     const { name } = req.body;
@@ -427,7 +432,7 @@ async function startServer() {
           try {
             // Double sided check
             const isDouble = mockLibrary.double_sided.includes(name);
-            const libPath = path.join(process.cwd(), 'src', 'Library', isDouble ? 'double_sided' : 'front', name);
+            const libPath = path.join(libraryPath, isDouble ? 'double_sided' : 'front', name);
             const destDir = path.join(scmPath, 'game', isDouble ? 'double_sided' : 'front');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
@@ -443,8 +448,8 @@ async function startServer() {
           if (!mockCards.backs.includes(name)) mockCards.backs.push(name);
 
           try {
-            const libPath = path.join(process.cwd(), 'src', 'Library', 'back', name);
-            const altLibPath = path.join(process.cwd(), 'src', 'Library', 'Back', name); // Keep fallback if old files exist
+            const libPath = path.join(libraryPath, 'back', name);
+            const altLibPath = path.join(libraryPath, 'Back', name); // Keep fallback if old files exist
             const destDir = path.join(scmPath, 'game', 'back');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
@@ -457,7 +462,7 @@ async function startServer() {
           if (!mockCards.double_sided.includes(name)) mockCards.double_sided.push(name);
           
           try {
-            const libPath = path.join(process.cwd(), 'src', 'Library', 'double_sided', name);
+            const libPath = path.join(libraryPath, 'double_sided', name);
             const destDir = path.join(scmPath, 'game', 'double_sided');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
@@ -595,8 +600,8 @@ async function startServer() {
     if (!identity) return res.status(400).json({error: "No identity"});
     
     const identities = Array.isArray(identity) ? identity : [identity];
-    const targetBase = destination === 'library' ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game');
-    const sourceBase = source === 'plugins' ? path.join(process.cwd(), 'src', 'Library', 'Plugins') : (source === 'project' ? path.join(scmPath, 'game') : path.join(process.cwd(), 'src', 'Library'));
+    const targetBase = destination === 'library' ? libraryPath : path.join(scmPath, 'game');
+    const sourceBase = source === 'plugins' ? pluginsPath : (source === 'project' ? path.join(scmPath, 'game') : libraryPath);
 
     const results: Array<{name: string, from: string, to: string}> = [];
     identities.forEach(id => {
@@ -998,8 +1003,8 @@ async function startServer() {
     const { tempDirId, resolutions, abort } = req.body;
     if (!tempDirId) return res.status(400).json({ error: "No tempDirId" });
     
-    const tempBasePath = path.join(process.cwd(), 'src', 'Library', `Temp_Fetch_${tempDirId}`);
-    const pluginsBasePath = path.join(process.cwd(), 'src', 'Library', 'Plugins');
+    const tempBasePath = path.join(libraryPath, `Temp_Fetch_${tempDirId}`);
+    const pluginsBasePath = pluginsPath;
     
     if (!fs.existsSync(tempBasePath)) {
        return res.status(404).json({ error: "Temp dir not found" });
@@ -1046,7 +1051,8 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    // In production (bundled as dist/server.cjs), __dirname is the dist folder
+    const distPath = __dirname;
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
