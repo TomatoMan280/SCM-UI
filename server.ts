@@ -23,9 +23,25 @@ async function startServer() {
   const baseDataPath = isElectron ? process.env.USER_DATA_PATH! : process.cwd();
   const baseAppPath = isElectron ? process.env.APP_PATH! : process.cwd();
 
+  console.log(`[System] Data Path: ${baseDataPath}`);
+  console.log(`[System] App Path: ${baseAppPath}`);
+
   const scmPath = path.join(baseDataPath, 'src', 'silhouette-card-maker-main');
   const projectsDir = path.join(baseDataPath, 'src', 'projects');
   const libraryPath = path.join(baseDataPath, 'src', 'Library');
+
+  // Utility for recursive copy that handles ASAR correctly
+  const copyRecursive = (src: string, dest: string) => {
+    const stats = fs.statSync(src);
+    if (stats.isDirectory()) {
+      if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+      fs.readdirSync(src).forEach(childItemName => {
+        copyRecursive(path.join(src, childItemName), path.join(dest, childItemName));
+      });
+    } else {
+      fs.copyFileSync(src, dest);
+    }
+  };
   const pluginsPath = path.join(libraryPath, 'Plugins');
   
   // Ensure all required directories exist (in writable location)
@@ -63,31 +79,33 @@ async function startServer() {
   // and if not, copy them from the app bundle (ASAR)
   if (isElectron) {
     const scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
-    // Check for a deep file to ensure full copy
     const markerFile = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
     
-    console.log(`[System] Writable scmPath: ${scmPath}`);
-    console.log(`[System] App Bundle Source: ${scmSourcePath}`);
+    console.log(`[System] Initializing scripts: ${scmSourcePath} -> ${scmPath}`);
     
-    if (fs.existsSync(scmSourcePath)) {
-      if (!fs.existsSync(markerFile)) {
-         console.log("[System] Scripts or marker file missing. Initializing application scripts...");
-         try {
-           // Ensure target directory exists for cpSync
-           if (!fs.existsSync(scmPath)) fs.mkdirSync(scmPath, { recursive: true });
-           
-           fs.cpSync(scmSourcePath, scmPath, { recursive: true });
-           console.log("[System] Scripts initialized/updated successfully.");
-         } catch (e: any) {
-           console.error("[Error] Failed to initialize scripts:", e.message);
-           // Fallback: try individual file copy if recursive fails? 
-           // For now, logging should reveal the issue.
-         }
-      } else {
-        console.log("[System] Scripts already present in user data directory.");
+    try {
+      let sourceToUse = scmSourcePath;
+      if (!fs.existsSync(sourceToUse)) {
+        const altPath = path.join(baseAppPath, 'silhouette-card-maker-main');
+        if (fs.existsSync(altPath)) {
+          sourceToUse = altPath;
+          console.log("[System] Found scripts at flattened path:", altPath);
+        }
       }
-    } else {
-      console.error("[Error] SCM Source folder NOT found in app bundle! Check package.json 'files' property.");
+
+      if (fs.existsSync(sourceToUse)) {
+        if (!fs.existsSync(markerFile)) {
+           console.log("[System] Marker file missing. Initializing scripts...");
+           copyRecursive(sourceToUse, scmPath);
+           console.log("[System] Scripts initialized successfully.");
+        } else {
+           console.log("[System] Scripts already present.");
+        }
+      } else {
+        console.error("[Error] Source scripts NOT found in bundle. baseAppPath contents:", fs.readdirSync(baseAppPath));
+      }
+    } catch (e: any) {
+      console.error("[Error] Script initialization failed:", e.message);
     }
   }
   
@@ -1117,14 +1135,41 @@ async function startServer() {
 
   app.post("/api/admin/repair-scripts", (req, res) => {
     if (!isElectron) return res.status(400).json({error: "Only available in desktop app"});
+    
+    // Diagnostic: List what's in the app bundle
+    try {
+      console.log("[Admin] Diagnostic: Listing contents of baseAppPath:", baseAppPath);
+      if (fs.existsSync(baseAppPath)) {
+        console.log("[Admin] baseAppPath exists. Contents:", fs.readdirSync(baseAppPath));
+        const srcPath = path.join(baseAppPath, 'src');
+        if (fs.existsSync(srcPath)) {
+           console.log("[Admin] srcPath exists. Contents:", fs.readdirSync(srcPath));
+        } else {
+           console.log("[Admin] srcPath does NOT exist at:", srcPath);
+        }
+      } else {
+        console.log("[Admin] baseAppPath does NOT exist at:", baseAppPath);
+      }
+    } catch(err: any) {
+      console.log("[Admin] Diagnostic listing failed:", err.message);
+    }
+
     const scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
+    
     try {
       console.log(`[Admin] Manually repairing scripts from ${scmSourcePath} to ${scmPath}`);
-      if (!fs.existsSync(scmSourcePath)) {
-        throw new Error("Source scripts not found in application bundle. Path: " + scmSourcePath);
+      let sourceToUse = scmSourcePath;
+      if (!fs.existsSync(sourceToUse)) {
+        const altPath = path.join(baseAppPath, 'silhouette-card-maker-main');
+        if (fs.existsSync(altPath)) {
+          console.log("[Admin] Found scripts at alternative path (flattened):", altPath);
+          sourceToUse = altPath;
+        } else {
+          throw new Error("Source scripts not found in application bundle. Checked both src/ and root in: " + baseAppPath);
+        }
       }
-      if (!fs.existsSync(scmPath)) fs.mkdirSync(scmPath, { recursive: true });
-      fs.cpSync(scmSourcePath, scmPath, { recursive: true });
+      
+      copyRecursive(sourceToUse, scmPath);
       res.json({success: true, message: "Scripts restored from bundle."});
     } catch(e: any) {
       console.error("[Admin] Repair failed:", e.message);

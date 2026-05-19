@@ -32,9 +32,9 @@
       "dist/**/*",
       "electron-main.cjs",
       "package.json",
-      "src/Library/**/*",
-      "src/silhouette-card-maker-main/**/*",
-      "src/projects/**/*"
+      "src/Library",
+      "src/silhouette-card-maker-main",
+      "src/projects"
     ],
     "mac": {
       "target": "dmg"
