@@ -46,24 +46,34 @@ function createWindow() {
 
   serverProcess.stdout.on('data', (data) => {
     const output = data.toString();
-    console.log(`Server: ${output}`);
-    if (output.includes('Server running') || output.includes('localhost:3000')) {
+    console.log(`[Server] ${output}`);
+    if (output.includes('SCMUI_READY') || output.includes('Server running') || output.includes('localhost:3000')) {
+       console.log('[Main] Server is ready. Loading app...');
        mainWindow.loadURL('http://localhost:3000');
     }
   });
   
   serverProcess.stderr.on('data', (data) => {
-    console.error(`Server Error: ${data}`);
+    console.error(`[Server Error] ${data}`);
+  });
+
+  serverProcess.on('error', (err) => {
+    console.error('[Main] Failed to start server process:', err);
+  });
+
+  serverProcess.on('exit', (code, signal) => {
+    console.log(`[Main] Server process exited with code ${code}, signal ${signal}`);
   });
 
   // Fallback if we miss the console log or it's quiet
   const timeoutId = setTimeout(() => {
     if (mainWindow && !mainWindow.getURL().includes('localhost:3000')) {
+      console.log('[Main] 10s timeout reached, attempting fallback load...');
       mainWindow.loadURL('http://localhost:3000').catch(err => {
-        console.error('Failed to load localhost:3000', err);
+        console.error('[Main] Failed fallback load:', err);
       });
     }
-  }, 5000);
+  }, 10000);
 
   mainWindow.on('closed', () => {
     mainWindow = null;
