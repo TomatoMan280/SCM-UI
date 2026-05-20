@@ -125,6 +125,9 @@ app.whenReady().then(() => {
     warn(message) { console.warn(`[Updater Warn] ${message}`); },
     error(message) { console.error(`[Updater Error] ${message}`); }
   };
+  
+  // Allow updates to find packages published as Pre-releases on GitHub
+  autoUpdater.allowPrerelease = true;
 
   const { dialog } = require('electron');
 

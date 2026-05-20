@@ -161,7 +161,7 @@ async function startServer() {
       return new Promise<{ updateAvailable: boolean; latestAvailableVersion: string }>((resolve) => {
         const options = {
           hostname: 'api.github.com',
-          path: '/repos/TomatoMan280/SCM-UI/releases/latest',
+          path: '/repos/TomatoMan280/SCM-UI/releases',
           headers: {
             'User-Agent': 'SCMUI-App'
           },
@@ -174,12 +174,14 @@ async function startServer() {
           response.on('end', () => {
             try {
               if (response.statusCode === 200) {
-                const release = JSON.parse(data);
-                const tag = release.tag_name || "";
-                latestAvailableVersion = tag;
-                
-                const cleanTag = tag.replace(/^v/, "");
-                const cleanCurrent = toolVersion.replace(/^v/, "");
+                const releases = JSON.parse(data);
+                if (Array.isArray(releases) && releases.length > 0) {
+                  const latestRelease = releases.find((r: any) => !r.draft) || releases[0];
+                  const tag = latestRelease.tag_name || "";
+                  latestAvailableVersion = tag;
+                  
+                  const cleanTag = tag.replace(/^v/, "");
+                  const cleanCurrent = toolVersion.replace(/^v/, "");
                 
                 const compareVersions = (v1: string, v2: string) => {
                   const parts1 = v1.split('.').map(Number);
@@ -198,6 +200,7 @@ async function startServer() {
                 } else {
                   updateAvailable = false;
                 }
+              }
               }
             } catch (e) {}
             resolve({ updateAvailable, latestAvailableVersion });
