@@ -11,7 +11,7 @@
     "lint": "echo 'Skipping lint'"
   },
   "dependencies": {
-    "@google/genai": "^0.1.1",
+    "@google/genai": "^1.52.0",
     "adm-zip": "^0.5.10",
     "archiver": "^6.0.1",
     "bignumber.js": "^9.1.2",
