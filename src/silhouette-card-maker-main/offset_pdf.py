@@ -1,4 +1,5 @@
 import os
+import sys
 import click
 import pypdfium2 as pdfium
 from PIL import Image, JpegImagePlugin
@@ -47,7 +48,7 @@ def offset_pdf(pdf_path, output_pdf_path, x_offset, y_offset, angle, save, ppi):
         save_offset(new_x_offset, new_y_offset, new_angle_offset)
         print(f'Saved offset')
 
-    if not os.path.exists(pdf_path) and save and pdf_path == default_output_pdf_path:
+    if save and pdf_path == default_output_pdf_path and '--pdf_path' not in sys.argv:
         return
 
     try:
