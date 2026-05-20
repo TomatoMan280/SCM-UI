@@ -25,6 +25,7 @@
   "build": {
     "appId": "com.alancha.silhouette",
     "productName": "SCMUI",
+    "copyright": "Copyright © 2026 SCMUI",
     "publish": {
       "provider": "github",
       "owner": "Alan-Cha",
@@ -45,8 +46,7 @@
       "target": "dmg"
     },
     "win": {
-      "target": "nsis",
-      "publisherName": "SCMUI"
+      "target": "nsis"
     },
     "linux": {
       "target": "AppImage"
