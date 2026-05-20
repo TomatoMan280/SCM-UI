@@ -130,7 +130,18 @@ async function startServer() {
   
   // Simulation labels
   let toolInstalled = true;
-  let toolVersion = "1.0.0";
+  let toolVersion = "1.0.2";
+  try {
+    const packageJsonPath = path.join(process.cwd(), 'package.json');
+    if (fs.existsSync(packageJsonPath)) {
+      const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      if (pkg && pkg.version) {
+        toolVersion = pkg.version;
+      }
+    }
+  } catch (e) {
+    console.error("Failed to read version from package.json", e);
+  }
   let rootDir = "src/silhouette-card-maker-main";
 
   // Simulation of Card Assets (The "Project")

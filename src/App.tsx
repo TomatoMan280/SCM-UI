@@ -1632,7 +1632,7 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '0.0'}</span>
+                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.2'}</span>
                 </div>
               </div>
             </div>
@@ -1761,9 +1761,8 @@ export default function App() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="grid grid-cols-3 gap-6"
+                  className="max-w-4xl space-y-6"
                 >
-                <div className="col-span-2 space-y-6">
                   <section className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 relative overflow-hidden group">
                     <h2 className="text-2xl font-bold mb-2">Silhouette Master Studio</h2>
                     <p className="text-white/60 max-w-xl leading-relaxed mb-6">
@@ -1786,20 +1785,7 @@ export default function App() {
                       </button>
                     </div>
                   </section>
-                </div>
-
-                <div className="space-y-6">
-                  <div className="p-6 rounded-2xl bg-[#0f0f13] border border-white/5">
-                    <h3 className="font-bold mb-4 flex items-center gap-2 text-white/80">
-                      <RefreshCw size={16} />
-                      Maintenance
-                    </h3>
-                    <div className="space-y-2">
-                       <CommandItem icon={<Trash2 size={14}/>} label="Purge Cache" onClick={() => runCommand('clean_up.py', undefined, { startMessage: 'Purging cache...' })} />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+                </motion.div>
             </div>
             )}
 
@@ -3383,6 +3369,23 @@ export default function App() {
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Purge Cache</span>
+                      <span className="text-xs text-white/40 block">Delete all images from card image directories.</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowThemeSettings(false);
+                        runCommand('clean_up.py', undefined, { startMessage: 'Purging cache...' });
+                      }}
+                      className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 active:scale-95"
+                    >
+                      <Trash2 size={14} />
+                      Purge
+                    </button>
                   </div>
 
                   <div className="space-y-2 pt-2 border-t border-white/10">
