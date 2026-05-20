@@ -127,10 +127,39 @@ app.whenReady().then(() => {
     error(message) { console.error(`[Updater Error] ${message}`); }
   };
 
+  const { dialog } = require('electron');
+
+  autoUpdater.on('update-available', (info) => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Update Available',
+      message: `A new version (${info.version}) is available. It is being downloaded in the background.`
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Update Ready',
+      message: 'The new version has been downloaded. Restart the application to apply the updates.',
+      buttons: ['Restart Now', 'Later']
+    }).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[Updater] Failed to verify updates:', err);
+    // You can uncomment the below line for debugging, but it might get annoying for users if there's no internet.
+    // dialog.showErrorBox('Update Error', err == null ? "unknown" : (err.stack || err).toString());
+  });
+
   // Check for updates on startup
   console.log('[Updater] Checking for updates...');
   autoUpdater.checkForUpdatesAndNotify().catch(err => {
-    console.error('[Updater] Failed to verify updates:', err);
+    console.error('[Updater] Check failed:', err);
   });
 });
 
