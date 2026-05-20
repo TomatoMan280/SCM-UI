@@ -1,4 +1,5 @@
 const { app, BrowserWindow } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { fork } = require('child_process');
 
@@ -106,7 +107,22 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  
+  // Configure custom logger for the autoUpdater to log to main process console
+  autoUpdater.logger = {
+    info(message) { console.log(`[Updater Log] ${message}`); },
+    warn(message) { console.warn(`[Updater Warn] ${message}`); },
+    error(message) { console.error(`[Updater Error] ${message}`); }
+  };
+
+  // Check for updates on startup
+  console.log('[Updater] Checking for updates...');
+  autoUpdater.checkForUpdatesAndNotify().catch(err => {
+    console.error('[Updater] Failed to verify updates:', err);
+  });
+});
 
 app.on('window-all-closed', () => {
   if (serverProcess) {
