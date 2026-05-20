@@ -2,12 +2,12 @@ const { app, BrowserWindow } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { fork } = require('child_process');
+const fs = require('fs');
 
 let mainWindow;
 let serverProcess;
 
 function createWindow() {
-  const fs = require('fs');
   let iconPath = path.join(__dirname, 'build', 'icon.png');
   if (!fs.existsSync(iconPath)) {
     iconPath = path.join(__dirname, 'dist', 'icon.png');
@@ -43,8 +43,7 @@ function createWindow() {
   // When packaged, server.cjs is in dist folder inside resources/app.asar
   const serverPath = path.join(__dirname, 'dist', 'server.cjs');
   const logPath = path.join(app.getPath('userData'), 'scmui-server-error.log');
-  const fs = require('fs');
-  fs.writeFileSync(logPath, '--- App Startup ---\\n');
+  fs.writeFileSync(logPath, '--- App Startup ---\n');
   
   // Use fork instead of spawn to ensure it runs with the same node version
   serverProcess = fork(serverPath, [], {
