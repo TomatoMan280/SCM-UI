@@ -130,7 +130,95 @@ async function startServer() {
   
   // Simulation labels
   let toolInstalled = true;
-  let toolVersion = "1.0.0";
+  let toolVersion = "1.0.2";
+  try {
+    const pkgPath = path.join(baseAppPath, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      if (pkg.version) {
+        toolVersion = pkg.version;
+      }
+    }
+  } catch (err: any) {
+    console.error("Warning: Failed to read version from package.json:", err.message);
+  }
+
+  // Live update checking from GitHub
+  let updateAvailable = false;
+  let latestAvailableVersion = toolVersion;
+  let lastUpdateCheckTime = 0;
+
+  const checkGitHubUpdate = async () => {
+    const now = Date.now();
+    // Cache for 5 minutes to prevent hitting GitHub rate limits
+    if (now - lastUpdateCheckTime < 300000) {
+      return { updateAvailable, latestAvailableVersion };
+    }
+    lastUpdateCheckTime = now;
+    
+    try {
+      const https = await import("https");
+      return new Promise<{ updateAvailable: boolean; latestAvailableVersion: string }>((resolve) => {
+        const options = {
+          hostname: 'api.github.com',
+          path: '/repos/TomatoMan280/SCM-UI/releases/latest',
+          headers: {
+            'User-Agent': 'SCMUI-App'
+          },
+          timeout: 4000
+        };
+        
+        const req = https.get(options, (response) => {
+          let data = '';
+          response.on('data', (chunk) => { data += chunk; });
+          response.on('end', () => {
+            try {
+              if (response.statusCode === 200) {
+                const release = JSON.parse(data);
+                const tag = release.tag_name || "";
+                latestAvailableVersion = tag;
+                
+                const cleanTag = tag.replace(/^v/, "");
+                const cleanCurrent = toolVersion.replace(/^v/, "");
+                
+                const compareVersions = (v1: string, v2: string) => {
+                  const parts1 = v1.split('.').map(Number);
+                  const parts2 = v2.split('.').map(Number);
+                  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+                    const p1 = parts1[i] || 0;
+                    const p2 = parts2[i] || 0;
+                    if (p1 > p2) return 1;
+                    if (p1 < p2) return -1;
+                  }
+                  return 0;
+                };
+                
+                if (compareVersions(cleanTag, cleanCurrent) > 0) {
+                  updateAvailable = true;
+                } else {
+                  updateAvailable = false;
+                }
+              }
+            } catch (e) {}
+            resolve({ updateAvailable, latestAvailableVersion });
+          });
+        });
+        
+        req.on('error', (err) => {
+          console.error("[Updater] Background update check failed:", err.message);
+          resolve({ updateAvailable, latestAvailableVersion });
+        });
+        
+        req.end();
+      });
+    } catch (e) {
+      return { updateAvailable, latestAvailableVersion };
+    }
+  };
+
+  // Trigger initial check at startup
+  checkGitHubUpdate().catch(() => {});
+
   let rootDir = "src/silhouette-card-maker-main";
 
   // Simulation of Card Assets (The "Project")
@@ -298,7 +386,18 @@ async function startServer() {
     }
   });
 
+  app.get("/api/check-update", async (req, res) => {
+    try {
+      lastUpdateCheckTime = 0; // force a live request
+      const checkResult = await checkGitHubUpdate();
+      res.json(checkResult);
+    } catch (e: any) {
+      res.status(500).json({ error: "Failed to check update", message: e.message });
+    }
+  });
+
   app.get("/api/status", (req, res) => {
+    checkGitHubUpdate().catch(() => {});
     try {
       const fetchScript = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
       const integrityOk = fs.existsSync(fetchScript);
@@ -377,6 +476,8 @@ async function startServer() {
       res.json({
         installed: toolInstalled,
         version: toolVersion,
+        updateAvailable: updateAvailable,
+        latestAvailableVersion: latestAvailableVersion,
         rootDir: rootDir,
         pythonFound: true,
         dependenciesOk: toolInstalled,
@@ -398,6 +499,8 @@ async function startServer() {
     res.json({
       installed: toolInstalled,
       version: toolVersion,
+      updateAvailable: updateAvailable,
+      latestAvailableVersion: latestAvailableVersion,
       rootDir: rootDir,
       pythonFound: true,
       dependenciesOk: toolInstalled,

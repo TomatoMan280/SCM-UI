@@ -327,6 +327,8 @@ const PLUGINS: PluginConfig[] = [
 interface AppStatus {
   installed: boolean;
   version: string;
+  updateAvailable?: boolean;
+  latestAvailableVersion?: string;
   rootDir: string;
   pythonFound: boolean;
   dependenciesOk: boolean;
@@ -345,6 +347,27 @@ export default function App() {
   const [logs, setLogs] = useState<string[]>(["[System] Initializing Silhouette Master Virtual Bridge..."]);
 
   const [appIcon, setAppIcon] = useState<string | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  const handleManualCheckUpdate = async () => {
+    if (isCheckingUpdate) return;
+    setIsCheckingUpdate(true);
+    try {
+      const res = await fetch('/api/check-update');
+      const data = await res.json();
+      if (data) {
+        setStatus(prev => prev ? { 
+          ...prev, 
+          updateAvailable: data.updateAvailable, 
+          latestAvailableVersion: data.latestAvailableVersion 
+        } : null);
+      }
+    } catch (err) {
+      console.error("Failed to force update check:", err);
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   useEffect(() => {
     fetch('/icon.png', { method: 'HEAD' })
@@ -1561,13 +1584,13 @@ export default function App() {
         isSidebarCollapsed ? "w-20" : "w-64"
       )}>
         <div className={cn("p-6 pb-2", isSidebarCollapsed && "px-4")}>
-          <div className="flex items-center justify-between mb-8 overflow-hidden group relative">
+          <div className="flex items-center justify-between mb-8 group relative">
             <div 
-              className={cn("flex items-center gap-3 overflow-hidden cursor-pointer", isSidebarCollapsed && "w-full justify-center")}
+              className={cn("flex items-center gap-3 cursor-pointer", isSidebarCollapsed && "w-full justify-center")}
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             >
-              <div className="p-2.5 bg-primary-600 rounded-xl shadow-lg shadow-primary-600/30 shrink-0 select-none flex items-center justify-center">
+              <div className="p-2 bg-primary-600 rounded-xl shadow-lg shadow-primary-600/30 shrink-0 select-none flex items-center justify-center">
                 {appIcon ? (
                   <img src={appIcon} className="w-5 h-5 object-contain" referrerPolicy="no-referrer" alt="Logo" />
                 ) : (
@@ -1624,7 +1647,17 @@ export default function App() {
         {!isSidebarCollapsed ? (
           <div className="mt-auto p-6 space-y-4">
             <div className="p-4 rounded-xl bg-primary-600/10 border border-primary-500/20 space-y-2">
-              <p className="text-[10px] font-semibold text-primary-400 uppercase tracking-widest">Status</p>
+              <div className="flex justify-between items-center">
+                <p className="text-[10px] font-semibold text-primary-400 uppercase tracking-widest">Status</p>
+                <button 
+                  onClick={handleManualCheckUpdate} 
+                  disabled={isCheckingUpdate}
+                  className="text-[9px] text-primary-400 hover:text-white underline transition-colors disabled:opacity-50"
+                  title="Check for updates on GitHub"
+                >
+                  {isCheckingUpdate ? "Checking..." : "Check"}
+                </button>
+              </div>
               <div className="space-y-1 text-xs">
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Python</span>
@@ -1632,7 +1665,17 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '0.0'}</span>
+                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.2'}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1 border-t border-white/5">
+                  <span className="text-white/40 text-[10px]">Update</span>
+                  {status?.updateAvailable ? (
+                    <span className="text-indigo-400 font-semibold text-[10px] animate-pulse flex items-center gap-1">
+                      <span>v{status.latestAvailableVersion} Ready</span>
+                    </span>
+                  ) : (
+                    <span className="text-white/30 text-[10px]">Up to date</span>
+                  )}
                 </div>
               </div>
             </div>
