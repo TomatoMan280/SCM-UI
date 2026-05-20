@@ -48,7 +48,9 @@ def offset_pdf(pdf_path, output_pdf_path, x_offset, y_offset, angle, save, ppi):
         save_offset(new_x_offset, new_y_offset, new_angle_offset)
         print(f'Saved offset')
 
-    if save and pdf_path == default_output_pdf_path and '--pdf_path' not in sys.argv:
+    # If saving the settings and no explicit pdf_path was passed, return early to avoid processing any PDF
+    has_explicit_pdf = any(arg.startswith('--pdf_path') for arg in sys.argv)
+    if save and not has_explicit_pdf:
         return
 
     try:
