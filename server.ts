@@ -284,6 +284,20 @@ async function startServer() {
     });
   });
 
+  app.get("/api/plugin/:id/readme", (req, res) => {
+    try {
+      const readmePath = path.join(scmPath, 'plugins', req.params.id, "README.md");
+      if (fs.existsSync(readmePath)) {
+        const content = fs.readFileSync(readmePath, "utf-8");
+        res.json({ content });
+      } else {
+        res.status(404).json({ error: "README not found" });
+      }
+    } catch (err) {
+      res.status(500).json({ error: "Failed to read README" });
+    }
+  });
+
   app.get("/api/status", (req, res) => {
     try {
       const fetchScript = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
@@ -635,26 +649,32 @@ async function startServer() {
     
     fs.copyFileSync(srcPath, path.join(dir, newName));
     
+    const insertAfter = (arr: string[], target: string, item: string) => {
+      const idx = arr.indexOf(target);
+      if (idx !== -1) arr.splice(idx + 1, 0, item);
+      else arr.push(item);
+    };
+
     if (isLibrary) {
-      if (type === 'front') mockLibrary.fronts.push(newName);
-      else if (type === 'back') mockLibrary.backs.push(newName);
-      else if (type === 'double_sided') mockLibrary.double_sided.push(newName);
+      if (type === 'front') insertAfter(mockLibrary.fronts, name, newName);
+      else if (type === 'back') insertAfter(mockLibrary.backs, name, newName);
+      else if (type === 'double_sided') insertAfter(mockLibrary.double_sided, name, newName);
       
       if (dirType === 'double_sided') {
          if (!mockLibrary.double_sided.includes(newName)) {
-            mockLibrary.double_sided.push(newName);
+            insertAfter(mockLibrary.double_sided, name, newName);
          }
          mockLibrary.fronts = mockLibrary.fronts.filter(f => f !== newName);
          mockLibrary.backs = mockLibrary.backs.filter(b => b !== newName);
       }
     } else if (!isPlugins) {
-      if (type === 'front') mockCards.fronts.push(newName);
-      else if (type === 'back') mockCards.backs.push(newName);
-      else if (type === 'double_sided') mockCards.double_sided.push(newName);
+      if (type === 'front') insertAfter(mockCards.fronts, name, newName);
+      else if (type === 'back') insertAfter(mockCards.backs, name, newName);
+      else if (type === 'double_sided') insertAfter(mockCards.double_sided, name, newName);
       
       if (dirType === 'double_sided') {
          if (!mockCards.double_sided.includes(newName)) {
-            mockCards.double_sided.push(newName);
+            insertAfter(mockCards.double_sided, name, newName);
          }
          mockCards.fronts = mockCards.fronts.filter(f => f !== newName);
          mockCards.backs = mockCards.backs.filter(b => b !== newName);
@@ -673,7 +693,11 @@ async function startServer() {
     const isPlugins = assetViewMode === 'plugins';
     const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
     
-    const results: Array<{name: string, from: string}> = [];
+    // Create a trash folder
+    const trashDir = path.join(baseDataPath, '.trash');
+    if (!fs.existsSync(trashDir)) fs.mkdirSync(trashDir, { recursive: true });
+
+    const results: Array<{name: string, from: string, trashPath: string, type: string}> = [];
     identities.forEach(id => {
         const [type, name] = id.split(':');
         
@@ -690,11 +714,18 @@ async function startServer() {
         
         const dir = path.join(targetBase, dirType);
         const srcPath = path.join(dir, name);
+        const trashPath = path.join(trashDir, `deleted_${Date.now()}_${name}`);
+
         let success = true;
-        try { fs.unlinkSync(srcPath); console.log('Deleted:', srcPath); } catch(e) { console.error('Delete fail:', srcPath, e); success = false; }
+        try { 
+          if(fs.existsSync(srcPath)) {
+            fs.renameSync(srcPath, trashPath); 
+            console.log('Moved to trash:', srcPath); 
+          }
+        } catch(e) { console.error('Delete fail:', srcPath, e); success = false; }
         
         if (success) {
-            results.push({ name, from: srcPath });
+            results.push({ name, from: srcPath, trashPath, type: dirType });
             if (isLibrary) {
                 mockLibrary.fronts = mockLibrary.fronts.filter(n => n !== name);
                 mockLibrary.backs = mockLibrary.backs.filter(n => n !== name);
@@ -708,6 +739,37 @@ async function startServer() {
     });
 
     res.json({ success: true, message: `Deleted ${results.length} items.`, results });
+  });
+
+  app.post("/api/restore", (req, res) => {
+    const { items, assetViewMode } = req.body;
+    const isLibrary = assetViewMode === 'library';
+    const isPlugins = assetViewMode === 'plugins';
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
+    
+    // items is array of { name, trashPath, type }
+    items.forEach((item: any) => {
+      const targetDir = path.join(targetBase, item.type);
+      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+      try {
+        if (fs.existsSync(item.trashPath)) {
+          fs.renameSync(item.trashPath, path.join(targetDir, item.name));
+        }
+      } catch (e) {}
+
+      // Add back to mock lists
+      if (isLibrary) {
+        if (item.type === 'front') mockLibrary.fronts.push(item.name);
+        else if (item.type === 'back') mockLibrary.backs.push(item.name);
+        else mockLibrary.double_sided.push(item.name);
+      } else if (!isPlugins) {
+        if (item.type === 'front') mockCards.fronts.push(item.name);
+        else if (item.type === 'back') mockCards.backs.push(item.name);
+        else mockCards.double_sided.push(item.name);
+      }
+    });
+
+    res.json({ success: true });
   });
 
   app.post("/api/plugin/import", (req, res) => {

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { 
   Loader2,
   Terminal, 
@@ -62,8 +64,8 @@ const FORMAT_HINTS: Record<string, string> = {
   limitless: "Limitless TCG format. Example: 4 Pikachu PAR 18",
 
   // One Piece
-  egman: "Egman Events formatting.",
-  optcgsim: "OPTCG Sim text format.",
+  egman: "Egman Events format. Example: 4 OP01-016 Nami",
+  optcgsim: "OPTCG Sim format. Example: 1xOP12-001",
 
   // Lorcana
   dreamborn: "Dreamborn.ink text format.",
@@ -74,7 +76,7 @@ const FORMAT_HINTS: Record<string, string> = {
   swudb_json: "SWUDB exported JSON format.",
 
   // Sorcery
-  curiosa_url: "Curiosa.io deck URL.",
+  curiosa_url: "Curiosa URL format uses the full URL of a deck from Curiosa. Example: https://curiosa.io/decks/cme5x329q00k9jo04ouuycsek",
 
   // Riftbound
   piltover_archive: "Piltover Archive exported text format.",
@@ -86,7 +88,53 @@ const FORMAT_HINTS: Record<string, string> = {
   digimoncard_app: "Digimoncard.app formatted text.",
 
   // YGO
-  ydke: "YDKE deck string format."
+  ydk: "YDK format. Example: #main...",
+  ydke: "YDKE deck string format.",
+
+  // Netrunner
+  bbcode: "bbCode format. Example: 3x [url=...]Cohort Guidance Program[/url]",
+  jinteki: "Jinteki format. Example: 3 Fujii Asset Retrieval",
+  markdown: "Markdown (Reddit) format. Example: * 3x [Fujii Asset Retrieval](...)",
+  plain_text: "Plain text format. Example: 3x Cohort Guidance Program",
+  text: "Standard text format. Example: 1x Longevity Serum (System Gateway)",
+
+  // Altered
+  ajordat: "Ajordat format.",
+
+  // Ashes Reborn
+  ashes_share_url: "Ashes format. Example: https://ashes.live/decks/share/.../",
+  ashesdb_share_url: "Ashes DB format. Example: https://ashesdb.plaidhatgames.com/decks/share/.../",
+
+  // Bushiroad
+  bushiroad_url: "Bushiroad Deck Log URL format. Example: https://decklog-en.bushiroad.com/view/1HF6L",
+
+  // Digimon
+  digimoncardapp: "digimoncard.app format.",
+  digimoncarddev: "digimoncard.dev format.",
+  digimoncardio: "digimoncard.io format.",
+  digimonmeta: "DigimonMeta format.",
+  untap: "Untap format.",
+
+  // Echoes of Astra
+  astrabuilder_url: "AstraBuilder URL format uses the full URL of a deck from AstraBuilder. Example: https://www.astra-builder.com/en/create?deck=122",
+
+  // Elestrals
+  elestrals: "The format for Elestrals Play Network. Example: 6883b784bd9cf7315d565843",
+
+  // Final Fantasy
+  octgn_xml: "OCTGN XML format.",
+
+  // Flesh and Blood
+  fabrary: "Fabrary format.",
+
+  // Grand Archive
+  omnideck: "Omnideck format.",
+
+  // Gundam
+  deckplanet: "DeckPlanet format.",
+  egman: "Egman Events format.",
+  exburst: "ExBurst format.",
+  limitless: "Limitless format."
 };
 
 interface PluginConfig {
@@ -94,6 +142,7 @@ interface PluginConfig {
   name: string;
   formats: string[];
   options: { label: string; flag: string; type: 'toggle' | 'select' | 'text'; choices?: string[] }[];
+  websites?: { name: string; url: string; }[];
 }
 
 const PLUGINS: PluginConfig[] = [
@@ -112,37 +161,59 @@ const PLUGINS: PluginConfig[] = [
       { label: 'Prefer Sets (comma separated)', flag: '-s', type: 'text' },
       { label: 'Ignore Sets (comma separated)', flag: '--ignore_set', type: 'text' },
       { label: 'Language', flag: '--prefer_lang', type: 'select', choices: ['en', 'sp', 'fr', 'de', 'it', 'pt', 'jp', 'kr', 'ru', 'cs', 'ct', 'ag', 'ph'] }
+    ],
+    websites: [
+      { name: 'Moxfield', url: 'https://moxfield.com' },
+      { name: 'Archidekt', url: 'https://archidekt.com' },
+      { name: 'Scryfall', url: 'https://scryfall.com' },
+      { name: 'Deckstats', url: 'https://deckstats.net' },
+      { name: 'CubeCobra', url: 'https://cubecobra.com' },
+      { name: 'MTGGoldfish', url: 'https://mtggoldfish.com' },
+      { name: 'TappedOut', url: 'https://tappedout.net' },
+      { name: 'TCGPlayer', url: 'https://tcgplayer.com' },
+      { name: 'Aetherhub', url: 'https://aetherhub.com' }
     ]
   },
   { 
     id: 'pokemon', 
     name: 'Pokemon', 
     formats: ['limitless'],
-    options: []
+    options: [],
+    websites: [{ name: 'Limitless', url: 'https://play.limitlesstcg.com/' }]
   },
   { 
     id: 'one_piece', 
     name: 'One Piece', 
     formats: ['egman', 'optcgsim'],
-    options: []
+    options: [],
+    websites: [
+      { name: 'Egman Events', url: 'https://egmanevents.com/' },
+      { name: 'OPTCG Sim', url: 'https://optcgsim.com/' }
+    ]
   },
   { 
     id: 'lorcana', 
     name: 'Lorcana', 
     formats: ['dreamborn'],
-    options: []
+    options: [],
+    websites: [{ name: 'Dreamborn', url: 'https://dreamborn.ink/' }]
   },
   { 
     id: 'star_wars_unlimited', 
     name: 'Star Wars Unlimited', 
     formats: ['melee', 'picklist', 'swudb_json'],
-    options: []
+    options: [],
+    websites: [
+      { name: 'SWUDB', url: 'https://swudb.com/' },
+      { name: 'Melee', url: 'https://melee.gg/' }
+    ]
   },
   { 
     id: 'sorcery_contested_realm', 
     name: 'Sorcery: Contested Realm', 
     formats: ['curiosa_url'],
-    options: []
+    options: [],
+    websites: [{ name: 'Curiosa', url: 'https://curiosa.io/' }]
   },
   { 
     id: 'riftbound', 
@@ -150,55 +221,78 @@ const PLUGINS: PluginConfig[] = [
     formats: ['piltover_archive', 'pixelborn', 'tts'],
     options: [
       { label: 'Image Source', flag: '--source', type: 'select', choices: ['piltover_archive', 'riftmana'] }
+    ],
+    websites: [
+      { name: 'Piltover Archive', url: 'https://piltoverarchive.com/' },
+      { name: 'Pixelborn', url: 'https://pixelborn.com/' }
     ]
   },
   { 
     id: 'netrunner', 
     name: 'Netrunner', 
     formats: ['bbcode', 'jinteki', 'markdown', 'plain_text', 'text'],
-    options: []
+    options: [],
+    websites: [
+      { name: 'NetrunnerDB', url: 'https://netrunnerdb.com/' },
+      { name: 'Jinteki', url: 'https://jinteki.net/' }
+    ]
   },
   { 
     id: 'gundam', 
     name: 'Gundam', 
     formats: ['deckplanet', 'egman', 'exburst', 'limitless'],
-    options: []
+    options: [],
+    websites: [
+      { name: 'DeckPlanet', url: 'https://www.deckplanet.com/' },
+      { name: 'Egman Events', url: 'https://egmanevents.com/' },
+      { name: 'ExBurst', url: 'https://www.exburst.com/' },
+      { name: 'Limitless', url: 'https://play.limitlesstcg.com/' }
+    ]
   },
   { 
     id: 'grand_archive', 
     name: 'Grand Archive', 
     formats: ['omnideck'],
-    options: []
+    options: [],
+    websites: [{ name: 'Omnideck', url: 'https://omnideck.org' }]
   },
   { 
     id: 'flesh_and_blood', 
     name: 'Flesh and Blood', 
     formats: ['fabrary'],
-    options: []
+    options: [],
+    websites: [{ name: 'Fabrary', url: 'https://fabrary.net' }]
   },
   { 
     id: 'final_fantasy', 
     name: 'Final Fantasy', 
     formats: ['octgn_xml', 'tts', 'untap'],
-    options: []
+    options: [],
+    websites: [{ name: 'FF Decks', url: 'https://ffdecks.com/' }]
   },
   { 
     id: 'elestrals', 
     name: 'Elestrals', 
     formats: ['elestrals'],
-    options: []
+    options: [],
+    websites: [{ name: 'Elestrals', url: 'https://elestrals.com/' }]
   },
   { 
     id: 'echoes_of_astra', 
     name: 'Echoes of Astra', 
     formats: ['astrabuilder_url'],
-    options: []
+    options: [],
+    websites: [{ name: 'Astra Builder', url: 'https://astrabuilder.com/' }]
   },
   { 
     id: 'digimon', 
     name: 'Digimon', 
     formats: ['digimoncardapp', 'digimoncarddev', 'digimoncardio', 'digimonmeta', 'tts', 'untap'],
-    options: []
+    options: [],
+    websites: [
+      { name: 'Digimoncard.dev', url: 'https://digimoncard.dev/' },
+      { name: 'Digimoncard.app', url: 'https://digimoncard.app/' }
+    ]
   },
   { 
     id: 'ashes_reborn', 
@@ -206,20 +300,30 @@ const PLUGINS: PluginConfig[] = [
     formats: ['ashes_share_url', 'ashesdb_share_url'],
     options: [
       { label: 'Image Source', flag: '--source', type: 'select', choices: ['ashes', 'ashesdb'] }
-    ]
+    ],
+    websites: [{ name: 'Ashes.live', url: 'https://ashes.live/' }]
   },
   { 
     id: 'altered', 
     name: 'Altered', 
     formats: ['ajordat'],
-    options: []
+    options: [],
+    websites: [{ name: 'Altered', url: 'https://altered.gg/' }]
+  },
+  { 
+    id: 'bushiroad', 
+    name: 'Bushiroad', 
+    formats: ['bushiroad_url'],
+    options: [],
+    websites: [{ name: 'Deck Log', url: 'https://decklog.bushiroad.com/' }]
   },
   { 
     id: 'yugioh', 
     name: 'Yu-Gi-Oh!', 
     formats: ['ydke', 'ydk'],
-    options: []
-  },
+    options: [],
+    websites: [{ name: 'YGOProDeck', url: 'https://ygoprodeck.com/' }]
+  }
 ];
 
 interface AppStatus {
@@ -244,59 +348,106 @@ export default function App() {
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
+  const [fileUndoStack, setFileUndoStack] = useState<any[]>([]);
+
   // History State for Undo/Redo
-  const [history, setHistory] = useState<{ cmdOptions: any, pluginState: any }[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [historyState, setHistoryState] = useState<{
+    items: { cmdOptions: any, pluginState: any }[],
+    index: number
+  }>({
+    items: [],
+    index: -1
+  });
   const isInternalUpdate = useRef(false);
 
   const saveToHistory = useCallback((options: any, pState: any) => {
-    setHistory(prev => {
-      const next = prev.slice(0, historyIndex + 1);
+    setHistoryState(prev => {
+      const { items, index } = prev;
+      const nextItems = items.slice(0, index + 1);
       const snapshot = JSON.parse(JSON.stringify({ cmdOptions: options, pluginState: pState }));
       
-      if (next.length > 0) {
-        const last = next[next.length - 1];
+      if (nextItems.length > 0) {
+        const last = nextItems[nextItems.length - 1];
         if (JSON.stringify(last.cmdOptions) === JSON.stringify(snapshot.cmdOptions) && 
             JSON.stringify(last.pluginState) === JSON.stringify(snapshot.pluginState)) {
           return prev;
         }
       }
       
-      next.push(snapshot);
-      if (next.length > 100) next.shift();
-      return next;
+      nextItems.push(snapshot);
+      if (nextItems.length > 100) nextItems.shift();
+      return {
+        items: nextItems,
+        index: nextItems.length - 1
+      };
     });
-    setHistoryIndex(prev => {
-      const nextIdx = prev + 1;
-      return nextIdx;
-    });
-  }, [historyIndex]);
+  }, []);
 
-  const handleUndo = useCallback(() => {
-    if (historyIndex > 0) {
-      const prevIdx = historyIndex - 1;
-      const prevState = history[prevIdx];
-      isInternalUpdate.current = true;
-      setCmdOptions(prevState.cmdOptions);
-      isInternalUpdate.current = true;
-      setPluginState(prevState.pluginState);
-      setHistoryIndex(prevIdx);
-      addLog("[System] Undo performed.");
+  const handleUndo = useCallback(async () => {
+    if (activeTab === 'assets') {
+      if (fileUndoStack.length === 0) return;
+      const lastAction = fileUndoStack[fileUndoStack.length - 1];
+      setFileUndoStack(prev => prev.slice(0, prev.length - 1));
+      
+      try {
+        if (lastAction.action === 'delete') {
+          await fetch('/api/restore', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ items: lastAction.items, assetViewMode: lastAction.assetViewMode })
+          });
+          addLog(`[System] Undid delete of ${lastAction.items.length} item(s).`);
+        } else if (lastAction.action === 'duplicate' || lastAction.action === 'import') {
+          // Both are "create" actions, so we delete them
+          const identities = lastAction.items;
+          const viewMode = lastAction.action === 'duplicate' ? lastAction.assetViewMode : lastAction.destination;
+          await fetch('/api/delete', {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ identity: identities, assetViewMode: viewMode })
+          });
+          addLog(`[System] Undid ${lastAction.action} of ${identities.length} item(s).`);
+        }
+        await fetchStatus();
+      } catch (err) {
+        addLog(`[Error] File undo failed: ${err}`);
+      }
+    } else {
+      setHistoryState(prev => {
+        if (prev.index > 0) {
+          const prevIdx = prev.index - 1;
+          const prevState = prev.items[prevIdx];
+          isInternalUpdate.current = true;
+          setCmdOptions(prevState.cmdOptions);
+          isInternalUpdate.current = true;
+          setPluginState(prevState.pluginState);
+          addLog("[System] Undo performed.");
+          return { ...prev, index: prevIdx };
+        }
+        return prev;
+      });
     }
-  }, [historyIndex, history]);
+  }, [activeTab, fileUndoStack]);
 
   const handleRedo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      const nextIdx = historyIndex + 1;
-      const nextState = history[nextIdx];
-      isInternalUpdate.current = true;
-      setCmdOptions(nextState.cmdOptions);
-      isInternalUpdate.current = true;
-      setPluginState(nextState.pluginState);
-      setHistoryIndex(nextIdx);
-      addLog("[System] Redo performed.");
+    if (activeTab === 'assets') {
+      // Redo for assets not supported yet
+      return;
     }
-  }, [historyIndex, history]);
+    setHistoryState(prev => {
+      if (prev.index < prev.items.length - 1) {
+        const nextIdx = prev.index + 1;
+        const nextState = prev.items[nextIdx];
+        isInternalUpdate.current = true;
+        setCmdOptions(nextState.cmdOptions);
+        isInternalUpdate.current = true;
+        setPluginState(nextState.pluginState);
+        addLog("[System] Redo performed.");
+        return { ...prev, index: nextIdx };
+      }
+      return prev;
+    });
+  }, [activeTab]);
 
   // Computed state
   const getCurrentAssets = () => {
@@ -327,9 +478,54 @@ export default function App() {
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [showPluginSaveModal, setShowPluginSaveModal] = useState(false);
   const [showPluginLoadModal, setShowPluginLoadModal] = useState(false);
+  const [pluginReadme, setPluginReadme] = useState<{ id: string, name: string, content: string } | null>(null);
+  const [showPluginReadmeModal, setShowPluginReadmeModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchReadme = async (plugin: PluginConfig) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/plugin/${plugin.id}/readme`);
+      if (res.ok) {
+        const data = await res.json();
+        setPluginReadme({ id: plugin.id, name: plugin.name, content: data.content });
+        setShowPluginReadmeModal(true);
+      } else {
+        addLog(`[Error] Failed to load README for ${plugin.name}.`);
+      }
+    } catch (err) {
+      addLog(`[Error] Failed to fetch README: ${err}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const [pluginSaveName, setPluginSaveName] = useState("");
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'theme' | 'shortcuts'>('theme');
+  const [shortcuts, setShortcuts] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('scm_shortcuts');
+    return saved ? JSON.parse(saved) : {
+      toggleConsole: 'Ctrl+`',
+      saveProject: 'Ctrl+S',
+      deleteSelected: 'Delete',
+      selectAll: 'Ctrl+A',
+      tabDashboard: 'Alt+1',
+      tabWorkspace: 'Alt+2',
+      tabLibrary: 'Alt+3',
+      tabPlugins: 'Alt+4',
+      copySelected: 'Ctrl+C',
+      pasteSelected: 'Ctrl+V',
+      undo: 'Ctrl+Z',
+      redo: 'Ctrl+Y'
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_shortcuts', JSON.stringify(shortcuts));
+  }, [shortcuts]);
+
   const [cardDimming, setCardDimming] = useState<'none' | 'tint' | 'dark'>('tint');
   const [playDingSound, setPlayDingSound] = useState(true);
   const [cardWidth, setCardWidth] = useState<number>(() => {
@@ -386,27 +582,62 @@ export default function App() {
   }, []);
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (activeTab !== 'assets') return;
     const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
 
-    // Undo/Redo
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-      if (isInput) return;
-      e.preventDefault();
-      if (e.shiftKey) {
-        handleRedo();
+    const getShortcutString = (ev: KeyboardEvent) => {
+      const parts = [];
+      if (ev.ctrlKey || ev.metaKey) parts.push('ctrl');
+      if (ev.altKey) parts.push('alt');
+      if (ev.shiftKey) parts.push('shift');
+      let k = ev.key;
+      if (k === ' ') k = 'space';
+      if (!['Control', 'Alt', 'Shift', 'Meta'].includes(k)) {
+        parts.push(k.toLowerCase());
       } else {
-        handleUndo();
+        return "";
+      }
+      return parts.join('+').toLowerCase();
+    };
+
+    const pressed = getShortcutString(e);
+    if (!pressed) return;
+    const normalize = (s: string) => (s || '').toLowerCase().replace(/\s+/g, '');
+    const match = (action: string) => shortcuts[action] && normalize(shortcuts[action]) === pressed;
+
+    // Global Hotkeys (Work outside of assets tab, if not in an input)
+    if (!isInput) {
+      if (match('toggleConsole')) {
+        e.preventDefault();
+        setActiveTab(p => p === 'console' ? 'dashboard' : 'console');
+        return;
+      }
+      if (match('tabDashboard')) { e.preventDefault(); setActiveTab('dashboard'); return; }
+      if (match('tabWorkspace')) { e.preventDefault(); setActiveTab('assets'); setAssetViewMode('project'); return; }
+      if (match('tabLibrary')) { e.preventDefault(); setActiveTab('assets'); setAssetViewMode('library'); return; }
+      if (match('tabPlugins')) { e.preventDefault(); setActiveTab('assets'); setAssetViewMode('plugins'); return; }
+      if (match('saveProject') && activeTab === 'assets' && assetViewMode === 'project') {
+        e.preventDefault();
+        setShowSaveModal(true);
+        return;
       }
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+
+    if (activeTab !== 'assets') return;
+
+    // Undo/Redo
+    if (match('undo')) {
+      if (isInput) return;
+      e.preventDefault();
+      handleUndo();
+    }
+    if (match('redo')) {
       if (isInput) return;
       e.preventDefault();
       handleRedo();
     }
 
     // Select All
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+    if (match('selectAll')) {
       if (isInput) return;
       
       e.preventDefault();
@@ -422,7 +653,7 @@ export default function App() {
     }
 
     // Copy
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+    if (match('copySelected')) {
       if (isInput) return;
       if (selectedAssets.size > 0) {
         const filtered = Array.from(selectedAssets).filter((s: string) => !s.startsWith('back:'));
@@ -434,13 +665,14 @@ export default function App() {
     }
 
     // Paste
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+    if (match('pasteSelected')) {
       if (isInput) return;
       if (assetViewMode === 'plugins') return;
       if (copiedBuffer.length > 0) {
         addLog(`[Library] Duplicating ${copiedBuffer.length} assets from buffer...`);
         (async () => {
           try {
+            let allResults: any[] = [];
             for (let i = 0; i < copiedBuffer.length; i++) {
               setTaskProgress({ current: i + 1, total: copiedBuffer.length, message: `Duplicating ${copiedBuffer[i].split(':')[1]}...` });
               try {
@@ -452,8 +684,12 @@ export default function App() {
                 const data = await res.json();
                 if (data.newName) {
                      addLog(`[Action: Duplicate] ${copiedBuffer[i]} -> ${data.newName} (Success)`);
+                     allResults.push(`${copiedBuffer[i].split(':')[0]}:${data.newName}`);
                 }
               } catch(e) {}
+            }
+            if (allResults.length > 0) {
+               setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
             }
             setTaskProgress({ current: copiedBuffer.length, total: copiedBuffer.length, message: `${copiedBuffer.length} card${copiedBuffer.length === 1 ? '' : 's'} duplicated` });
             await fetchStatus();
@@ -466,7 +702,7 @@ export default function App() {
       }
     }
 
-    // Escape to Deselect
+    // Escape to Deselect (Hardcoded mostly because Escape is standard)
     if (e.key === 'Escape') {
       if (selectedAssets.size > 0) {
         setSelectedAssets(new Set());
@@ -475,14 +711,16 @@ export default function App() {
     }
 
     // Delete
-    if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (match('deleteSelected')) {
       if (selectedAssets.size > 0 && !isInput) {
+        e.preventDefault();
         addLog(`[System] Deleting ${selectedAssets.size} selected items...`);
         
         // Use API to delete instead of clear_up.py directly
         (async () => {
           try {
             const arr = Array.from(selectedAssets) as string[];
+            let allResults: any[] = [];
             for (let i = 0; i < arr.length; i++) {
               setTaskProgress({ current: i + 1, total: arr.length, message: `Deleting ${arr[i].split(':')[1]}...` });
               const res = await fetch('/api/delete', {
@@ -493,7 +731,11 @@ export default function App() {
               const data = await res.json();
               if (data.results) {
                 data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
+                allResults = allResults.concat(data.results);
               }              
+            }
+            if (allResults.length > 0) {
+               setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
             }
             setTaskProgress({ current: arr.length, total: arr.length, message: `${arr.length} card${arr.length === 1 ? '' : 's'} deleted` });
             await fetchStatus();
@@ -1105,6 +1347,7 @@ export default function App() {
       
       if (finalItems.length === 0) return;
 
+      let allResults: any[] = [];
       for (let i = 0; i < finalItems.length; i++) {
          setTaskProgress({ current: i + 1, total: finalItems.length, message: `Processing ${finalItems[i].split(':')[1]}...` });
          try {
@@ -1118,8 +1361,13 @@ export default function App() {
                  data.results.forEach((r: any) => {
                      addLog(`[Action: Move/Copy] ${r.from} -> ${r.to} (Success)`);
                  });
+                 allResults = allResults.concat(data.results.map((r: any) => `${finalItems[i].split(':')[0]}:${r.name}`));
              }
          } catch(e) { }
+      }
+      
+      if (allResults.length > 0) {
+         setFileUndoStack(prev => [...prev, { action: 'import', items: allResults, destination }]);
       }
       
       const actionStr = destination === 'project' ? 'added' : 'copied';
@@ -1415,7 +1663,7 @@ export default function App() {
             <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/5">
               <button 
                 onClick={handleUndo}
-                disabled={historyIndex <= 0}
+                disabled={activeTab === 'assets' ? fileUndoStack.length === 0 : historyState.index <= 0}
                 className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
                 title="Undo (Ctrl+Z)"
               >
@@ -1423,7 +1671,7 @@ export default function App() {
               </button>
               <button 
                 onClick={handleRedo}
-                disabled={historyIndex >= history.length - 1}
+                disabled={historyState.index >= historyState.items.length - 1}
                 className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
                 title="Redo (Ctrl+Y)"
               >
@@ -2183,6 +2431,17 @@ export default function App() {
                               </select>
                               <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
                             </div>
+                            
+                            <div className="mt-2 flex flex-wrap gap-3 items-center">
+                              <button onClick={() => fetchReadme(pluginState.selectedPlugin)} className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors">
+                                <Book size={12} /> Readme
+                              </button>
+                              {pluginState.selectedPlugin.websites?.map((site, idx) => (
+                                <a key={idx} href={site.url} target="_blank" rel="noopener noreferrer" className="text-xs text-white/50 hover:text-white/80 flex items-center gap-1 transition-colors">
+                                  <ExternalLink size={12} /> {site.name}
+                                </a>
+                              ))}
+                            </div>
                           </div>
 
                           <div>
@@ -2311,7 +2570,7 @@ export default function App() {
                               }
 
                               // 2. Build and run command
-                              const isDirectInput = pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' || pluginState.format === 'ydk';
+                              const isDirectInput = pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke';
                               const targetInput = isDirectInput ? pluginState.decklist.trim() : `game/decklist/current.txt`;
                               const args = [targetInput, pluginState.format];
                               Object.entries(pluginState.options).forEach(([flag, val]) => {
@@ -3020,126 +3279,215 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-sm bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6"
+              className="w-full max-w-sm bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col max-h-[90vh]"
             >
-              <div className="space-y-1">
-                <h3 className="text-xl font-bold text-white">Theme Settings</h3>
-                <p className="text-sm text-white/40">Customize your workspace appearance.</p>
+              <div className="space-y-1 shrink-0 mb-6">
+                <h3 className="text-xl font-bold text-white">Settings</h3>
+                <p className="text-sm text-white/40">Customize your workspace and shortcuts.</p>
               </div>
 
-              <div className="space-y-4">
-                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between">
-                  <div className="space-y-1">
-                    <span className="text-sm font-medium text-white block">Completion Sound</span>
-                    <span className="text-xs text-white/40 block">Play a sound when PDF generation is done.</span>
-                  </div>
-                  <ToggleItem 
-                    label=""
-                    checked={playDingSound} 
-                    onChange={setPlayDingSound} 
-                  />
-                </div>
+              <div className="flex bg-black/40 rounded-lg p-1 gap-1 mb-6 shrink-0">
+                <button 
+                  onClick={() => setSettingsTab('theme')}
+                  className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", settingsTab === 'theme' ? "bg-white/10 text-white" : "text-white/40 hover:text-white")}
+                >
+                  Theme
+                </button>
+                <button 
+                  onClick={() => setSettingsTab('shortcuts')}
+                  className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", settingsTab === 'shortcuts' ? "bg-white/10 text-white" : "text-white/40 hover:text-white")}
+                >
+                  Shortcuts
+                </button>
+              </div>
 
-                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
-                  <span className="text-sm font-medium text-white block">Primary Color</span>
-                  <div className="flex items-center gap-3">
-                    {(['indigo', 'emerald', 'rose', 'amber'] as Theme[]).map((t, i) => (
+              {settingsTab === 'theme' && (
+                <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Completion Sound</span>
+                      <span className="text-xs text-white/40 block">Play a sound when PDF generation is done.</span>
+                    </div>
+                    <ToggleItem 
+                      label=""
+                      checked={playDingSound} 
+                      onChange={setPlayDingSound} 
+                    />
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <span className="text-sm font-medium text-white block">Primary Color</span>
+                    <div className="flex items-center gap-3">
+                      {(['indigo', 'emerald', 'rose', 'amber'] as Theme[]).map((t, i) => (
+                        <button
+                          key={`${t}-${i}`}
+                          onClick={() => {
+                            setCurrentTheme(t);
+                            setTheme(t);
+                          }}
+                          className={cn(
+                            "w-8 h-8 rounded-full border transition-all",
+                            currentTheme === t ? "border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]" : "border-white/20 hover:scale-105",
+                            t === 'indigo' && "bg-[#6366f1]",
+                            t === 'emerald' && "bg-[#10b981]",
+                            t === 'rose' && "bg-[#f43f5e]",
+                            t === 'amber' && "bg-[#f59e0b]"
+                          )}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between opacity-50 cursor-not-allowed hidden">
+                    <span className="text-sm font-medium text-white">Background</span>
+                    <span className="text-xs font-mono text-white/40">DARK/BLUR</span>
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <span className="text-sm font-medium text-white block">Appearance</span>
+                    <div className="flex bg-black/40 rounded-lg p-1.5 gap-1.5 focus-within:ring-2 ring-primary-500/50">
                       <button
-                        key={`${t}-${i}`}
-                        onClick={() => {
-                          setCurrentTheme(t);
-                          setTheme(t);
-                        }}
-                        className={cn(
-                          "w-8 h-8 rounded-full border transition-all",
-                          currentTheme === t ? "border-white scale-110 shadow-[0_0_15px_rgba(255,255,255,0.3)]" : "border-white/20 hover:scale-105",
-                          t === 'indigo' && "bg-[#6366f1]",
-                          t === 'emerald' && "bg-[#10b981]",
-                          t === 'rose' && "bg-[#f43f5e]",
-                          t === 'amber' && "bg-[#f59e0b]"
-                        )}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between opacity-50 cursor-not-allowed hidden">
-                  <span className="text-sm font-medium text-white">Background</span>
-                  <span className="text-xs font-mono text-white/40">DARK/BLUR</span>
-                </div>
-
-                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
-                  <span className="text-sm font-medium text-white block">Appearance</span>
-                  <div className="flex bg-black/40 rounded-lg p-1.5 gap-1.5 focus-within:ring-2 ring-primary-500/50">
-                    <button
-                      onClick={() => setColorMode('dark')}
-                      className={cn(
-                        "flex-1 capitalize text-xs font-semibold py-2 rounded-md transition-all outline-none",
-                        colorMode === 'dark' ? "bg-primary-600 text-white shadow-md shadow-primary-600/30" : "text-white/40 hover:text-white hover:bg-white/5"
-                      )}
-                    >
-                      Dark Mode
-                    </button>
-                    <button
-                      onClick={() => setColorMode('light')}
-                      className={cn(
-                        "flex-1 capitalize text-xs font-semibold py-2 rounded-md transition-all outline-none",
-                        colorMode === 'light' ? "bg-primary-600 text-white shadow-md shadow-primary-600/30" : "text-white/40 hover:text-white hover:bg-white/5"
-                      )}
-                    >
-                      Light Mode
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
-                  <span className="text-sm font-medium text-white block">Card Dimming</span>
-                  <div className="flex bg-black/40 rounded-lg p-1.5 gap-1.5 focus-within:ring-2 ring-primary-500/50">
-                    {(['none', 'tint', 'dark'] as const).map((option, i) => (
-                      <button
-                        key={`${option}-${i}`}
-                        onClick={() => setCardDimming(option)}
+                        onClick={() => setColorMode('dark')}
                         className={cn(
                           "flex-1 capitalize text-xs font-semibold py-2 rounded-md transition-all outline-none",
-                          cardDimming === option
-                            ? "bg-primary-600 text-white shadow-md shadow-primary-600/30"
-                            : "text-white/40 hover:text-white hover:bg-white/5"
+                          colorMode === 'dark' ? "bg-primary-600 text-white shadow-md shadow-primary-600/30" : "text-white/40 hover:text-white hover:bg-white/5"
                         )}
                       >
-                        {option}
+                        Dark Mode
                       </button>
-                    ))}
+                      <button
+                        onClick={() => setColorMode('light')}
+                        className={cn(
+                          "flex-1 capitalize text-xs font-semibold py-2 rounded-md transition-all outline-none",
+                          colorMode === 'light' ? "bg-primary-600 text-white shadow-md shadow-primary-600/30" : "text-white/40 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        Light Mode
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <span className="text-sm font-medium text-white block">Card Dimming</span>
+                    <div className="flex bg-black/40 rounded-lg p-1.5 gap-1.5 focus-within:ring-2 ring-primary-500/50">
+                      {(['none', 'tint', 'dark'] as const).map((option, i) => (
+                        <button
+                          key={`${option}-${i}`}
+                          onClick={() => setCardDimming(option)}
+                          className={cn(
+                            "flex-1 capitalize text-xs font-semibold py-2 rounded-md transition-all outline-none",
+                            cardDimming === option
+                              ? "bg-primary-600 text-white shadow-md shadow-primary-600/30"
+                              : "text-white/40 hover:text-white hover:bg-white/5"
+                          )}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-white/10">
+                    <a
+                      href="https://github.com/Alan-Cha/silhouette"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
+                    >
+                      <span className="text-sm text-white/60 font-medium">GitHub Repository</span>
+                      <ExternalLink size={16} className="text-white/40" />
+                    </a>
+                    <a
+                      href="https://github.com/Alan-Cha/silhouette/issues"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
+                    >
+                      <span className="text-sm text-white/60 font-medium">Feedback & Support</span>
+                      <MessageSquare size={16} className="text-white/40" />
+                    </a>
                   </div>
                 </div>
+              )}
 
-                <div className="space-y-2 pt-2 border-t border-white/10">
-                  <a
-                    href="https://github.com/Alan-Cha/silhouette"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
-                  >
-                    <span className="text-sm text-white/60 font-medium">GitHub Repository</span>
-                    <ExternalLink size={16} className="text-white/40" />
-                  </a>
-                  <a
-                    href="https://github.com/Alan-Cha/silhouette/issues"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
-                  >
-                    <span className="text-sm text-white/60 font-medium">Feedback & Support</span>
-                    <MessageSquare size={16} className="text-white/40" />
-                  </a>
+              {settingsTab === 'shortcuts' && (
+                <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
+                  {Object.keys(shortcuts).map(action => (
+                    <div key={action} className="p-3 bg-white/5 border border-white/5 rounded-2xl flex flex-col gap-2">
+                       <span className="text-xs font-medium text-white/80 capitalize px-1">{action.replace(/([A-Z])/g, ' $1').trim()}</span>
+                       <input
+                          type="text"
+                          value={shortcuts[action]}
+                          onChange={(e) => setShortcuts(prev => ({ ...prev, [action]: e.target.value }))}
+                          onKeyDown={(e) => {
+                            const getShortcutString = (ev: any) => {
+                              const parts = [];
+                              if (ev.ctrlKey || ev.metaKey) parts.push('Ctrl');
+                              if (ev.altKey) parts.push('Alt');
+                              if (ev.shiftKey) parts.push('Shift');
+                              let k = ev.key;
+                              if (k === ' ') k = 'Space';
+                              if (!['Control', 'Alt', 'Shift', 'Meta'].includes(k)) {
+                                parts.push(k.length === 1 ? k.toUpperCase() : k);
+                              } else {
+                                return "";
+                              }
+                              return parts.join('+');
+                            };
+                            const pressed = getShortcutString(e);
+                            if (pressed) {
+                              e.preventDefault();
+                              setShortcuts(prev => ({ ...prev, [action]: pressed }));
+                            }
+                          }}
+                          className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono text-center text-white focus:outline-none focus:border-primary-500 transition-colors"
+                          placeholder="Press keys..."
+                       />
+                    </div>
+                  ))}
                 </div>
-              </div>
+              )}
 
               <button 
                 onClick={() => setShowThemeSettings(false)}
-                className="w-full py-4 text-white bg-white/5 hover:bg-white/10 transition-all font-bold rounded-2xl"
+                className="w-full py-4 text-white bg-white/5 hover:bg-white/10 transition-all font-bold rounded-2xl shrink-0"
               >
                 Done
               </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showPluginReadmeModal && pluginReadme && (
+          <div className="fixed inset-0 z-[250] flex flex-col items-center justify-center p-4 md:p-8 bg-black/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="w-full max-w-4xl max-h-full bg-[#0f0f13] border border-white/10 rounded-3xl flex flex-col overflow-hidden shadow-2xl"
+            >
+              <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#1a1a20]">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Book className="text-primary-400" size={24} /> 
+                  Readme: {pluginReadme.name}
+                </h3>
+                <button 
+                  onClick={() => setShowPluginReadmeModal(false)}
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-all shadow border border-white/5"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 md:p-8 overflow-y-auto flex-1 custom-scrollbar markdown-body relative bg-[#0f0f13]">
+                <div className="max-w-none text-white/80 prose prose-invert prose-pre:bg-[#1a1a20] prose-pre:border prose-pre:border-white/10">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {pluginReadme.content}
+                  </ReactMarkdown>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}
@@ -3208,6 +3556,7 @@ export default function App() {
                   e.stopPropagation();
                   const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
                   const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                  let allResults: any[] = [];
                   for (let i = 0; i < targets.length; i++) {
                     setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
                     try {
@@ -3219,10 +3568,14 @@ export default function App() {
                       const data = await res.json();
                       if (data.newName) {
                         addLog(`[Action: Duplicate] ${targets[i]} -> ${data.newName} (Success)`);
+                        allResults.push(`${targets[i].split(':')[0]}:${data.newName}`);
                       }
                     } catch(err) {
                       addLog(`[Error] Failed to duplicate: ${err}`);
                     }
+                  }
+                  if (allResults.length > 0) {
+                     setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
                   }
                   setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} duplicated` });
                   await fetchStatus();
@@ -3336,6 +3689,7 @@ export default function App() {
                     const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
                     const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
                     
+                    let allResults: any[] = [];
                     for (let i = 0; i < targets.length; i++) {
                       setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
                       try {
@@ -3347,10 +3701,14 @@ export default function App() {
                         const data = await res.json();
                         if (data.results) {
                           data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
+                          allResults = allResults.concat(data.results);
                         }
                       } catch(err) {
                         addLog(`[Error] Failed to delete: ${err}`);
                       }
+                    }
+                    if (allResults.length > 0) {
+                      setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
                     }
                     
                     setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} deleted` });
