@@ -1557,7 +1557,7 @@ export default function App() {
       </AnimatePresence>
       {/* Sidebar */}
       <aside className={cn(
-        "border-r border-white/5 flex flex-col bg-[#0f0f13] transition-all duration-300 relative",
+        "hidden md:flex flex-col border-r border-white/5 bg-[#0f0f13] transition-all duration-300 relative",
         isSidebarCollapsed ? "w-20" : "w-64"
       )}>
         <div className={cn("p-6 pb-2", isSidebarCollapsed && "px-4")}>
@@ -1658,20 +1658,20 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col relative overflow-hidden">
+      <main className="flex-1 flex flex-col relative overflow-hidden pb-16 md:pb-0">
         {/* Header */}
-        <header className="h-16 border-b border-white/5 px-8 flex items-center justify-between bg-[#0f0f13]/50 backdrop-blur-sm z-10 font-mono">
+        <header className="h-16 border-b border-white/5 px-4 md:px-8 flex items-center justify-between bg-[#0f0f13]/50 backdrop-blur-sm z-10 font-mono">
           <div className="flex items-center gap-4">
             {loadedProject && (
-              <>
+              <div className="hidden sm:flex items-center gap-2">
                 <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Project</span>
                 <ChevronRight size={12} className="text-white/10" />
                 <span className="text-sm font-semibold text-white/60">{loadedProject}</span>
-              </>
+              </div>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/5">
+          <div className="flex items-center gap-2 md:gap-4 ml-auto">
+            <div className="hidden sm:flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/5">
               <button 
                 onClick={handleUndo}
                 disabled={activeTab === 'assets' ? fileUndoStack.length === 0 : historyState.index <= 0}
@@ -1691,41 +1691,43 @@ export default function App() {
             </div>
             
             {pdfReady && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 md:gap-2">
                 <a 
                   href="/api/project/download-pdf" 
                   download="game.pdf"
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                  className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                  title="Download PDF"
                 >
                   <Download size={14} />
-                  Download PDF
+                  <span className="hidden md:inline">Download PDF</span>
                 </a>
                 <a 
                   href="/api/project/download-zip" 
                   download="game_output.zip"
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                  className="flex items-center gap-2 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                  title="Download Output (ZIP)"
                 >
                   <Download size={14} />
-                  Download Output (ZIP)
+                  <span className="hidden md:inline">ZIP</span>
                 </a>
               </div>
             )}
             <button 
               onClick={generatePDF}
-              className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:shadow-none"
+              className="flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:shadow-none"
             >
               <Play size={14} className="fill-current" />
-              Generate PDF
+              <span className="hidden sm:inline">Generate PDF</span>
             </button>
-            <div className="h-4 w-px bg-white/10 mx-2" />
-            <button onClick={() => setShowThemeSettings(true)} className="text-white/40 hover:text-white transition-colors">
+            <div className="h-4 w-px bg-white/10 mx-1 md:mx-2" />
+            <button onClick={() => setShowThemeSettings(true)} className="text-white/40 hover:text-white transition-colors p-1">
               <Settings size={18} />
             </button>
           </div>
         </header>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto p-8 relative min-h-0">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 relative min-h-0">
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' && (
               <div className="flex flex-col gap-6">
@@ -1794,9 +1796,9 @@ export default function App() {
                 key="builder"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="grid grid-cols-5 gap-8"
+                className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8"
               >
-                <div className="col-span-3 space-y-8">
+                <div className="col-span-1 lg:col-span-3 space-y-8">
                   <div className="space-y-4">
                     <h2 className="text-3xl font-bold tracking-tight">PDF Generator</h2>
                     <p className="text-white/40 leading-relaxed">Configure the layout engine with precise CLI arguments. Every change here updates the underlying command string.</p>
@@ -1951,7 +1953,7 @@ export default function App() {
                     </div>
 
                     {!isCalibrationCollapsed && (
-                      <div className="grid grid-cols-3 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Step 1 */}
                         <div className="space-y-4">
                           <div className="flex items-center gap-2">
@@ -2053,7 +2055,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="col-span-2 space-y-6">
+                <div className="col-span-1 lg:col-span-2 space-y-6">
                   <div className="p-6 rounded-2xl bg-[#0f0f13] border border-white/5 sticky top-8">
                     <h3 className="font-bold mb-6 flex items-center gap-2">
                       <Terminal size={18} className="text-primary-400" />
@@ -2175,7 +2177,7 @@ export default function App() {
                 className="space-y-8"
               >
                 <div className="flex flex-col gap-6">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="space-y-1">
                       <h2 className="text-3xl font-bold tracking-tight">
                         {assetViewMode === 'project' ? 'Project Workspace' : assetViewMode === 'library' ? 'Library' : 'Plugin Staging'}
@@ -2189,7 +2191,7 @@ export default function App() {
                       </p>
                     </div>
                     {assetViewMode === 'project' && (
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
                         <button 
                           onClick={() => setShowSaveModal(true)}
                           className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold transition-all text-white/60 hover:text-white active:scale-95"
@@ -2217,7 +2219,7 @@ export default function App() {
                         {(status?.assets?.fronts?.length > 0 || status?.assets?.backs?.length > 0) && (
                           <button 
                             onClick={clearProject}
-                            className="flex items-center gap-2 px-3 py-2 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 rounded-lg text-xs font-bold transition-all text-rose-500 active:scale-95 ml-2"
+                            className="flex items-center gap-2 px-3 py-2 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 rounded-lg text-xs font-bold transition-all text-rose-500 active:scale-95"
                             title="Clear Project Assets"
                           >
                             <Trash2 size={14} />
@@ -2228,21 +2230,75 @@ export default function App() {
                     )}
                   </div>
 
+                  {/* Primary Tab Switcher */}
+                  <div className="flex justify-center md:justify-end w-full">
+                    <div className="flex bg-[#07070a] p-1 border border-white/5 rounded-xl gap-1 w-full md:w-[380px] shadow-inner">
+                      <button 
+                        onClick={() => {
+                          setActiveTab('assets');
+                          setAssetViewMode('project');
+                          setSelectedAssets(new Set());
+                        }}
+                        className={cn(
+                          "flex-1 py-2 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
+                          assetViewMode === 'project' 
+                            ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" 
+                            : "text-white/40 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        Workspace
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setActiveTab('assets');
+                          setAssetViewMode('library');
+                          setSelectedAssets(new Set());
+                        }}
+                        className={cn(
+                          "flex-1 py-1 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
+                          assetViewMode === 'library' 
+                            ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" 
+                            : "text-white/40 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        Library
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setActiveTab('assets');
+                          setAssetViewMode('plugins');
+                          setSelectedAssets(new Set());
+                        }}
+                        className={cn(
+                          "flex-1 py-2 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
+                          assetViewMode === 'plugins' 
+                            ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" 
+                            : "text-white/40 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        Plugins
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Consistent Toolbar */}
-                  <div className="flex flex-wrap items-center gap-4 p-4 bg-[#0f0f13] border border-white/5 rounded-2xl shadow-xl shadow-black/20">
-                    <div className="relative flex-1 min-w-[280px]">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-[#0f0f13] border border-white/5 rounded-2xl shadow-xl shadow-black/20">
+                    
+                    {/* Search bar */}
+                    <div className="relative w-full md:max-w-md flex-1">
                       <Terminal size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
                       <input 
                         type="text" 
-                        placeholder="Search assets by name..."
+                        placeholder="Search assets..."
                         value={assetSearch}
                         onChange={(e) => setAssetSearch(e.target.value)}
                         className="w-full bg-black/40 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary-500/50 transition-all font-mono placeholder:text-white/10"
                       />
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-2">
+                    {/* Right side controls: Action buttons, Refresh, Filters, Slider */}
+                    <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 w-full md:w-auto">
+                      <div className="flex flex-wrap items-center justify-center gap-2">
                         {assetViewMode === 'plugins' && selectedAssets.size > 0 && (
                           <>
                             <button 
@@ -2299,7 +2355,7 @@ export default function App() {
                         <RefreshCw size={16} className={cn(isProcessing && "animate-spin")} />
                       </button>
 
-                      <div className="flex items-center bg-black/40 border border-white/5 rounded-xl p-1">
+                      <div className="flex items-center bg-black/40 border border-white/5 rounded-xl p-1 shrink-0">
                         <button 
                           onClick={() => setAssetFilter('all')}
                           className={cn(
@@ -2329,12 +2385,12 @@ export default function App() {
                         </button>
                       </div>
 
-                      <div className="h-6 w-px bg-white/5" />
+                      <div className="hidden sm:block h-6 w-px bg-white/5" />
 
                       {/* Card Size Selector Slider */}
-                      <div className="flex items-center gap-3 bg-[#0a0a0d] border border-white/5 rounded-xl px-4 py-1.5 shrink-0 select-none">
+                      <div className="flex items-center justify-center gap-3 bg-[#0a0a0d] border border-white/5 rounded-xl px-3 sm:px-4 py-1.5 shrink-0 select-none mx-auto md:mx-0">
                         <LayoutGrid size={13} className="text-white/40" />
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Card Size</span>
+                        <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-widest text-white/40">Card Size</span>
                         <input
                           type="range"
                           min="120"
@@ -2350,54 +2406,9 @@ export default function App() {
                         />
                         <span className="text-[10px] font-mono text-white/50 w-8 text-right font-semibold">{cardWidth}px</span>
                       </div>
-
-                      <div className="h-6 w-px bg-white/5" />
-
-                      <div className="bg-white/5 p-1 rounded-xl flex gap-1">
-                        <button 
-                          onClick={() => {
-                            setActiveTab('assets');
-                            setAssetViewMode('project');
-                            setSelectedAssets(new Set());
-                          }}
-                          className={cn(
-                            "px-5 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
-                            assetViewMode === 'project' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          Workspace
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setActiveTab('assets');
-                            setAssetViewMode('library');
-                            setSelectedAssets(new Set());
-                          }}
-                          className={cn(
-                            "px-5 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
-                            assetViewMode === 'library' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          Library
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setActiveTab('assets');
-                            setAssetViewMode('plugins');
-                            setSelectedAssets(new Set());
-                          }}
-                          className={cn(
-                            "px-5 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
-                            assetViewMode === 'plugins' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          Plugins
-                        </button>
-                      </div>
-
-                      </div>
                     </div>
                   </div>
+                </div>
 
                 {assetViewMode === 'plugins' && (
                   <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 relative overflow-hidden group">
@@ -2660,8 +2671,8 @@ export default function App() {
                         
                         {!collapsedSections.backs && (
                           <div 
-                            className="grid gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6"
-                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardWidth}px, 1fr))` }}
+                            className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
+                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
                           >
                             {assetViewMode !== 'plugins' && (
                               <TemplateCard 
@@ -2734,8 +2745,8 @@ export default function App() {
 
                         {!collapsedSections.fronts && (
                           <div 
-                            className="grid gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6"
-                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardWidth}px, 1fr))` }}
+                            className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
+                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
                           >
                             {assetViewMode !== 'plugins' && (
                               <TemplateCard 
@@ -2810,8 +2821,8 @@ export default function App() {
 
                         {!collapsedSections.doubleSided && (
                           <div 
-                            className="grid gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6"
-                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardWidth}px, 1fr))` }}
+                            className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
+                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
                           >
                             {assetViewMode !== 'plugins' && (
                               <TemplateCard 
@@ -3764,6 +3775,42 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Bottom Nav on Mobile */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#0f0f13] border-t border-white/5 flex items-center justify-around z-40 px-4">
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          className={cn("flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors", activeTab === 'dashboard' ? "text-primary-500" : "text-white/40")}
+        >
+          <Settings size={20} />
+          <span className="text-[9px] font-medium font-sans">Dashboard</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('builder')}
+          className={cn("flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors", activeTab === 'builder' ? "text-primary-500" : "text-white/40")}
+        >
+          <Layers size={20} />
+          <span className="text-[9px] font-medium font-sans">PDF Builder</span>
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('assets');
+            setAssetViewMode('library');
+            setSelectedAssets(new Set());
+          }}
+          className={cn("flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors", activeTab === 'assets' ? "text-primary-500" : "text-white/40")}
+        >
+          <ImageIcon size={20} />
+          <span className="text-[9px] font-medium font-sans">Assets</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('console')}
+          className={cn("flex flex-col items-center justify-center gap-1 flex-1 py-1 transition-colors", activeTab === 'console' ? "text-primary-500" : "text-white/40")}
+        >
+          <Terminal size={20} />
+          <span className="text-[9px] font-medium font-sans">Console</span>
+        </button>
+      </nav>
      </div>
   );
 }
@@ -3831,7 +3878,7 @@ function DropZone({ children, onDrop, label, isLibrary, disabled = false }: { ch
           </motion.div>
         </div>
       )}
-      <div className="mt-4 px-6">
+      <div className="hidden md:block mt-4 px-6">
         <p className="text-[10px] font-bold uppercase tracking-widest text-primary-400/40">
            {label}
         </p>
