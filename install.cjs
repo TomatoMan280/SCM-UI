@@ -9,7 +9,7 @@ async function install() {
   if (!isWindows) {
     try {
       console.log("[Install] Attempting to install python3-pip on Linux...");
-      execSync('export DEBIAN_FRONTEND=noninteractive && (sudo apt-get update || apt-get update) && (sudo apt-get install -y python3-pip || apt-get install -y python3-pip)', { stdio: 'inherit' });
+      execSync('export DEBIAN_FRONTEND=noninteractive && (sudo apt-get update || apt-get update) && (sudo apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" python3-pip || apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" python3-pip)', { stdio: 'inherit' });
     } catch (e) {
       console.log("[Install] Native package manager failed or skipped. Continuing to pip...");
     }

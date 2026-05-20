@@ -1,0 +1,1 @@
+Place your icon files here: icon.ico (Windows), icon.icns (macOS), icon.png (Linux).
