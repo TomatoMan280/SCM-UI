@@ -132,9 +132,7 @@ const FORMAT_HINTS: Record<string, string> = {
 
   // Gundam
   deckplanet: "DeckPlanet format.",
-  egman: "Egman Events format.",
-  exburst: "ExBurst format.",
-  limitless: "Limitless format."
+  exburst: "ExBurst format."
 };
 
 interface PluginConfig {
@@ -457,7 +455,7 @@ export default function App() {
     return undefined;
   };
   const [assetSearch, setAssetSearch] = useState("");
-  const [assetFilter, setAssetFilter] = useState<'all' | 'front' | 'back'>('all');
+  const [assetFilter, setAssetFilter] = useState<'all' | 'front' | 'back' | 'double_sided'>('all');
   const [pluginSearch, setPluginSearch] = useState("");
   const [verifyResult, setVerifyResult] = useState<{ missing: number, restored: number, check: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type?: string } | null>(null);
@@ -781,15 +779,15 @@ export default function App() {
     x: 0,
     y: 0,
     angle: 0.0,
-    sheet: 'letter_calibration.pdf'
+    sheet: 'letter-calibration.pdf'
   });
 
   const CALIBRATION_SHEETS = [
-    { label: 'Letter', value: 'letter_calibration.pdf' },
-    { label: 'A3', value: 'a3_calibration.pdf' },
-    { label: 'A4', value: 'a4_calibration.pdf' },
-    { label: 'Arch B', value: 'arch_b_calibration.pdf' },
-    { label: 'Tabloid', value: 'tabloid_calibration.pdf' }
+    { label: 'Letter', value: 'letter-calibration.pdf' },
+    { label: 'A3', value: 'a3-calibration.pdf' },
+    { label: 'A4', value: 'a4-calibration.pdf' },
+    { label: 'Arch B', value: 'arch_b-calibration.pdf' },
+    { label: 'Tabloid', value: 'tabloid-calibration.pdf' }
   ];
 
   const [pluginState, setPluginState] = useState({
@@ -2015,9 +2013,9 @@ export default function App() {
                         <div className="space-y-2">
                           <button 
                              onClick={() => runCommand('offset_pdf.py', [
-                               `--x_offset ${calibration.x}`,
-                               `--y_offset ${calibration.y}`,
-                               `--angle ${calibration.angle}`,
+                               '--x_offset', calibration.x.toString(),
+                               '--y_offset', calibration.y.toString(),
+                               '--angle', calibration.angle.toString(),
                                '--save'
                              ], { startMessage: 'Saving offset...' })}
                              className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-[10px] font-bold transition-all text-emerald-400"
@@ -2026,10 +2024,10 @@ export default function App() {
                           </button>
                           <button 
                             onClick={() => runCommand('offset_pdf.py', [
-                              `--pdf_path calibration/${calibration.sheet}`,
-                              `--x_offset ${calibration.x}`,
-                              `--y_offset ${calibration.y}`,
-                              `--angle ${calibration.angle}`
+                              '--pdf_path', `calibration/${calibration.sheet}`,
+                              '--x_offset', calibration.x.toString(),
+                              '--y_offset', calibration.y.toString(),
+                              '--angle', calibration.angle.toString()
                             ], { startMessage: 'Generating offset sheet...' })}
                             className="w-full py-2 bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-[10px] font-bold transition-all text-primary-400"
                           >
@@ -2037,8 +2035,8 @@ export default function App() {
                           </button>
                           <button 
                              onClick={() => {
-                               addLog("[System] Opening verification PDF: game_offset.pdf");
-                               window.open('/api/project/export?file=game/output/game_offset.pdf', '_blank');
+                               addLog(`[System] Opening verification PDF: ${calibration.sheet.replace('.pdf', '_offset.pdf')}`);
+                               window.open(`/api/project/export?file=calibration/${calibration.sheet.replace('.pdf', '_offset.pdf')}`, '_blank');
                              }}
                              className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold transition-all"
                           >
@@ -2524,25 +2522,6 @@ export default function App() {
                             placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here (e.g. 4x Lightning Bolt)..."}
                             className="flex-1 w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm font-mono focus:outline-none focus:border-primary-500 transition-all resize-none shadow-inner min-h-[160px] mb-4"
                           />
-
-                          {pluginState.format === 'url' && pluginState.decklist.toLowerCase().includes('moxfield.com') && (
-                            <div className="mb-4 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
-                              <AlertCircle size={16} className="text-amber-400 mt-0.5 shrink-0" />
-                              <div className="space-y-1">
-                                <span className="font-bold text-amber-200 block uppercase tracking-wider text-[10px]">Cloudflare Import Limitation</span>
-                                <p className="leading-relaxed text-white/70">
-                                  Moxfield's strict Cloudflare security blocks direct automated URL imports in our sandbox web environment. You can easily import your deck manually instead:
-                                </p>
-                                <ol className="list-decimal pl-4 space-y-1 mt-2 text-white/70">
-                                  <li>Open your deck on <a href={pluginState.decklist} target="_blank" rel="noopener noreferrer" className="underline text-amber-300 hover:text-amber-200">Moxfield.com</a>.</li>
-                                  <li>Click <strong className="text-white font-medium">Export</strong> in the top right menu of their page.</li>
-                                  <li>Select <strong className="text-white font-medium">MTG Arena</strong> format (or Cockatrice / Simple) and click <strong className="text-white font-medium">Copy</strong>.</li>
-                                  <li>Change the <strong className="text-white font-medium">Format</strong> dropdown selector below to <kbd className="bg-black/40 px-1 border border-white/10 rounded font-mono text-[10px]">moxfield</kbd> (or <kbd className="bg-black/40 px-1 border border-white/10 rounded font-mono text-[10px]">simple</kbd>).</li>
-                                  <li>Paste the copied text above in the box and click <strong className="text-white font-medium">Sync Artwork</strong>!</li>
-                                </ol>
-                              </div>
-                            </div>
-                          )}
 
                           {FORMAT_HINTS[pluginState.format] && (
                             <div className="mb-4 text-xs text-white/50 bg-white/[0.02] border border-white/5 rounded-xl p-3 flex items-start gap-2.5">

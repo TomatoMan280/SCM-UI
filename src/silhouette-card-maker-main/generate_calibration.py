@@ -12,7 +12,7 @@ import math
 import os
 import re
 from pathlib import Path
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, JpegImagePlugin
 
 import size_convert
 from utilities import load_layout_config

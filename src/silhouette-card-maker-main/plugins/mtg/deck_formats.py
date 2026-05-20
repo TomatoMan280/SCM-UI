@@ -463,22 +463,6 @@ def parse_url(deck_url, handle_card: Callable) -> None:
     except Exception as e:
         print(f"\n[Console Error] Auto-import from URL failed.")
         print(f"Detail error message: {e}")
-        if "moxfield" in deck_url.lower():
-            print("\n" + "="*80)
-            print("                 MOXFIELD URL DETECTED & AUTOMATION BLOCKED")
-            print("="*80)
-            print("Moxfield uses Cloudflare DDoS protection that blocks automated requests")
-            print("coming from cloud platform servers (such as AWS and Google Cloud).")
-            print("\nHowever, you can easily load your Moxfield deck list manually:")
-            print("  1. Open your deck on Moxfield: " + deck_url)
-            print("  2. Click the 'Export' link in the top-right menu of your deck page.")
-            print("  3. Select 'MTG Arena' (or Simple, Cockatrice) and click 'Copy' to copy text.")
-            print("  4. In candidate SCMUI panel, change Format select dropdown to 'moxfield' (or 'simple').")
-            print("  5. Paste the copied deck list items in the text area and click 'Sync Artwork'.")
-            print("="*80 + "\n")
-        else:
-            print("\nCloudflare or network restrictions may be blocking direct access to this URL.")
-            print("Try exporting the deck as plain text or MTG Arena format, pasting the text directly, and selecting the corresponding format.")
         return
 
     if not cards:

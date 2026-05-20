@@ -475,11 +475,14 @@ async function startServer() {
 
   app.get("/api/project/export", (req, res) => {
     if (req.query.file) {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${path.basename(req.query.file as string)}"`);
-      // Since we don't have a real PDF, we return a basic valid empty PDF string
-      const emptyPdf = '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n188\n%%EOF';
-      return res.send(Buffer.from(emptyPdf));
+      const filePath = path.join(scmPath, req.query.file as string);
+      if (fs.existsSync(filePath)) {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${path.basename(req.query.file as string)}"`);
+        return res.sendFile(filePath);
+      } else {
+        return res.status(404).send('File not found');
+      }
     }
     
     const getFiles = (dir: string) => {
