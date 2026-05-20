@@ -222,6 +222,15 @@ async function startServer() {
   // Trigger initial check at startup
   checkGitHubUpdate().catch(() => {});
 
+  // Local/Electron Updater State
+  let lastUpdaterState = {
+    status: "idle", // 'idle', 'checking', 'available', 'not-available', 'downloading', 'downloaded', 'error'
+    version: "",
+    progress: 0,
+    speed: 0,
+    error: null as string | null
+  };
+
   let rootDir = "src/silhouette-card-maker-main";
 
   // Simulation of Card Assets (The "Project")
@@ -393,10 +402,46 @@ async function startServer() {
     try {
       lastUpdateCheckTime = 0; // force a live request
       const checkResult = await checkGitHubUpdate();
+      // Also request Electron to verify
+      console.log("SCMUI_IPC:CHECK_UPDATE_NOW");
       res.json(checkResult);
     } catch (e: any) {
       res.status(500).json({ error: "Failed to check update", message: e.message });
     }
+  });
+
+  app.post("/api/internal/updater-event", (req, res) => {
+    const { event, data } = req.body;
+    if (event) {
+      lastUpdaterState.status = event;
+      if (event === 'available' || event === 'downloaded') {
+        lastUpdaterState.version = data.version || "";
+      }
+      if (event === 'downloading') {
+        lastUpdaterState.progress = Math.round(data.percent || 0);
+        lastUpdaterState.speed = data.bytesPerSecond || 0;
+      }
+      if (event === 'error') {
+        lastUpdaterState.error = data.message || "Unknown error";
+      } else {
+        lastUpdaterState.error = null;
+      }
+    }
+    res.json({ success: true });
+  });
+
+  app.get("/api/updater-status", (req, res) => {
+    res.json(lastUpdaterState);
+  });
+
+  app.post("/api/updater-action", (req, res) => {
+    const { action } = req.body;
+    if (action === 'check') {
+      console.log("SCMUI_IPC:CHECK_UPDATE_NOW");
+    } else if (action === 'install') {
+      console.log("SCMUI_IPC:QUIT_AND_INSTALL");
+    }
+    res.json({ success: true });
   });
 
   app.get("/api/status", (req, res) => {

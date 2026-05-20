@@ -340,6 +340,14 @@ interface AppStatus {
   isElectron?: boolean;
 }
 
+interface UpdaterState {
+  status: string; // 'idle', 'checking', 'available', 'not-available', 'downloading', 'downloaded', 'error'
+  version: string;
+  progress: number;
+  speed: number;
+  error: string | null;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [assetViewMode, setAssetViewMode] = useState<'project' | 'library' | 'plugins'>('project');
@@ -348,6 +356,30 @@ export default function App() {
 
   const [appIcon, setAppIcon] = useState<string | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updaterState, setUpdaterState] = useState<UpdaterState | null>(null);
+
+  const fetchUpdaterStatus = async () => {
+    try {
+      const res = await fetch('/api/updater-status');
+      const data = await res.json();
+      setUpdaterState(data);
+    } catch (err) {
+      console.error("Failed to fetch updater status:", err);
+    }
+  };
+
+  const triggerUpdaterAction = async (action: 'check' | 'install') => {
+    try {
+      await fetch('/api/updater-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      fetchUpdaterStatus();
+    } catch (err) {
+      console.error(`Failed to trigger updater action ${action}:`, err);
+    }
+  };
 
   const handleManualCheckUpdate = async () => {
     if (isCheckingUpdate) return;
@@ -362,12 +394,23 @@ export default function App() {
           latestAvailableVersion: data.latestAvailableVersion 
         } : null);
       }
+      // Also request Electron updater check
+      await triggerUpdaterAction('check');
     } catch (err) {
       console.error("Failed to force update check:", err);
     } finally {
       setIsCheckingUpdate(false);
     }
   };
+
+  useEffect(() => {
+    // Poll the updater status every 2.5 seconds
+    fetchUpdaterStatus();
+    const timer = setInterval(() => {
+      fetchUpdaterStatus();
+    }, 2500);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     fetch('/icon.png', { method: 'HEAD' })
@@ -1667,14 +1710,45 @@ export default function App() {
                   <span className="text-white/40 text-[10px]">Version</span>
                   <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.2'}</span>
                 </div>
-                <div className="flex justify-between items-center pt-1 border-t border-white/5">
-                  <span className="text-white/40 text-[10px]">Update</span>
-                  {status?.updateAvailable ? (
-                    <span className="text-indigo-400 font-semibold text-[10px] animate-pulse flex items-center gap-1">
-                      <span>v{status.latestAvailableVersion} Ready</span>
-                    </span>
-                  ) : (
-                    <span className="text-white/30 text-[10px]">Up to date</span>
+                <div className="flex flex-col gap-1.5 pt-1.5 border-t border-white/5">
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-white/40">Update</span>
+                    {updaterState && updaterState.status !== 'idle' ? (
+                      <span className="font-semibold text-indigo-400 capitalize">
+                        {updaterState.status === 'checking' && 'Checking...'}
+                        {updaterState.status === 'available' && 'Available'}
+                        {updaterState.status === 'downloading' && `Downloading (${updaterState.progress}%)`}
+                        {updaterState.status === 'downloaded' && `v${updaterState.version} Ready`}
+                        {updaterState.status === 'not-available' && 'Up to date'}
+                        {updaterState.status === 'error' && 'Check Failed'}
+                      </span>
+                    ) : status?.updateAvailable ? (
+                      <span className="text-indigo-400 font-semibold animate-pulse">
+                        v{status.latestAvailableVersion} Ready
+                      </span>
+                    ) : (
+                      <span className="text-white/30">Up to date</span>
+                    )}
+                  </div>
+
+                  {/* Progress bar for download */}
+                  {updaterState && updaterState.status === 'downloading' && (
+                    <div className="w-full bg-white/10 rounded-full h-1 mt-1 overflow-hidden">
+                      <div 
+                        className="bg-indigo-500 h-1 rounded-full transition-all duration-300" 
+                        style={{ width: `${updaterState.progress}%` }} 
+                      />
+                    </div>
+                  )}
+
+                  {/* Manual install trigger when update is downloaded successfully */}
+                  {((updaterState && updaterState.status === 'downloaded') || status?.updateAvailable) && (
+                    <button
+                      onClick={() => triggerUpdaterAction('install')}
+                      className="w-full mt-1.5 py-1.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[10px] rounded-lg transition-colors flex items-center justify-center gap-1 shadow-lg shadow-indigo-600/20"
+                    >
+                      <span>Install & Restart Now</span>
+                    </button>
                   )}
                 </div>
               </div>

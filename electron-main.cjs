@@ -3,9 +3,32 @@ const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const { fork } = require('child_process');
 const fs = require('fs');
+const http = require('http');
 
 let mainWindow;
 let serverProcess;
+let logPath;
+
+function sendUpdaterEvent(event, data) {
+  const payload = JSON.stringify({ event, data: data || {} });
+  const req = http.request({
+    hostname: '127.0.0.1',
+    port: 3000,
+    path: '/api/internal/updater-event',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(payload)
+    }
+  }, (res) => {
+    res.resume();
+  });
+  req.on('error', () => {
+    // Fail silently when Express is not running/ready yet
+  });
+  req.write(payload);
+  req.end();
+}
 
 function createWindow() {
   let iconPath = path.join(__dirname, 'build', 'icon.png');
@@ -42,7 +65,7 @@ function createWindow() {
   // Start the Express server
   // When packaged, server.cjs is in dist folder inside resources/app.asar
   const serverPath = path.join(__dirname, 'dist', 'server.cjs');
-  const logPath = path.join(app.getPath('userData'), 'scmui-server-error.log');
+  logPath = path.join(app.getPath('userData'), 'scmui-server-error.log');
   fs.writeFileSync(logPath, '--- App Startup ---\n');
   
   // Use fork instead of spawn to ensure it runs with the same node version
@@ -60,7 +83,20 @@ function createWindow() {
   serverProcess.stdout.on('data', (data) => {
     const output = data.toString();
     console.log(`[Server] ${output}`);
-    fs.appendFileSync(logPath, `[Server] ${output}\\n`);
+    fs.appendFileSync(logPath, `[Server] ${output}\n`);
+    
+    // Handle local IPC commands
+    if (output.includes('SCMUI_IPC:CHECK_UPDATE_NOW')) {
+       console.log('[Main] Received check-update request from server.');
+       autoUpdater.checkForUpdatesAndNotify().catch(err => {
+         console.error('[Main] Manual update check failed:', err);
+       });
+    }
+    if (output.includes('SCMUI_IPC:QUIT_AND_INSTALL')) {
+       console.log('[Main] Received quit-and-install request from server.');
+       autoUpdater.quitAndInstall();
+    }
+
     if (output.includes('SCMUI_READY') || output.includes('Server running') || output.includes('127.0.0.1:3000')) {
        console.log('[Main] Server is ready. Loading app...');
        mainWindow.loadURL('http://127.0.0.1:3000').then(() => {
@@ -119,11 +155,26 @@ function createWindow() {
 app.whenReady().then(() => {
   createWindow();
   
-  // Configure custom logger for the autoUpdater to log to main process console
+  // Configure custom logger for the autoUpdater to log to file and console
   autoUpdater.logger = {
-    info(message) { console.log(`[Updater Log] ${message}`); },
-    warn(message) { console.warn(`[Updater Warn] ${message}`); },
-    error(message) { console.error(`[Updater Error] ${message}`); }
+    info(message) {
+      console.log(`[Updater Log] ${message}`);
+      if (logPath) {
+        fs.appendFileSync(logPath, `[Updater Log] ${message}\n`);
+      }
+    },
+    warn(message) {
+      console.warn(`[Updater Warn] ${message}`);
+      if (logPath) {
+        fs.appendFileSync(logPath, `[Updater Warn] ${message}\n`);
+      }
+    },
+    error(message) {
+      console.error(`[Updater Error] ${message}`);
+      if (logPath) {
+        fs.appendFileSync(logPath, `[Updater Error] ${message}\n`);
+      }
+    }
   };
   
   // Allow updates to find packages published as Pre-releases on GitHub
@@ -131,7 +182,12 @@ app.whenReady().then(() => {
 
   const { dialog } = require('electron');
 
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdaterEvent('checking');
+  });
+
   autoUpdater.on('update-available', (info) => {
+    sendUpdaterEvent('available', info);
     dialog.showMessageBox({
       type: 'info',
       title: 'Update Available',
@@ -139,7 +195,16 @@ app.whenReady().then(() => {
     });
   });
 
+  autoUpdater.on('update-not-available', (info) => {
+    sendUpdaterEvent('not-available', info);
+  });
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    sendUpdaterEvent('downloading', progressObj);
+  });
+
   autoUpdater.on('update-downloaded', (info) => {
+    sendUpdaterEvent('downloaded', info);
     dialog.showMessageBox({
       type: 'info',
       title: 'Update Ready',
@@ -153,9 +218,8 @@ app.whenReady().then(() => {
   });
 
   autoUpdater.on('error', (err) => {
+    sendUpdaterEvent('error', { message: err ? err.message : 'Unknown' });
     console.error('[Updater] Failed to verify updates:', err);
-    // You can uncomment the below line for debugging, but it might get annoying for users if there's no internet.
-    // dialog.showErrorBox('Update Error', err == null ? "unknown" : (err.stack || err).toString());
   });
 
   // Check for updates on startup
