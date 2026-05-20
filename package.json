@@ -53,9 +53,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "SCMUI",
-      "artifactName": "SCMUI-Setup-${version}.${ext}",
-      "uninstallDisplayName": "SCMUI"
+      "shortcutName": "Silhouette Master",
+      "artifactName": "Silhouette Master-Setup-${version}.${ext}",
+      "uninstallDisplayName": "Silhouette Master"
     }
   },
   "dependencies": {

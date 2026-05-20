@@ -54,7 +54,9 @@ function createWindow() {
     if (output.includes('SCMUI_READY') || output.includes('Server running') || output.includes('127.0.0.1:3000')) {
        console.log('[Main] Server is ready. Loading app...');
        mainWindow.loadURL('http://127.0.0.1:3000').then(() => {
-           mainWindow.webContents.openDevTools();
+           if (!app.isPackaged) {
+               mainWindow.webContents.openDevTools();
+           }
        });
     }
   });
