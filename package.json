@@ -2,7 +2,7 @@
   "name": "silhouette-ui",
   "productName": "SCMUI",
   "description": "Silhouette Card Maker UI",
-  "author": "Alan-Cha",
+  "author": "SCMUI",
   "private": true,
   "version": "1.0.1",
   "type": "module",
@@ -45,7 +45,8 @@
       "target": "dmg"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "publisherName": "SCMUI"
     },
     "linux": {
       "target": "AppImage"
