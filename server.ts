@@ -5,6 +5,11 @@ import multer from "multer";
 import fs from "fs";
 import * as archiverModule from "archiver";
 import { execSync, exec } from "child_process";
+import { fileURLToPath } from "url";
+import AdmZip from "adm-zip";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const archiver = (archiverModule as any).default || archiverModule;
 
@@ -143,10 +148,20 @@ async function startServer() {
     console.error("Warning: Failed to read version from package.json:", err.message);
   }
 
+  // Local/Electron Updater State
+  let lastUpdaterState = {
+    status: "idle", // 'idle', 'checking', 'available', 'not-available', 'downloading', 'downloaded', 'error'
+    version: "",
+    progress: 0,
+    speed: 0,
+    error: null as string | null
+  };
+
   // Live update checking from GitHub
   let updateAvailable = false;
   let latestAvailableVersion = toolVersion;
   let lastUpdateCheckTime = 0;
+  let latestReleaseObject: any = null;
 
   const checkGitHubUpdate = async () => {
     const now = Date.now();
@@ -177,10 +192,11 @@ async function startServer() {
                 const releases = JSON.parse(data);
                 if (Array.isArray(releases) && releases.length > 0) {
                   const latestRelease = releases.find((r: any) => !r.draft) || releases[0];
+                  latestReleaseObject = latestRelease;
                   const tag = latestRelease.tag_name || "";
-                  latestAvailableVersion = tag;
-                  
                   const cleanTag = tag.replace(/^v/, "");
+                  latestAvailableVersion = cleanTag;
+                  
                   const cleanCurrent = toolVersion.replace(/^v/, "");
                 
                 const compareVersions = (v1: string, v2: string) => {
@@ -197,6 +213,8 @@ async function startServer() {
                 
                 if (compareVersions(cleanTag, cleanCurrent) > 0) {
                   updateAvailable = true;
+                  lastUpdaterState.status = "available";
+                  lastUpdaterState.version = cleanTag;
                 } else {
                   updateAvailable = false;
                 }
@@ -222,13 +240,238 @@ async function startServer() {
   // Trigger initial check at startup
   checkGitHubUpdate().catch(() => {});
 
-  // Local/Electron Updater State
-  let lastUpdaterState = {
-    status: "idle", // 'idle', 'checking', 'available', 'not-available', 'downloading', 'downloaded', 'error'
-    version: "",
-    progress: 0,
-    speed: 0,
-    error: null as string | null
+  // Redirect-following HTTPS downloader
+  const downloadWithRedirects = (urlStr: string, destPath: string, onProgress: (downloaded: number, total: number) => void): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const https = require("https");
+      const urlModule = require("url");
+      
+      const request = (targetUrl: string) => {
+        const parsedUrl = urlModule.parse(targetUrl);
+        const options = {
+          hostname: parsedUrl.hostname,
+          path: parsedUrl.path,
+          headers: {
+            'User-Agent': 'SCMUI-App'
+          }
+        };
+        
+        https.get(options, (response: any) => {
+          if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 307 || response.statusCode === 308) {
+            const redirectUrl = response.headers.location;
+            if (redirectUrl) {
+              request(redirectUrl);
+            } else {
+              reject(new Error("Redirect location missing"));
+            }
+            return;
+          }
+          
+          if (response.statusCode !== 200) {
+            reject(new Error(`Failed to download: Status ${response.statusCode}`));
+            return;
+          }
+          
+          const totalBytes = parseInt(response.headers['content-length'] || "0", 10);
+          let downloadedBytes = 0;
+          const fileStream = fs.createWriteStream(destPath);
+          
+          let lastTime = Date.now();
+          let lastBytes = 0;
+          
+          response.on('data', (chunk: Buffer) => {
+            downloadedBytes += chunk.length;
+            fileStream.write(chunk);
+            
+            const now = Date.now();
+            if (now - lastTime >= 500) {
+              const diffTime = (now - lastTime) / 1000;
+              const diffBytes = downloadedBytes - lastBytes;
+              const speed = diffTime > 0 ? diffBytes / diffTime : 0;
+              
+              onProgress(downloadedBytes, totalBytes || downloadedBytes);
+              lastTime = now;
+              lastBytes = downloadedBytes;
+            }
+          });
+          
+          response.on('end', () => {
+            fileStream.end();
+            onProgress(downloadedBytes, downloadedBytes);
+            resolve();
+          });
+          
+          response.on('error', (err: any) => {
+            fileStream.end();
+            reject(err);
+          });
+        }).on('error', (err: any) => {
+          reject(err);
+        });
+      };
+      
+      request(urlStr);
+    });
+  };
+
+  // Background Autonomous Updater
+  const startBackgroundUpdate = async () => {
+    if (lastUpdaterState.status === 'downloading') {
+      return;
+    }
+    
+    lastUpdaterState.status = 'downloading';
+    lastUpdaterState.progress = 0;
+    lastUpdaterState.speed = 0;
+    lastUpdaterState.error = null;
+    
+    try {
+      lastUpdateCheckTime = 0;
+      await checkGitHubUpdate();
+      
+      if (!latestReleaseObject) {
+        throw new Error("Could not retrieve latest release details from GitHub.");
+      }
+      
+      const isWindows = process.platform === 'win32';
+      let downloadUrl = "";
+      let downloadType = "zip";
+      let assetName = "";
+      
+      // Look for .exe asset if on Windows
+      if (isWindows && latestReleaseObject.assets && Array.isArray(latestReleaseObject.assets)) {
+        const exeAsset = latestReleaseObject.assets.find((a: any) => a.name && a.name.endsWith('.exe'));
+        if (exeAsset) {
+          downloadUrl = exeAsset.browser_download_url;
+          downloadType = "exe";
+          assetName = exeAsset.name;
+          console.log(`[Updater] Found Windows installer asset: ${assetName}`);
+        }
+      }
+      
+      // Fallback/Non-Windows pre-packaged zip asset from release, or default to zipball_url
+      if (!downloadUrl) {
+        if (latestReleaseObject.assets && Array.isArray(latestReleaseObject.assets)) {
+          const zipAsset = latestReleaseObject.assets.find((a: any) => a.name && a.name.endsWith('.zip'));
+          if (zipAsset) {
+            downloadUrl = zipAsset.browser_download_url;
+            downloadType = "zip";
+            assetName = zipAsset.name;
+            console.log(`[Updater] Found pre-packaged ZIP asset: ${assetName}`);
+          }
+        }
+      }
+      
+      if (!downloadUrl) {
+        downloadUrl = latestReleaseObject.zipball_url;
+        downloadType = "zip";
+        assetName = `SCMUI-${latestReleaseObject.tag_name || 'latest'}.zip`;
+        console.log(`[Updater] Falling back to GitHub source zipball: ${downloadUrl}`);
+      }
+      
+      const tempDir = path.join(baseDataPath, 'temp-uploads');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      
+      const tempFilePath = path.join(tempDir, assetName);
+      console.log(`[Updater] Starting download from ${downloadUrl} to ${tempFilePath}`);
+      
+      await downloadWithRedirects(downloadUrl, tempFilePath, (downloaded, total) => {
+        lastUpdaterState.progress = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+        lastUpdaterState.speed = downloaded; // Approximate bytes size indicator
+      });
+      
+      console.log(`[Updater] Download complete: ${tempFilePath}`);
+      
+      if (downloadType === 'exe') {
+        lastUpdaterState.status = 'downloaded';
+        lastUpdaterState.progress = 100;
+        lastUpdaterState.speed = 0;
+        
+        console.log(`[Updater] Spawning Windows installer in background: ${tempFilePath}`);
+        const { spawn } = await import("child_process");
+        const child = spawn(tempFilePath, [], {
+          detached: true,
+          stdio: 'ignore'
+        });
+        child.unref();
+        
+        setTimeout(() => {
+          console.log("[Updater] Exiting SCM-UI process for Windows installation...");
+          process.exit(0);
+        }, 3000);
+      } else {
+        console.log(`[Updater] Extracting package...`);
+        lastUpdaterState.status = 'downloading';
+        lastUpdaterState.progress = 95;
+        
+        const zip = new AdmZip(tempFilePath);
+        const tempExtractedDir = path.join(tempDir, 'extracted-update');
+        
+        if (fs.existsSync(tempExtractedDir)) {
+          fs.rmSync(tempExtractedDir, { recursive: true, force: true });
+        }
+        fs.mkdirSync(tempExtractedDir, { recursive: true });
+        
+        zip.extractAllTo(tempExtractedDir, true);
+        
+        let updateSourceDir = tempExtractedDir;
+        const subdirs = fs.readdirSync(tempExtractedDir).filter(f => {
+          try {
+            return fs.statSync(path.join(tempExtractedDir, f)).isDirectory();
+          } catch(e) { return false; }
+        });
+        
+        if (subdirs.length === 1 && fs.readdirSync(path.join(tempExtractedDir, subdirs[0])).length > 2) {
+          updateSourceDir = path.join(tempExtractedDir, subdirs[0]);
+        }
+        
+        console.log(`[Updater] Copying extracted files from ${updateSourceDir} to application path ${baseAppPath}`);
+        
+        const copyFilesOver = (srcDir: string, destDir: string) => {
+          const files = fs.readdirSync(srcDir);
+          files.forEach(file => {
+            if (file === 'node_modules' || file === '.git' || file === '.DS_Store') return;
+            if (file === 'projects' || file === 'Library') return;
+            
+            const srcFile = path.join(srcDir, file);
+            const destFile = path.join(destDir, file);
+            const stats = fs.statSync(srcFile);
+            
+            if (stats.isDirectory()) {
+              if (!fs.existsSync(destFile)) {
+                fs.mkdirSync(destFile, { recursive: true });
+              }
+              copyFilesOver(srcFile, destFile);
+            } else {
+              fs.copyFileSync(srcFile, destFile);
+            }
+          });
+        };
+        
+        copyFilesOver(updateSourceDir, baseAppPath);
+        console.log(`[Updater] SCM-UI updated successfully.`);
+        
+        try {
+          fs.rmSync(tempExtractedDir, { recursive: true, force: true });
+          fs.unlinkSync(tempFilePath);
+        } catch (e) {}
+        
+        lastUpdaterState.status = 'downloaded';
+        lastUpdaterState.progress = 100;
+        lastUpdaterState.speed = 0;
+        
+        setTimeout(() => {
+          console.log("[Updater] Restarting SCM-UI process to apply update...");
+          process.exit(0);
+        }, 3000);
+      }
+    } catch (err: any) {
+      console.error("[Updater] Self-update failed:", err.message);
+      lastUpdaterState.status = 'error';
+      lastUpdaterState.error = err.message || "Unknown error during download/extraction";
+    }
   };
 
   let rootDir = "src/silhouette-card-maker-main";
@@ -402,6 +645,12 @@ async function startServer() {
     try {
       lastUpdateCheckTime = 0; // force a live request
       const checkResult = await checkGitHubUpdate();
+      if (checkResult.updateAvailable) {
+        lastUpdaterState.status = "available";
+        lastUpdaterState.version = checkResult.latestAvailableVersion;
+      } else {
+        lastUpdaterState.status = "not-available";
+      }
       // Also request Electron to verify
       console.log("SCMUI_IPC:CHECK_UPDATE_NOW");
       res.json(checkResult);
@@ -434,12 +683,34 @@ async function startServer() {
     res.json(lastUpdaterState);
   });
 
-  app.post("/api/updater-action", (req, res) => {
+  app.post("/api/updater-action", async (req, res) => {
     const { action } = req.body;
+    console.log(`[Updater] Action requested: ${action}`);
+    
     if (action === 'check') {
       console.log("SCMUI_IPC:CHECK_UPDATE_NOW");
+      lastUpdaterState.status = "checking";
+      lastUpdaterState.progress = 0;
+      lastUpdaterState.error = null;
+      
+      try {
+        lastUpdateCheckTime = 0; // force fresh call
+        const checkResult = await checkGitHubUpdate();
+        if (checkResult.updateAvailable) {
+          lastUpdaterState.status = "available";
+          lastUpdaterState.version = checkResult.latestAvailableVersion;
+        } else {
+          lastUpdaterState.status = "not-available";
+        }
+      } catch (err: any) {
+        lastUpdaterState.status = "error";
+        lastUpdaterState.error = "Check failed: " + err.message;
+      }
     } else if (action === 'install') {
       console.log("SCMUI_IPC:QUIT_AND_INSTALL");
+      startBackgroundUpdate().catch(err => {
+        console.error("[Updater] Background update trigger failed:", err.message);
+      });
     }
     res.json({ success: true });
   });
