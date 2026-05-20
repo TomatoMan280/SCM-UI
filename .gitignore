@@ -1,5 +1,5 @@
 node_modules/
-build/
+release/
 dist/
 coverage/
 .DS_Store
