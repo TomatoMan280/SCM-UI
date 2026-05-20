@@ -782,6 +782,8 @@ export default function App() {
     sheet: 'letter-calibration.pdf'
   });
 
+  const [isCalibrationCollapsed, setIsCalibrationCollapsed] = useState(false);
+
   const CALIBRATION_SHEETS = [
     { label: 'Letter', value: 'letter-calibration.pdf' },
     { label: 'A3', value: 'a3-calibration.pdf' },
@@ -1562,29 +1564,10 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="font-extrabold text-base tracking-tighter whitespace-nowrap text-white select-none"
                 >
-                  Silhouette Master
+                  SCMUI
                 </motion.h1>
               )}
             </div>
-            
-            {!isSidebarCollapsed && (
-              <button 
-                onClick={() => setIsSidebarCollapsed(true)}
-                className="p-1.5 hover:bg-white/5 rounded-lg transition-all text-white/20 hover:text-white shrink-0 group-hover:opacity-100 opacity-20 hidden md:block"
-                title="Collapse"
-              >
-                <Menu size={16} />
-              </button>
-            )}
-            {isSidebarCollapsed && (
-              <div 
-                className="p-1.5 absolute right-2 hover:bg-white/5 rounded-lg transition-all text-white/40 hover:text-white cursor-pointer"
-                onClick={() => setIsSidebarCollapsed(false)}
-                title="Expand"
-              >
-                <Menu size={16} />
-              </div>
-            )}
           </div>
 
           <nav className="space-y-1">
@@ -1624,6 +1607,20 @@ export default function App() {
 
         {!isSidebarCollapsed ? (
           <div className="mt-auto p-6 space-y-4">
+            <div className="p-4 rounded-xl bg-primary-600/10 border border-primary-500/20 space-y-2">
+              <p className="text-[10px] font-semibold text-primary-400 uppercase tracking-widest">Status</p>
+              <div className="space-y-1 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-white/40 text-[10px]">Python</span>
+                  <span className="text-emerald-400 font-mono text-[10px]">Found 3.10</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-white/40 text-[10px]">Version</span>
+                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '0.0'}</span>
+                </div>
+              </div>
+            </div>
+
             <a 
               href="https://alan-cha.github.io/silhouette-card-maker/donate/" 
               target="_blank" 
@@ -1785,20 +1782,6 @@ export default function App() {
                        <CommandItem icon={<Trash2 size={14}/>} label="Purge Cache" onClick={() => runCommand('clean_up.py', undefined, { startMessage: 'Purging cache...' })} />
                     </div>
                   </div>
-
-                  <div className="p-6 rounded-2xl bg-primary-600/10 border border-primary-500/20">
-                    <p className="text-xs font-semibold text-primary-400 uppercase tracking-widest mb-2">Status</p>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-white/40">Python</span>
-                        <span className="text-emerald-400">Found 3.10</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-white/40">Version</span>
-                        <span className="text-white/80">v{status?.version || '0.0'}</span>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </motion.div>
             </div>
@@ -1916,135 +1899,155 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 space-y-6">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2">
+                  <div className={cn("bg-[#0f0f13] border border-white/5 rounded-2xl p-6 transition-all duration-300", isCalibrationCollapsed ? "space-y-0" : "space-y-6")}>
+                    <div 
+                      className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2 cursor-pointer select-none"
+                      onClick={() => setIsCalibrationCollapsed(!isCalibrationCollapsed)}
+                    >
                       <div className="space-y-1">
                         <h4 className="font-bold text-amber-500 flex items-center gap-2 text-xl tracking-tight">
                           <Layers size={20} />
-                          Calibration:
+                          Calibration
+                          <span className="text-xs font-normal text-white/40 ml-1">
+                            {isCalibrationCollapsed ? "(Click to Expand)" : "(Click to Collapse)"}
+                          </span>
                         </h4>
                         <a 
                           href="https://alan-cha.github.io/silhouette-card-maker/docs/offset/" 
                           target="_blank" 
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="text-xs text-white/40 hover:text-primary-400 transition-colors underline underline-offset-4 decoration-white/10 hover:decoration-primary-400 block"
                         >
                           Adjust for printer misalignment
                         </a>
                       </div>
-                      <div className="w-full md:w-56 space-y-1.5">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Paper Size</label>
-                        <div className="relative group">
-                          <select 
-                            value={calibration.sheet}
-                            onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
-                            className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/5 shadow-inner"
-                          >
-                            {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
-                          </select>
-                          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-amber-400/50 transition-colors" />
+                      <div className="flex items-center gap-4">
+                        <div className="w-full md:w-56 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Paper Size</label>
+                          <div className="relative group">
+                            <select 
+                              value={calibration.sheet}
+                              onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
+                              className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/5 shadow-inner"
+                            >
+                              {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
+                            </select>
+                            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-amber-400/50 transition-colors" />
+                          </div>
                         </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-6">
-                      {/* Step 1 */}
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">1</div>
-                          <h5 className="text-xs font-bold text-white/60">Initial Print</h5>
-                        </div>
-                        <p className="text-[10px] text-white/30 leading-relaxed min-h-[32px]">Print the blank calibration grid to determine physical shifts.</p>
                         <button 
-                          onClick={() => {
-                            addLog(`[System] Opening calibration sheet: ${calibration.sheet}`);
-                            window.open(`/api/project/export?file=calibration/${calibration.sheet}`, '_blank');
+                          className="p-2 hover:bg-white/5 rounded-xl text-white/40 hover:text-white transition-all transform shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsCalibrationCollapsed(!isCalibrationCollapsed);
                           }}
-                          className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
                         >
-                          Print Calibration Sheet
+                          <ChevronDown size={18} className={cn("transition-transform duration-300", !isCalibrationCollapsed && "rotate-180")} />
                         </button>
                       </div>
-
-                      {/* Step 2 */}
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">2</div>
-                          <h5 className="text-xs font-bold text-white/60">Adjust Offsets</h5>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-white/30">X (mm)</label>
-                            <input 
-                              type="number" 
-                              value={calibration.x} 
-                              onChange={(e) => setCalibration(p => ({ ...p, x: parseInt(e.target.value) || 0 }))}
-                              className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-white/30">Y (mm)</label>
-                            <input 
-                              type="number" 
-                              value={calibration.y} 
-                              onChange={(e) => setCalibration(p => ({ ...p, y: parseInt(e.target.value) || 0 }))}
-                              className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-[9px] uppercase font-bold text-white/30">Angle (Deg)</label>
-                          <input 
-                            type="number" 
-                            step="0.1"
-                            value={calibration.angle} 
-                            onChange={(e) => setCalibration(p => ({ ...p, angle: parseFloat(e.target.value) || 0 }))}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
-                          />
-                        </div>
-                      </div>
-
-                      {/* Step 3 */}
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">3</div>
-                          <h5 className="text-xs font-bold text-white/60">Verify & Save</h5>
-                        </div>
-                        <div className="space-y-2">
-                          <button 
-                             onClick={() => runCommand('offset_pdf.py', [
-                               '--x_offset', calibration.x.toString(),
-                               '--y_offset', calibration.y.toString(),
-                               '--angle', calibration.angle.toString(),
-                               '--save'
-                             ], { startMessage: 'Saving offset...' })}
-                             className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-[10px] font-bold transition-all text-emerald-400"
-                          >
-                            Save Offset
-                          </button>
-                          <button 
-                            onClick={() => runCommand('offset_pdf.py', [
-                              '--pdf_path', `calibration/${calibration.sheet}`,
-                              '--x_offset', calibration.x.toString(),
-                              '--y_offset', calibration.y.toString(),
-                              '--angle', calibration.angle.toString()
-                            ], { startMessage: 'Generating offset sheet...' })}
-                            className="w-full py-2 bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-[10px] font-bold transition-all text-primary-400"
-                          >
-                            Generate Offset Sheet
-                          </button>
-                          <button 
-                             onClick={() => {
-                               addLog(`[System] Opening verification PDF: ${calibration.sheet.replace('.pdf', '_offset.pdf')}`);
-                               window.open(`/api/project/export?file=calibration/${calibration.sheet.replace('.pdf', '_offset.pdf')}`, '_blank');
-                             }}
-                             className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold transition-all"
-                          >
-                            Print Offset Sheet
-                          </button>
-                        </div>
-                      </div>
                     </div>
+
+                    {!isCalibrationCollapsed && (
+                      <div className="grid grid-cols-3 gap-6">
+                        {/* Step 1 */}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">1</div>
+                            <h5 className="text-xs font-bold text-white/60">Initial Print</h5>
+                          </div>
+                          <p className="text-[10px] text-white/30 leading-relaxed min-h-[32px]">Print the blank calibration grid to determine physical shifts.</p>
+                          <button 
+                            onClick={() => {
+                              addLog(`[System] Opening calibration sheet: ${calibration.sheet}`);
+                              window.open(`/api/project/export?file=calibration/${calibration.sheet}`, '_blank');
+                            }}
+                            className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
+                          >
+                            Print Calibration Sheet
+                          </button>
+                        </div>
+
+                        {/* Step 2 */}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">2</div>
+                            <h5 className="text-xs font-bold text-white/60">Adjust Offsets</h5>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <label className="text-[9px] uppercase font-bold text-white/30">X (mm)</label>
+                              <input 
+                                type="number" 
+                                value={calibration.x} 
+                                onChange={(e) => setCalibration(p => ({ ...p, x: parseInt(e.target.value) || 0 }))}
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[9px] uppercase font-bold text-white/30">Y (mm)</label>
+                              <input 
+                                type="number" 
+                                value={calibration.y} 
+                                onChange={(e) => setCalibration(p => ({ ...p, y: parseInt(e.target.value) || 0 }))}
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] uppercase font-bold text-white/30">Angle (Deg)</label>
+                            <input 
+                              type="number" 
+                              step="0.1"
+                              value={calibration.angle} 
+                              onChange={(e) => setCalibration(p => ({ ...p, angle: parseFloat(e.target.value) || 0 }))}
+                              className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
+                            />
+                          </div>
+                        </div>
+
+                        {/* Step 3 */}
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">3</div>
+                            <h5 className="text-xs font-bold text-white/60">Verify & Save</h5>
+                          </div>
+                          <div className="space-y-2">
+                            <button 
+                               onClick={() => runCommand('offset_pdf.py', [
+                                 '--x_offset', calibration.x.toString(),
+                                 '--y_offset', calibration.y.toString(),
+                                 '--angle', calibration.angle.toString(),
+                                 '--save'
+                               ], { startMessage: 'Saving offset...' })}
+                               className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-[10px] font-bold transition-all text-emerald-400"
+                            >
+                              Save Offset
+                            </button>
+                            <button 
+                              onClick={() => runCommand('offset_pdf.py', [
+                                '--pdf_path', `calibration/${calibration.sheet}`,
+                                '--x_offset', calibration.x.toString(),
+                                '--y_offset', calibration.y.toString(),
+                                '--angle', calibration.angle.toString()
+                              ], { startMessage: 'Generating offset sheet...' })}
+                              className="w-full py-2 bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-[10px] font-bold transition-all text-primary-400"
+                            >
+                              Generate Offset Sheet
+                            </button>
+                            <button 
+                               onClick={() => {
+                                 addLog(`[System] Opening verification PDF: ${calibration.sheet.replace('.pdf', '_offset.pdf')}`);
+                                 window.open(`/api/project/export?file=calibration/${calibration.sheet.replace('.pdf', '_offset.pdf')}`, '_blank');
+                               }}
+                               className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold transition-all"
+                            >
+                              Print Offset Sheet
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -3368,22 +3371,13 @@ export default function App() {
 
                   <div className="space-y-2 pt-2 border-t border-white/10">
                     <a
-                      href="https://github.com/Alan-Cha/silhouette"
+                      href="https://github.com/Alan-Cha/silhouette-card-maker"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <span className="text-sm text-white/60 font-medium">GitHub Repository</span>
                       <ExternalLink size={16} className="text-white/40" />
-                    </a>
-                    <a
-                      href="https://github.com/Alan-Cha/silhouette/issues"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
-                    >
-                      <span className="text-sm text-white/60 font-medium">Feedback & Support</span>
-                      <MessageSquare size={16} className="text-white/40" />
                     </a>
                   </div>
                 </div>
