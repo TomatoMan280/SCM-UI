@@ -119,7 +119,7 @@ async function startServer() {
   
       if (!skipInstall) {
         console.log("Python dependencies not found. Installing in background...");
-        exec("which apt-get && export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y -o Dpkg::Options::=\"--force-confdef\" -o Dpkg::Options::=\"--force-confold\" python3-pip && python3 -m pip install click cloudscraper --break-system-packages", (err) => {
+        exec("which apt-get && export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y python3-pip && python3 -m pip install click cloudscraper --break-system-packages", (err) => {
           if (err) console.log("Python background installation skipped.");
         });
       }

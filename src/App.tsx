@@ -1547,9 +1547,9 @@ export default function App() {
         isSidebarCollapsed ? "w-20" : "w-64"
       )}>
         <div className={cn("p-6 pb-2", isSidebarCollapsed && "px-4")}>
-          <div className="flex items-center justify-between mb-8 group relative">
+          <div className="flex items-center justify-between mb-8 overflow-hidden group relative">
             <div 
-              className={cn("flex items-center gap-3 cursor-pointer", isSidebarCollapsed && "w-full justify-center")}
+              className={cn("flex items-center gap-3 overflow-hidden cursor-pointer", isSidebarCollapsed && "w-full justify-center")}
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             >

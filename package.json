@@ -37,25 +37,22 @@
       "src/projects"
     ],
     "mac": {
-      "target": "dmg",
-      "icon": "public/icon.png"
+      "target": "dmg"
     },
     "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico"
+      "target": "nsis"
     },
     "linux": {
-      "target": "AppImage",
-      "icon": "public/icon.png"
+      "target": "AppImage"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "Silhouette Master",
-      "artifactName": "Silhouette Master-Setup-${version}.${ext}",
-      "uninstallDisplayName": "Silhouette Master"
+      "shortcutName": "SCMUI",
+      "artifactName": "SCMUI-Setup-${version}.${ext}",
+      "uninstallDisplayName": "SCMUI"
     }
   },
   "dependencies": {
