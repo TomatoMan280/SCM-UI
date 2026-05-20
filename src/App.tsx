@@ -344,6 +344,18 @@ export default function App() {
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [logs, setLogs] = useState<string[]>(["[System] Initializing Silhouette Master Virtual Bridge..."]);
 
+  const [appIcon, setAppIcon] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/icon.png', { method: 'HEAD' })
+      .then(res => {
+        if (res.ok) {
+          setAppIcon('/icon.png');
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   const [fileUndoStack, setFileUndoStack] = useState<any[]>([]);
@@ -1555,8 +1567,12 @@ export default function App() {
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
             >
-              <div className="p-2.5 bg-primary-600 rounded-xl shadow-lg shadow-primary-600/30 shrink-0 select-none">
-                <Layers className="w-5 h-5 text-white" />
+              <div className="p-2.5 bg-primary-600 rounded-xl shadow-lg shadow-primary-600/30 shrink-0 select-none flex items-center justify-center">
+                {appIcon ? (
+                  <img src={appIcon} className="w-5 h-5 object-contain" referrerPolicy="no-referrer" alt="Logo" />
+                ) : (
+                  <Layers className="w-5 h-5 text-white" />
+                )}
               </div>
               {!isSidebarCollapsed && (
                 <motion.h1 

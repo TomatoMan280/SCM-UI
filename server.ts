@@ -1241,6 +1241,22 @@ async function startServer() {
     res.json({ success: true, message: "Fetch committed.", addedCount });
   });
 
+  // Serve custom user logo/icon if provided
+  app.get('/icon.png', (req, res) => {
+    const searchPaths = [
+      path.join(baseDataPath, 'build', 'icon.png'),
+      path.join(baseDataPath, 'icon.png'),
+      path.join(baseAppPath, 'build', 'icon.png'),
+      path.join(baseAppPath, 'dist', 'icon.png'),
+    ];
+    for (const p of searchPaths) {
+      if (fs.existsSync(p)) {
+        return res.sendFile(p);
+      }
+    }
+    res.status(404).end();
+  });
+
   // Vite middleware for development
   if (!isProd) {
     const { createServer: createViteServer } = await import("vite");

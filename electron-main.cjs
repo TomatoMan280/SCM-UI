@@ -7,10 +7,20 @@ let mainWindow;
 let serverProcess;
 
 function createWindow() {
+  const fs = require('fs');
+  let iconPath = path.join(__dirname, 'build', 'icon.png');
+  if (!fs.existsSync(iconPath)) {
+    iconPath = path.join(__dirname, 'dist', 'icon.png');
+  }
+  if (!fs.existsSync(iconPath)) {
+    iconPath = path.join(__dirname, 'icon.png');
+  }
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     title: "SCMUI",
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

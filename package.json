@@ -58,8 +58,7 @@
       "shortcutName": "SCMUI",
       "artifactName": "SCMUI-Setup-${version}.${ext}",
       "uninstallDisplayName": "SCMUI",
-      "deleteAppDataOnUninstall": true,
-      "include": "build/installer.nsh"
+      "deleteAppDataOnUninstall": true
     }
   },
   "dependencies": {
