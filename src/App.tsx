@@ -28,7 +28,9 @@ import {
   X,
   RotateCcw,
   PlusCircle,
-  AlertCircle
+  AlertCircle,
+  Sliders,
+  LayoutGrid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -91,7 +93,7 @@ interface PluginConfig {
   id: string;
   name: string;
   formats: string[];
-  options: { label: string; flag: string; type: 'toggle' | 'select'; choices?: string[] }[];
+  options: { label: string; flag: string; type: 'toggle' | 'select' | 'text'; choices?: string[] }[];
 }
 
 const PLUGINS: PluginConfig[] = [
@@ -107,6 +109,8 @@ const PLUGINS: PluginConfig[] = [
       { label: 'Prefer Universe Beyond', flag: '--prefer_ub', type: 'toggle' },
       { label: 'Ignore Universe Beyond', flag: '--ignore_ub', type: 'toggle' },
       { label: 'Fetch Tokens', flag: '--tokens', type: 'toggle' },
+      { label: 'Prefer Sets (comma separated)', flag: '-s', type: 'text' },
+      { label: 'Ignore Sets (comma separated)', flag: '--ignore_set', type: 'text' },
       { label: 'Language', flag: '--prefer_lang', type: 'select', choices: ['en', 'sp', 'fr', 'de', 'it', 'pt', 'jp', 'kr', 'ru', 'cs', 'ct', 'ag', 'ph'] }
     ]
   },
@@ -328,6 +332,16 @@ export default function App() {
   const [showThemeSettings, setShowThemeSettings] = useState(false);
   const [cardDimming, setCardDimming] = useState<'none' | 'tint' | 'dark'>('tint');
   const [playDingSound, setPlayDingSound] = useState(true);
+  const [cardWidth, setCardWidth] = useState<number>(() => {
+    const stored = localStorage.getItem('scm_card_width');
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      if (!isNaN(parsed) && parsed >= 120 && parsed <= 320) {
+        return parsed;
+      }
+    }
+    return 180;
+  });
 
   const fetchPluginConfigs = async () => {
     try {
@@ -586,14 +600,24 @@ export default function App() {
     let serverAssets: string[] = [];
     const current = getCurrentAssets();
     if (type === 'front') {
-      serverAssets = current?.fronts || [];
+      const fronts = current?.fronts || [];
+      const doubleSided = current?.double_sided || [];
+      serverAssets = fronts.filter(f => !doubleSided.includes(f));
     } else if (type === 'back') {
       serverAssets = current?.backs || [];
     } else if (type === 'double_sided') {
       serverAssets = current?.double_sided || [];
     }
       
-    const local = localAssets.filter(a => a.type === type && a.view === assetViewMode && !serverAssets.includes(a.name)).map(a => a.name);
+    const local = localAssets.filter(a => {
+      if (a.view !== assetViewMode) return false;
+      if (a.type !== type) return false;
+      if (serverAssets.includes(a.name)) return false;
+      if (type === 'front' && localAssets.some(other => other.name === a.name && other.type === 'double_sided' && other.view === assetViewMode)) {
+        return false;
+      }
+      return true;
+    }).map(a => a.name);
     
     return [...serverAssets, ...local];
   };
@@ -2056,6 +2080,28 @@ export default function App() {
 
                       <div className="h-6 w-px bg-white/5" />
 
+                      {/* Card Size Selector Slider */}
+                      <div className="flex items-center gap-3 bg-[#0a0a0d] border border-white/5 rounded-xl px-4 py-1.5 shrink-0 select-none">
+                        <LayoutGrid size={13} className="text-white/40" />
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Card Size</span>
+                        <input
+                          type="range"
+                          min="120"
+                          max="320"
+                          step="10"
+                          value={cardWidth}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setCardWidth(val);
+                            localStorage.setItem('scm_card_width', val.toString());
+                          }}
+                          className="w-24 accent-primary-500 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer focus:outline-none"
+                        />
+                        <span className="text-[10px] font-mono text-white/50 w-8 text-right font-semibold">{cardWidth}px</span>
+                      </div>
+
+                      <div className="h-6 w-px bg-white/5" />
+
                       <div className="bg-white/5 p-1 rounded-xl flex gap-1">
                         <button 
                           onClick={() => {
@@ -2152,7 +2198,7 @@ export default function App() {
                             <div className="pt-2">
                               <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Options</label>
                               <div className="space-y-2">
-                                {pluginState.selectedPlugin.options.map((opt, i) => (
+                                 {pluginState.selectedPlugin.options.map((opt, i) => (
                                    <div key={`${opt.flag}-${i}`}>
                                      {opt.type === 'toggle' ? (
                                        <ToggleItem 
@@ -2163,6 +2209,20 @@ export default function App() {
                                            options: { ...prev.options, [opt.flag]: v }
                                          }))} 
                                        />
+                                     ) : opt.type === 'text' ? (
+                                        <div className="space-y-1.5">
+                                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 block">{opt.label}</span>
+                                          <input 
+                                            type="text" 
+                                            value={(pluginState.options[opt.flag] as string) || ''} 
+                                            onChange={(e) => setPluginState(prev => ({
+                                              ...prev,
+                                              options: { ...prev.options, [opt.flag]: e.target.value }
+                                            }))}
+                                            placeholder="e.g. eld, woe"
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                                          />
+                                        </div>
                                      ) : (
                                        <div className="relative">
                                          <select
@@ -2205,6 +2265,36 @@ export default function App() {
                             placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here (e.g. 4x Lightning Bolt)..."}
                             className="flex-1 w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm font-mono focus:outline-none focus:border-primary-500 transition-all resize-none shadow-inner min-h-[160px] mb-4"
                           />
+
+                          {pluginState.format === 'url' && pluginState.decklist.toLowerCase().includes('moxfield.com') && (
+                            <div className="mb-4 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
+                              <AlertCircle size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                              <div className="space-y-1">
+                                <span className="font-bold text-amber-200 block uppercase tracking-wider text-[10px]">Cloudflare Import Limitation</span>
+                                <p className="leading-relaxed text-white/70">
+                                  Moxfield's strict Cloudflare security blocks direct automated URL imports in our sandbox web environment. You can easily import your deck manually instead:
+                                </p>
+                                <ol className="list-decimal pl-4 space-y-1 mt-2 text-white/70">
+                                  <li>Open your deck on <a href={pluginState.decklist} target="_blank" rel="noopener noreferrer" className="underline text-amber-300 hover:text-amber-200">Moxfield.com</a>.</li>
+                                  <li>Click <strong className="text-white font-medium">Export</strong> in the top right menu of their page.</li>
+                                  <li>Select <strong className="text-white font-medium">MTG Arena</strong> format (or Cockatrice / Simple) and click <strong className="text-white font-medium">Copy</strong>.</li>
+                                  <li>Change the <strong className="text-white font-medium">Format</strong> dropdown selector below to <kbd className="bg-black/40 px-1 border border-white/10 rounded font-mono text-[10px]">moxfield</kbd> (or <kbd className="bg-black/40 px-1 border border-white/10 rounded font-mono text-[10px]">simple</kbd>).</li>
+                                  <li>Paste the copied text above in the box and click <strong className="text-white font-medium">Sync Artwork</strong>!</li>
+                                </ol>
+                              </div>
+                            </div>
+                          )}
+
+                          {FORMAT_HINTS[pluginState.format] && (
+                            <div className="mb-4 text-xs text-white/50 bg-white/[0.02] border border-white/5 rounded-xl p-3 flex items-start gap-2.5">
+                              <AlertCircle size={14} className="text-primary-400 mt-0.5 shrink-0" />
+                              <div className="space-y-1">
+                                <span className="font-bold text-white/70 block uppercase tracking-wider text-[10px]">Format Guideline</span>
+                                <p className="leading-relaxed">{FORMAT_HINTS[pluginState.format]}</p>
+                              </div>
+                            </div>
+                          )}
+
                           <button 
                             onClick={async () => {
                               // 1. Save decklist
@@ -2221,12 +2311,25 @@ export default function App() {
                               }
 
                               // 2. Build and run command
-                              const args = [`game/decklist/current.txt`, pluginState.format];
+                              const isDirectInput = pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' || pluginState.format === 'ydk';
+                              const targetInput = isDirectInput ? pluginState.decklist.trim() : `game/decklist/current.txt`;
+                              const args = [targetInput, pluginState.format];
                               Object.entries(pluginState.options).forEach(([flag, val]) => {
-                                if (val === true) args.push(flag);
-                                else if (typeof val === 'string' && val !== "") {
+                                if (val === true) {
                                   args.push(flag);
-                                  args.push(val);
+                                } else if (typeof val === 'string' && val.trim() !== "") {
+                                  if ((flag === '-s' || flag === '--ignore_set') && val.includes(',')) {
+                                    val.split(',').forEach(item => {
+                                      const trimmed = item.trim();
+                                      if (trimmed) {
+                                        args.push(flag);
+                                        args.push(trimmed);
+                                      }
+                                    });
+                                  } else {
+                                    args.push(flag);
+                                    args.push(val.trim());
+                                  }
                                 }
                               });
                               
@@ -2303,7 +2406,7 @@ export default function App() {
                             <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
                               Back Patterns 
                               <span className="text-white/20 font-normal">
-                                ({(assetViewMode === 'project' ? status?.assets?.backs.length : status?.library?.backs.length) || 0})
+                                ({getAllAssets('back')?.length || 0})
                               </span>
                             </h3>
                           </div>
@@ -2313,7 +2416,10 @@ export default function App() {
                         </div>
                         
                         {!collapsedSections.backs && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6">
+                          <div 
+                            className="grid gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6"
+                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardWidth}px, 1fr))` }}
+                          >
                             {assetViewMode !== 'plugins' && (
                               <TemplateCard 
                                 type="back" 
@@ -2374,7 +2480,7 @@ export default function App() {
                             <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
                               Front Faces 
                               <span className="text-white/20 font-normal">
-                                {(assetViewMode === 'project' ? status?.assets?.fronts.length : status?.library?.fronts.length) || 0}
+                                {getAllAssets('front')?.length || 0}
                               </span>
                             </h3>
                           </div>
@@ -2384,7 +2490,10 @@ export default function App() {
                         </div>
 
                         {!collapsedSections.fronts && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6">
+                          <div 
+                            className="grid gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6"
+                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardWidth}px, 1fr))` }}
+                          >
                             {assetViewMode !== 'plugins' && (
                               <TemplateCard 
                                 type="front" 
@@ -2447,7 +2556,7 @@ export default function App() {
                             <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
                               Double-Sided 
                               <span className="text-white/20 font-normal">
-                                {(assetViewMode === 'project' ? status?.assets?.double_sided?.length : status?.library?.double_sided?.length) || 0}
+                                {getAllAssets('double_sided')?.length || 0}
                               </span>
                             </h3>
                           </div>
@@ -2457,7 +2566,10 @@ export default function App() {
                         </div>
 
                         {!collapsedSections.doubleSided && (
-                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6">
+                          <div 
+                            className="grid gap-6 p-6 bg-white/[0.02] border border-white/5 rounded-[40px] mt-6"
+                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${cardWidth}px, 1fr))` }}
+                          >
                             {assetViewMode !== 'plugins' && (
                               <TemplateCard 
                                 type="double_sided" 
@@ -3547,16 +3659,21 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
       return uploadedImages[name];
     }
     
-    addLog?.(`AssetItem Debug: ${name} NOT found in uploadedImages. available keys: ${Object.keys(uploadedImages || {}).slice(0, 5).join(', ')}...`);
     const baseUrl = getBaseUrl();
     // 2. Determine base path based on type/double-sided status
     if (type === 'back') {
       return `${baseUrl}/back/${name}`;
     }
     
-    // 3. For front faces, check if it's double-sided first
-    if (allAssets?.double_sided?.includes(name)) {
-      return `${baseUrl}/double_sided/${name}`;
+    // 3. For front faces & double-sided faces, verify where the front face image is
+    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.includes(name);
+    if (isDoubleSided) {
+      const hasFrontOnDisk = allAssets?.fronts?.includes(name);
+      if (hasFrontOnDisk) {
+        return `${baseUrl}/front/${name}`;
+      } else {
+        return `${baseUrl}/double_sided/${name}`;
+      }
     }
     
     // 4. Default to front
@@ -3569,9 +3686,16 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     if (type === 'back') return null;
     
     // Check if double sided
-    const isDoubleSided = allAssets?.double_sided?.includes(name);
+    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.includes(name);
     if (isDoubleSided) {
-      return { name, folder: 'double_sided' };
+      const hasDoubleSidedOnDisk = allAssets?.double_sided?.includes(name) || type === 'double_sided';
+      if (hasDoubleSidedOnDisk && allAssets?.fronts?.includes(name)) {
+        return { name, folder: 'double_sided' };
+      }
+      // If we only have double_sided on disk and no fronts of same name, we fallback to standard backs
+      if (allAssets?.backs && allAssets.backs.length > 0) {
+        return { name: allAssets.backs[allAssets.backs.length - 1], folder: 'back' };
+      }
     }
     
     if (assetViewMode === 'library' || assetViewMode === 'plugins') return null;
@@ -3616,7 +3740,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
           }
         }}
       >
-        {type === 'front' && backFace && (
+        {(type === 'front' || type === 'double_sided') && backFace && (
           <button 
             onClick={(e) => {
               if (onToggleFlip) {
@@ -3664,16 +3788,16 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
               </div>
             )}
 
-            {type === 'front' && !selected && assetViewMode !== 'library' && (
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                <Eye size={18} className="text-white" />
-                <span className="text-[10px] font-bold text-white uppercase">Click to Enlarge</span>
+            {(type === 'front' || type === 'double_sided') && !selected && assetViewMode !== 'library' && (
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-3 text-center select-none">
+                <Eye size={18} className="text-white animate-pulse" />
+                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Click to Enlarge</span>
               </div>
             )}
           </div>
 
-          {/* Back Face (only if front) */}
-          {type === 'front' && (
+          {/* Back Face (only if front or double-sided) */}
+          {(type === 'front' || type === 'double_sided') && (
             <div 
               className="absolute inset-0 backface-hidden bg-[#0f0f13] border border-white/5 rounded-xl overflow-hidden shadow-lg shadow-black/20"
               style={{ transform: 'rotateY(180deg)' }}
@@ -3685,20 +3809,26 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                       src={uploadedImages?.[backFace.name] || `${getBaseUrl()}/${backFace.folder}/${backFace.name}`}
                       alt={backFace.name}
                       loading="lazy"
-                      className="w-full h-full object-cover opacity-60"
+                      className={cn(
+                        "w-full h-full object-cover",
+                        backFace?.folder === 'double_sided' ? "opacity-100" : "opacity-60"
+                      )}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
-                    <div className={cn(
-                      "absolute inset-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2",
-                      backFace?.folder === 'double_sided' ? "border-primary-500/20 bg-primary-500/5" : "border-amber-500/20 bg-amber-500/5"
-                    )}>
-                      <span className="text-[10px] font-bold text-white/60 uppercase tracking-tighter">
-                        {backFace?.folder === 'double_sided' ? 'Double Sided Back' : 'General Back'}
-                      </span>
-                      <p className="text-[10px] text-white/80 text-center px-4 font-mono break-all line-clamp-2">
-                        {backFace?.name}
-                      </p>
-                    </div>
+                    {backFace?.folder !== 'double_sided' && (
+                      <>
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
+                        <div className={cn(
+                          "absolute inset-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2 border-amber-500/20 bg-amber-500/5"
+                        )}>
+                          <span className="text-[10px] font-bold text-white/60 uppercase tracking-tighter">
+                            General Back
+                          </span>
+                          <p className="text-[10px] text-white/80 text-center px-4 font-mono break-all line-clamp-2">
+                            {backFace?.name}
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </>
                 ) : (
                   <div className="flex flex-col items-center gap-2 opacity-20">
@@ -3730,7 +3860,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
       <div className="px-1">
         <p className="text-xs font-medium text-white/60 truncate">{name}</p>
         <p className="text-[10px] text-white/20 font-mono">
-          {type === 'front' ? (isFlipped ? (backFace?.folder === 'double_sided' ? 'Double-Sided' : 'Standard Back') : 'Front Face') : 'Back Pattern'}
+          {(type === 'front' || type === 'double_sided') ? (isFlipped ? (backFace?.folder === 'double_sided' ? 'Double-Sided' : 'Standard Back') : 'Front Face') : 'Back Pattern'}
         </p>
       </div>
     </div>

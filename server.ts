@@ -230,6 +230,60 @@ async function startServer() {
     res.json({ configs });
   });
 
+  app.get("/api/moxfield-proxy", async (req, res) => {
+    const { deckId } = req.query;
+    if (!deckId) return res.status(400).json({ error: "deckId is required" });
+
+    const url = `https://api.moxfield.com/v2/decks/all/${deckId}`;
+    console.log(`[Proxy] Local fetch request triggered for Moxfield deck ID: ${deckId}`);
+    
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Referer": "https://www.moxfield.com/",
+      "Origin": "https://www.moxfield.com"
+    };
+
+    try {
+      if (typeof fetch !== "undefined") {
+        const response = await fetch(url, { headers });
+        if (!response.ok) {
+          throw new Error(`Moxfield API status ${response.status}`);
+        }
+        const data = await response.ok ? await response.json() : null;
+        if (data) {
+          return res.json(data);
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[Proxy] Fetch failed: ${e.message}. Trying https module...`);
+    }
+
+    // Fallback using Node's standard https module
+    import("https").then((https) => {
+      https.get(url, { headers }, (response) => {
+        let rawData = "";
+        response.on("data", (chunk) => { rawData += chunk; });
+        response.on("end", () => {
+          try {
+            if (response.statusCode && response.statusCode >= 400) {
+              return res.status(response.statusCode).json({ error: `Moxfield API status ${response.statusCode}`, body: rawData });
+            }
+            const data = JSON.parse(rawData);
+            res.json(data);
+          } catch (err: any) {
+            res.status(500).json({ error: "Failed to parse JSON response", details: err.message, body: rawData });
+          }
+        });
+      }).on("error", (err) => {
+        res.status(500).json({ error: "HTTPS request failed", details: err.message });
+      });
+    }).catch((err) => {
+      res.status(500).json({ error: "Failed to load https module", details: err.message });
+    });
+  });
+
   app.get("/api/status", (req, res) => {
     try {
       const fetchScript = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
@@ -551,7 +605,7 @@ async function startServer() {
     
     let isLibrary = assetViewMode === 'library';
     let isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? path.join(process.cwd(), 'src', 'Library', 'Plugins') : (isLibrary ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game'));
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
     
     // Check if double sided
     let dirType = type;
@@ -583,12 +637,28 @@ async function startServer() {
     
     if (isLibrary) {
       if (type === 'front') mockLibrary.fronts.push(newName);
-      else mockLibrary.backs.push(newName);
-      if (dirType === 'double_sided') mockLibrary.double_sided.push(newName);
+      else if (type === 'back') mockLibrary.backs.push(newName);
+      else if (type === 'double_sided') mockLibrary.double_sided.push(newName);
+      
+      if (dirType === 'double_sided') {
+         if (!mockLibrary.double_sided.includes(newName)) {
+            mockLibrary.double_sided.push(newName);
+         }
+         mockLibrary.fronts = mockLibrary.fronts.filter(f => f !== newName);
+         mockLibrary.backs = mockLibrary.backs.filter(b => b !== newName);
+      }
     } else if (!isPlugins) {
       if (type === 'front') mockCards.fronts.push(newName);
-      else mockCards.backs.push(newName);
-      if (dirType === 'double_sided') mockCards.double_sided.push(newName);
+      else if (type === 'back') mockCards.backs.push(newName);
+      else if (type === 'double_sided') mockCards.double_sided.push(newName);
+      
+      if (dirType === 'double_sided') {
+         if (!mockCards.double_sided.includes(newName)) {
+            mockCards.double_sided.push(newName);
+         }
+         mockCards.fronts = mockCards.fronts.filter(f => f !== newName);
+         mockCards.backs = mockCards.backs.filter(b => b !== newName);
+      }
     }
     
     res.json({ success: true, message: `Duplicated to ${newName}`, newName });
@@ -601,7 +671,7 @@ async function startServer() {
     const identities = Array.isArray(identity) ? identity : [identity];
     const isLibrary = assetViewMode === 'library';
     const isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? path.join(process.cwd(), 'src', 'Library', 'Plugins') : (isLibrary ? path.join(process.cwd(), 'src', 'Library') : path.join(scmPath, 'game'));
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
     
     const results: Array<{name: string, from: string}> = [];
     identities.forEach(id => {

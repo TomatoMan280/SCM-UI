@@ -399,13 +399,88 @@ def parse_cubecobra_csv(deck_text, handle_card: Callable, front_img_dir: str, do
     if len(error_lines) > 0:
         print(f'Errors: {error_lines}')
 
+class CustomHTTPClient:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.moxfield.com/',
+            'Origin': 'https://www.moxfield.com',
+            'Connection': 'keep-alive',
+        })
+
+    def get(self, url, **kwargs):
+        if "api.moxfield.com/v2/decks/all/" in url:
+            deck_id = url.split("v2/decks/all/")[-1].split("?")[0].strip("/")
+            proxy_url = f"http://127.0.0.1:3000/api/moxfield-proxy?deckId={deck_id}"
+            print(f"CustomHTTPClient routing Moxfield request to local backend proxy: {proxy_url}")
+            try:
+                response = self.session.get(proxy_url, timeout=30)
+                if response.status_code == 200:
+                    return response
+                print(f"Local Node proxy returned status {response.status_code}. Falling back...")
+            except Exception as e:
+                print(f"Local Node proxy request failed: {e}. Falling back to standard requests.")
+
+        headers = None
+        if 'headers' in kwargs:
+            headers = self.session.headers.copy()
+            headers.update(kwargs['headers'])
+            kwargs['headers'] = headers
+        else:
+            kwargs['headers'] = self.session.headers.copy()
+
+        print(f"CustomHTTPClient requesting: {url}")
+        try:
+            response = self.session.get(url, **kwargs)
+            if response.status_code == 200:
+                return response
+        except Exception as e:
+            print(f"Standard requests failed: {e}. Trying cloudscraper...")
+            pass
+
+        try:
+            scraper = cloudscraper.create_scraper()
+            if headers:
+                scraper.headers.update(headers)
+            else:
+                scraper.headers.update(self.session.headers)
+            return scraper.get(url, **kwargs)
+        except Exception as err:
+            print(f"Cloudscraper failed: {err}. Re-trying standard requests.")
+            return self.session.get(url, **kwargs)
+
 # URL Auto-Import
 #   Supported sites:
 #     Aetherhub, Archidekt, Deckstats, Moxfield, MTG Goldfish,
 #     MTGJSON, Scryfall, Tapped Out, TCGPlayer
 def parse_url(deck_url, handle_card: Callable) -> None:
-    scraper = cloudscraper.create_scraper()
-    cards = mtg_parser.parse_deck(deck_url, scraper)
+    client = CustomHTTPClient()
+    try:
+        cards = mtg_parser.parse_deck(deck_url, client)
+    except Exception as e:
+        print(f"\n[Console Error] Auto-import from URL failed.")
+        print(f"Detail error message: {e}")
+        if "moxfield" in deck_url.lower():
+            print("\n" + "="*80)
+            print("                 MOXFIELD URL DETECTED & AUTOMATION BLOCKED")
+            print("="*80)
+            print("Moxfield uses Cloudflare DDoS protection that blocks automated requests")
+            print("coming from cloud platform servers (such as AWS and Google Cloud).")
+            print("\nHowever, you can easily load your Moxfield deck list manually:")
+            print("  1. Open your deck on Moxfield: " + deck_url)
+            print("  2. Click the 'Export' link in the top-right menu of your deck page.")
+            print("  3. Select 'MTG Arena' (or Simple, Cockatrice) and click 'Copy' to copy text.")
+            print("  4. In candidate SCMUI panel, change Format select dropdown to 'moxfield' (or 'simple').")
+            print("  5. Paste the copied deck list items in the text area and click 'Sync Artwork'.")
+            print("="*80 + "\n")
+        else:
+            print("\nCloudflare or network restrictions may be blocking direct access to this URL.")
+            print("Try exporting the deck as plain text or MTG Arena format, pasting the text directly, and selecting the corresponding format.")
+        return
+
     if not cards:
         print(f"Failed to parse deck from URL: {deck_url}")
         return
