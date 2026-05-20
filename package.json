@@ -52,7 +52,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "SCMUI",
       "artifactName": "SCMUI-Setup-${version}.${ext}",
-      "uninstallDisplayName": "SCMUI"
+      "uninstallDisplayName": "SCMUI",
+      "include": "build/installer.nsh"
     }
   },
   "dependencies": {
