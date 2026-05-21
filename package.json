@@ -65,9 +65,9 @@
       "artifactName": "SCMUI-Setup-${version}.${ext}",
       "uninstallDisplayName": "SCMUI",
       "deleteAppDataOnUninstall": true,
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeaderIcon": "build/icon.ico"
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeaderIcon": "icon.ico"
     }
   },
   "dependencies": {
