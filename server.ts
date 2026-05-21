@@ -395,6 +395,8 @@ async function startServer() {
         library: mockLibrary,
         integrityOk: integrityOk,
         isElectron: isElectron,
+        libraryPath: libraryPath,
+        userDataPath: baseDataPath,
         plugins: {
           fronts: actualPluginsFronts,
           backs: actualPluginsBacks,
@@ -414,6 +416,8 @@ async function startServer() {
       dependenciesOk: toolInstalled,
       assets: mockCards,
       library: mockLibrary,
+      libraryPath: libraryPath,
+      userDataPath: baseDataPath,
       plugins: { fronts: [], backs: [], double_sided: [] },
       savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
     });

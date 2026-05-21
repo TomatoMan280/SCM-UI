@@ -336,6 +336,8 @@ interface AppStatus {
   savedProjects?: string[];
   integrityOk?: boolean;
   isElectron?: boolean;
+  libraryPath?: string;
+  userDataPath?: string;
 }
 
 export default function App() {
@@ -520,6 +522,7 @@ export default function App() {
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'theme' | 'shortcuts'>('theme');
+  const [copiedPath, setCopiedPath] = useState(false);
   const [shortcuts, setShortcuts] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('scm_shortcuts');
     return saved ? JSON.parse(saved) : {
@@ -3472,9 +3475,45 @@ export default function App() {
                     </button>
                   </div>
 
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-3">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Library Folder Location</span>
+                      <span className="text-xs text-white/40 block">
+                        Your custom card images and settings are stored here. Restoring or updating the app retains this directory cleanly.
+                      </span>
+                    </div>
+                    {status?.libraryPath ? (
+                      <div className="space-y-2">
+                        <div className="p-3 bg-black/40 border border-white/5 rounded-xl font-mono text-[10px] text-white/60 select-all whitespace-pre-wrap break-all">
+                          {status.libraryPath}
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (status?.libraryPath) {
+                              navigator.clipboard.writeText(status.libraryPath);
+                              setCopiedPath(true);
+                              setTimeout(() => setCopiedPath(false), 2000);
+                            }
+                          }}
+                          className={cn(
+                            "w-full py-2 border rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-2",
+                            copiedPath
+                              ? "bg-[#10b981]/10 text-[#10b981] border-[#10b981]/20 hover:bg-[#10b981]/20"
+                              : "bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border-white/10"
+                          )}
+                        >
+                          <Copy size={12} />
+                          {copiedPath ? "Copied Folder Path!" : "Copy Folder Path"}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-mono text-white/20 italic block">Loading library path...</span>
+                    )}
+                  </div>
+
                   <div className="space-y-2 pt-2 border-t border-white/10">
                     <a
-                      href="https://github.com/Alan-Cha/silhouette-card-maker"
+                      href="https://github.com/TomatoMan280/SCM-UI"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"

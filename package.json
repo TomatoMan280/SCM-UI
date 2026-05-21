@@ -64,10 +64,11 @@
       "shortcutName": "SCMUI",
       "artifactName": "SCMUI-Setup-${version}.${ext}",
       "uninstallDisplayName": "SCMUI",
-      "deleteAppDataOnUninstall": true,
+      "deleteAppDataOnUninstall": false,
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
-      "installerHeaderIcon": "icon.ico"
+      "installerHeaderIcon": "icon.ico",
+      "include": "installer.nsh"
     }
   },
   "dependencies": {
