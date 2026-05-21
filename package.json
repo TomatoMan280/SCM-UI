@@ -10,7 +10,7 @@
   "scripts": {
     "postinstall": "node install.cjs",
     "dev": "tsx server.ts",
-    "build": "node -e \"const {execSync} = require('child_process'); try { execSync('python process_icon.py'); } catch { try { execSync('python3 process_icon.py'); } catch {} }\" && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "node -e \"const {execSync} = require('child_process'); try { execSync('python process_icon.py', { stdio: 'inherit' }); } catch { try { execSync('python3 process_icon.py', { stdio: 'inherit' }); } catch {} }\" && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "npx rimraf dist release server.cjs",
@@ -40,7 +40,10 @@
       "package.json",
       "src/Library",
       "src/silhouette-card-maker-main",
-      "src/projects"
+      "src/projects",
+      "icon.png",
+      "build/icon.png",
+      "Build/icon.png"
     ],
     "mac": {
       "target": "dmg",
@@ -61,7 +64,10 @@
       "shortcutName": "SCMUI",
       "artifactName": "SCMUI-Setup-${version}.${ext}",
       "uninstallDisplayName": "SCMUI",
-      "deleteAppDataOnUninstall": true
+      "deleteAppDataOnUninstall": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
     }
   },
   "dependencies": {
