@@ -356,7 +356,13 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('scm_sidebar_collapsed') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_sidebar_collapsed', String(isSidebarCollapsed));
+  }, [isSidebarCollapsed]);
   
   const [fileUndoStack, setFileUndoStack] = useState<any[]>([]);
 
@@ -536,8 +542,21 @@ export default function App() {
     localStorage.setItem('scm_shortcuts', JSON.stringify(shortcuts));
   }, [shortcuts]);
 
-  const [cardDimming, setCardDimming] = useState<'none' | 'tint' | 'dark'>('tint');
-  const [playDingSound, setPlayDingSound] = useState(true);
+  const [cardDimming, setCardDimming] = useState<'none' | 'tint' | 'dark'>(() => {
+    return (localStorage.getItem('scm_card_dimming') as any) || 'tint';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_card_dimming', cardDimming);
+  }, [cardDimming]);
+
+  const [playDingSound, setPlayDingSound] = useState(() => {
+    return localStorage.getItem('scm_play_ding_sound') !== 'false';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_play_ding_sound', String(playDingSound));
+  }, [playDingSound]);
   const [cardWidth, setCardWidth] = useState<number>(() => {
     const stored = localStorage.getItem('scm_card_width');
     if (stored) {
@@ -577,7 +596,14 @@ export default function App() {
   const [currentTheme, setCurrentTheme] = useState<Theme>('indigo');
   const [pdfReady, setPdfReady] = useState(false);
   const [pdfReadyToastOpen, setPdfReadyToastOpen] = useState(false);
-  const [collapsedSections, setCollapsedSections] = useState({ fronts: false, backs: false, doubleSided: false });
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    const saved = localStorage.getItem('scm_collapsed_sections');
+    return saved ? JSON.parse(saved) : { fronts: false, backs: false, doubleSided: false };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_collapsed_sections', JSON.stringify(collapsedSections));
+  }, [collapsedSections]);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
@@ -767,34 +793,54 @@ export default function App() {
   }, [activeTab, status, selectedAssets, copiedBuffer]);
 
   // Command Builder State
-  const [cmdOptions, setCmdOptions] = useState({
-    card_size: 'standard',
-    paper_size: 'letter',
-    registration: '3',
-    only_fronts: false,
-    fit: 'stretch',
-    extend_corners: 0,
-    ppi: 300,
-    quality: 100,
-    load_offset: true,
-    skip: "",
-    show_outline: false,
-    crop: "",
-    crop_backs: "",
-    label: "",
-    output_images: false,
-    output_path: "",
-    doubleSided: false, // UI convenience
+  const [cmdOptions, setCmdOptions] = useState(() => {
+    const saved = localStorage.getItem('scm_cmd_options');
+    return saved ? JSON.parse(saved) : {
+      card_size: 'standard',
+      paper_size: 'letter',
+      registration: '3',
+      only_fronts: false,
+      fit: 'stretch',
+      extend_corners: 0,
+      ppi: 300,
+      quality: 100,
+      load_offset: true,
+      skip: "",
+      show_outline: false,
+      crop: "",
+      crop_backs: "",
+      label: "",
+      output_images: false,
+      output_path: "",
+      doubleSided: false, // UI convenience
+    };
   });
 
-  const [calibration, setCalibration] = useState({
-    x: 0,
-    y: 0,
-    angle: 0.0,
-    sheet: 'letter-calibration.pdf'
+  useEffect(() => {
+    localStorage.setItem('scm_cmd_options', JSON.stringify(cmdOptions));
+  }, [cmdOptions]);
+
+  const [calibration, setCalibration] = useState(() => {
+    const saved = localStorage.getItem('scm_calibration');
+    return saved ? JSON.parse(saved) : {
+      x: 0,
+      y: 0,
+      angle: 0.0,
+      sheet: 'letter-calibration.pdf'
+    };
   });
 
-  const [isCalibrationCollapsed, setIsCalibrationCollapsed] = useState(false);
+  useEffect(() => {
+    localStorage.setItem('scm_calibration', JSON.stringify(calibration));
+  }, [calibration]);
+
+  const [isCalibrationCollapsed, setIsCalibrationCollapsed] = useState(() => {
+    return localStorage.getItem('scm_calibration_collapsed') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_calibration_collapsed', String(isCalibrationCollapsed));
+  }, [isCalibrationCollapsed]);
 
   const CALIBRATION_SHEETS = [
     { label: 'Letter', value: 'letter-calibration.pdf' },
@@ -804,12 +850,39 @@ export default function App() {
     { label: 'Tabloid', value: 'tabloid-calibration.pdf' }
   ];
 
-  const [pluginState, setPluginState] = useState({
-    selectedPlugin: PLUGINS[0],
-    decklist: "",
-    format: PLUGINS[0].formats[0],
-    options: {} as Record<string, any>
+  const [pluginState, setPluginState] = useState(() => {
+    const saved = localStorage.getItem('scm_plugin_state');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const foundPlugin = PLUGINS.find(p => p.id === parsed.selectedPluginId);
+        if (foundPlugin) {
+          return {
+            selectedPlugin: foundPlugin,
+            decklist: parsed.decklist || "",
+            format: parsed.format || foundPlugin.formats[0],
+            options: parsed.options || {}
+          };
+        }
+      } catch (e) {}
+    }
+    return {
+      selectedPlugin: PLUGINS[0],
+      decklist: "",
+      format: PLUGINS[0].formats[0],
+      options: {} as Record<string, any>
+    };
   });
+
+  useEffect(() => {
+    const stateToSave = {
+      selectedPluginId: pluginState.selectedPlugin.id,
+      decklist: pluginState.decklist,
+      format: pluginState.format,
+      options: pluginState.options
+    };
+    localStorage.setItem('scm_plugin_state', JSON.stringify(stateToSave));
+  }, [pluginState]);
 
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
@@ -1632,7 +1705,7 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.2'}</span>
+                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.3'}</span>
                 </div>
               </div>
             </div>
