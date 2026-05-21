@@ -130,7 +130,7 @@ async function startServer() {
   
   // Simulation labels
   let toolInstalled = true;
-  let toolVersion = "1.0.3";
+  let toolVersion = "1.0.4";
   try {
     const packageJsonPath = path.join(process.cwd(), 'package.json');
     if (fs.existsSync(packageJsonPath)) {
