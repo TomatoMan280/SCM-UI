@@ -83,7 +83,33 @@ def process_icon():
                 new_img.save(dest_path, "PNG")
                 print(f"[Icon Processor] Saved padded icon to: {dest_path}")
 
-            print("[Icon Processor] Custom 256x256 logo padded to safe bounds successfully.")
+            # -------------------------------------------------------------
+            # Auto-generate Windows multi-resolution .ico icon
+            # -------------------------------------------------------------
+            build_dir = "build"
+            if not os.path.exists(build_dir):
+                os.makedirs(build_dir, exist_ok=True)
+
+            ico_path = os.path.join(build_dir, "icon.ico")
+            try:
+                # Recommended standard resolutions for Windows ICO
+                ico_sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
+                new_img.save(ico_path, format="ICO", sizes=ico_sizes)
+                print(f"[Icon Processor] Generated multi-resolution Windows icon at: {ico_path}")
+            except Exception as ico_err:
+                print(f"[Icon Processor] Warning: Could not generate .ico file: {ico_err}")
+
+            # -------------------------------------------------------------
+            # Auto-generate macOS .icns icon
+            # -------------------------------------------------------------
+            icns_path = os.path.join(build_dir, "icon.icns")
+            try:
+                new_img.save(icns_path, format="ICNS")
+                print(f"[Icon Processor] Generated macOS icon at: {icns_path}")
+            except Exception as icns_err:
+                print(f"[Icon Processor] Warning: Could not generate .icns file: {icns_err}")
+
+            print("[Icon Processor] Custom logo and platform-specific installers assets processed successfully.")
 
     except Exception as e:
         print(f"[Icon Processor] Failed to process icon: {e}", file=sys.stderr)

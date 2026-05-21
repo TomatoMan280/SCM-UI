@@ -43,10 +43,12 @@
       "src/projects"
     ],
     "mac": {
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "build/icon.icns"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
     "linux": {
       "target": "AppImage"
