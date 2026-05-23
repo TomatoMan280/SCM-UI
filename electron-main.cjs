@@ -4,6 +4,15 @@ const path = require('path');
 const { fork } = require('child_process');
 const fs = require('fs');
 
+(async () => {
+  try {
+    const fixPath = await import('fix-path');
+    fixPath.default();
+  } catch (e) {
+    console.error('Failed to load fix-path:', e);
+  }
+})();
+
 let mainWindow;
 let serverProcess;
 
