@@ -16,7 +16,7 @@ async function install() {
   }
 
   const pythonCmd = isWindows ? 'python' : 'python3';
-  const pipArgs = 'install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests natsort pydantic pypdfium2 split-image pyautogui' + (isWindows ? '' : ' --break-system-packages');
+  const pipArgs = 'install click cloudscraper ezdxf filetype matplotlib mtg_parser pyyaml pillow requests natsort pydantic pypdfium2 split-image pyautogui pyparsing numpy' + (isWindows ? '' : ' --break-system-packages');
 
   try {
     console.log(`[Install] Installing Python dependencies via ${pythonCmd} -m pip...`);
