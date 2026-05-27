@@ -380,8 +380,10 @@ async function startServer() {
         const platform = os.platform();
         let pythonExecutable = 'python';
 
+        sendEvent('progress', { step: 'Initializing...', detail: 'Preparing python installation', percent: 10 });
+
         if (platform === 'win32') {
-          sendEvent('progress', { step: 'Downloading Python...', detail: 'Fetching Python 3.11 installer for Windows' });
+          sendEvent('progress', { step: 'Downloading Python...', detail: 'Fetching Python 3.11 installer for Windows', percent: 40 });
           const installerPath = path.join(os.tmpdir(), 'python-installer.exe');
           
           await new Promise<void>((resolve, reject) => {
@@ -398,7 +400,7 @@ async function startServer() {
             });
           });
 
-          sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Running installer silently in the background' });
+          sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Running installer silently in the background', percent: 60 });
           await runCommand(installerPath, ['/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0']);
           
           pythonExecutable = path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python.exe');
@@ -407,7 +409,7 @@ async function startServer() {
           }
         } else {
           // Mock or use apt-get for non-Windows assuming user is root or in a container
-          sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Using apt-get / brew' });
+          sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Using apt-get / brew', percent: 60 });
           if (platform === 'linux') {
              try {
                 await runCommand('sudo', ['apt-get', 'update']);
@@ -420,7 +422,7 @@ async function startServer() {
           }
         }
 
-        sendEvent('progress', { step: 'Setting up dependencies...', detail: 'Creating virtual environment and installing packages' });
+        sendEvent('progress', { step: 'Setting up dependencies...', detail: 'Creating virtual environment and installing packages', percent: 80 });
         
         const venvPath = path.join(scmPath, 'venv');
         
@@ -434,7 +436,7 @@ async function startServer() {
         sendEvent('stdout', 'Installing requirements...');
         await runCommand(pipExecutable, ['install', '-r', 'requirements.txt'], scmPath);
 
-        sendEvent('progress', { step: 'Ready!', detail: 'Python environment setup complete' });
+        sendEvent('progress', { step: 'Ready!', detail: 'Python environment setup complete', percent: 100 });
         sendEvent('done', { success: true });
         res.end();
 

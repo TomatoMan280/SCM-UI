@@ -929,11 +929,11 @@ export default function App() {
   }, [cmdOptions, pluginState, saveToHistory]);
 
   const [isSettingUpPython, setIsSettingUpPython] = useState(false);
-  const [pythonSetupProgress, setPythonSetupProgress] = useState({ step: 'Initializing setup...', detail: '' });
+  const [pythonSetupProgress, setPythonSetupProgress] = useState<{step: string, detail: string, percent?: number}>({ step: 'Initializing setup...', detail: '', percent: 10 });
 
   const startPythonSetup = () => {
     setIsSettingUpPython(true);
-    setPythonSetupProgress({ step: 'Initializing background process', detail: 'Please wait...' });
+    setPythonSetupProgress({ step: 'Initializing background process', detail: 'Please wait...', percent: 10 });
     
     const eventSource = new EventSource('/api/setup-python-stream');
     
@@ -1769,24 +1769,19 @@ export default function App() {
             className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/80 backdrop-blur-md pointer-events-auto"
           >
             <div className="flex flex-col items-center gap-6 p-10 bg-[#0f0f13] rounded-3xl border border-primary-500/20 shadow-[0_0_60px_-15px_rgba(16,185,129,0.3)] max-w-sm w-full text-center">
-              <Loader2 className="w-12 h-12 text-primary-500 animate-spin" />
               <div className="space-y-2">
                 <h3 className="text-lg font-bold tracking-wide text-white">{pythonSetupProgress.step}</h3>
                 {pythonSetupProgress.detail && (
                   <p className="text-sm font-medium text-white/50">{pythonSetupProgress.detail}</p>
                 )}
               </div>
-              <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mt-2 relative">
-                 <div className="absolute top-0 bottom-0 left-0 w-1/3 bg-primary-500 rounded-full animate-[progress_2s_ease-in-out_infinite] shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
+                 <div 
+                   className="h-full bg-primary-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all duration-500 ease-in-out" 
+                   style={{ width: `${pythonSetupProgress.percent || 10}%` }}
+                 ></div>
               </div>
             </div>
-            <style dangerouslySetInnerHTML={{__html: `
-              @keyframes progress {
-                0% { left: -33%; width: 33%; }
-                50% { left: 50%; width: 50%; }
-                100% { left: 100%; width: 33%; }
-              }
-            `}} />
           </motion.div>
         )}
 
