@@ -521,7 +521,7 @@ export default function App() {
   const [pluginSaveName, setPluginSaveName] = useState("");
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'theme' | 'shortcuts'>('theme');
+  const [settingsTab, setSettingsTab] = useState<'theme' | 'shortcuts' | 'system'>('theme');
   const [copiedPath, setCopiedPath] = useState(false);
   const [shortcuts, setShortcuts] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('scm_shortcuts');
@@ -830,6 +830,15 @@ export default function App() {
     localStorage.setItem('scm_cmd_options', JSON.stringify(cmdOptions));
   }, [cmdOptions]);
 
+  const [pythonPath, setPythonPath] = useState(() => {
+    return localStorage.getItem('scm_python_path') || "";
+  });
+
+  useEffect(() => {
+    if (pythonPath) localStorage.setItem('scm_python_path', pythonPath);
+    else localStorage.removeItem('scm_python_path');
+  }, [pythonPath]);
+
   const [calibration, setCalibration] = useState(() => {
     const saved = localStorage.getItem('scm_calibration');
     return saved ? JSON.parse(saved) : {
@@ -919,11 +928,59 @@ export default function App() {
     return () => clearTimeout(timeout);
   }, [cmdOptions, pluginState, saveToHistory]);
 
+  const [isSettingUpPython, setIsSettingUpPython] = useState(false);
+  const [pythonSetupProgress, setPythonSetupProgress] = useState({ step: 'Initializing setup...', detail: '' });
+
+  const startPythonSetup = () => {
+    setIsSettingUpPython(true);
+    setPythonSetupProgress({ step: 'Initializing background process', detail: 'Please wait...' });
+    
+    const eventSource = new EventSource('/api/setup-python-stream');
+    
+    eventSource.addEventListener('progress', (e: Event) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      setPythonSetupProgress(data);
+    });
+
+    eventSource.addEventListener('stdout', (e: Event) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      addLog(`[System Setup] ${data}`);
+    });
+
+    eventSource.addEventListener('error', (e: Event) => {
+      const err = JSON.parse((e as MessageEvent).data);
+      addLog(`[Setup Error] ${err}`);
+      setPythonSetupProgress({ step: 'Setup Failed', detail: err });
+    });
+
+    eventSource.addEventListener('done', (e: Event) => {
+      const data = JSON.parse((e as MessageEvent).data);
+      eventSource.close();
+      if (data.success) {
+        setTimeout(() => {
+          setIsSettingUpPython(false);
+          fetchStatus();
+        }, 1500);
+      }
+    });
+
+    eventSource.onerror = (e) => {
+      eventSource.close();
+    };
+  };
+
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/status?_=' + new Date().getTime());
       const data = await res.json();
       setStatus(data);
+      
+      if (data && data.pythonFound === false) {
+        if (!isSettingUpPython && !localStorage.getItem('scm_python_path')) {
+           startPythonSetup();
+        }
+      }
+
       if (data.assets) {
         setLocalAssets(prev => prev.filter(a => {
           const targetSet = a.view === 'project' ? data.assets : (a.view === 'library' ? data.library : data.plugins);
@@ -1066,7 +1123,7 @@ export default function App() {
       const res = await fetch('/api/run-command-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId }),
+        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId, pythonPath }),
         signal: abortController.signal
       });
       if (!res.ok) {
@@ -1686,7 +1743,36 @@ export default function App() {
     <div className="flex h-screen bg-[#0a0a0c] text-[#e1e1e6] font-sans selection:bg-primary-500/30 overflow-hidden">
       <ErrorBanner logs={logs} />
       <AnimatePresence>
-        {isProcessing && (
+        {isSettingUpPython && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/80 backdrop-blur-md pointer-events-auto"
+          >
+            <div className="flex flex-col items-center gap-6 p-10 bg-[#0f0f13] rounded-3xl border border-primary-500/20 shadow-[0_0_60px_-15px_rgba(16,185,129,0.3)] max-w-sm w-full text-center">
+              <Loader2 className="w-12 h-12 text-primary-500 animate-spin" />
+              <div className="space-y-2">
+                <h3 className="text-lg font-bold tracking-wide text-white">{pythonSetupProgress.step}</h3>
+                {pythonSetupProgress.detail && (
+                  <p className="text-sm font-medium text-white/50">{pythonSetupProgress.detail}</p>
+                )}
+              </div>
+              <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden mt-2 relative">
+                 <div className="absolute top-0 bottom-0 left-0 w-1/3 bg-primary-500 rounded-full animate-[progress_2s_ease-in-out_infinite] shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+              </div>
+            </div>
+            <style dangerouslySetInnerHTML={{__html: `
+              @keyframes progress {
+                0% { left: -33%; width: 33%; }
+                50% { left: 50%; width: 50%; }
+                100% { left: 100%; width: 33%; }
+              }
+            `}} />
+          </motion.div>
+        )}
+
+        {isProcessing && !isSettingUpPython && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -2222,7 +2308,7 @@ export default function App() {
                               <input 
                                 type="number" 
                                 value={calibration.x} 
-                                onChange={(e) => setCalibration(p => ({ ...p, x: parseInt(e.target.value) || 0 }))}
+                                onChange={(e) => setCalibration(p => ({ ...p, x: e.target.value }))}
                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
                               />
                             </div>
@@ -2231,7 +2317,7 @@ export default function App() {
                               <input 
                                 type="number" 
                                 value={calibration.y} 
-                                onChange={(e) => setCalibration(p => ({ ...p, y: parseInt(e.target.value) || 0 }))}
+                                onChange={(e) => setCalibration(p => ({ ...p, y: e.target.value }))}
                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
                               />
                             </div>
@@ -2242,7 +2328,7 @@ export default function App() {
                               type="number" 
                               step="0.1"
                               value={calibration.angle} 
-                              onChange={(e) => setCalibration(p => ({ ...p, angle: parseFloat(e.target.value) || 0 }))}
+                              onChange={(e) => setCalibration(p => ({ ...p, angle: e.target.value }))}
                               className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
                             />
                           </div>
@@ -2903,7 +2989,7 @@ export default function App() {
                       <DropZone 
                         label="Drag and drop area for backs"
                         isLibrary={assetViewMode === 'library'}
-                        disabled={assetViewMode === 'plugins'}
+                        disabled={false}
                         onDrop={async (files, isLibrary) => {
                           const filesToUpload = isLibrary ? Array.from(files) : [files[0]];
                           addLog(`[Uploader] Dropped ${filesToUpload.length} back patterns. Starting upload...`);
@@ -2935,11 +3021,10 @@ export default function App() {
                             className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
                             style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
                           >
-                            {assetViewMode !== 'plugins' && (
-                              <TemplateCard 
-                                type="back" 
-                                multiple={assetViewMode === 'library'}
-                                onUpload={async (files) => {
+                            <TemplateCard 
+                              type="back" 
+                              multiple={assetViewMode === 'library'}
+                              onUpload={async (files) => {
                                   for (let i = 0; i < files.length; i++) {
                                     setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
                                     await handleUpload(files[i], 'back', assetViewMode === 'library');
@@ -2948,7 +3033,6 @@ export default function App() {
                                   setTimeout(() => setTaskProgress(null), 1500);
                                 }} 
                               />
-                            )}
                             {getAllAssets('back')
                               .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
                               .map((img: string, i: number) => (
@@ -3626,6 +3710,12 @@ export default function App() {
                 >
                   Shortcuts
                 </button>
+                <button 
+                  onClick={() => setSettingsTab('system')}
+                  className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", settingsTab === 'system' ? "bg-white/10 text-white" : "text-white/40 hover:text-white")}
+                >
+                  System
+                </button>
               </div>
 
               {settingsTab === 'theme' && (
@@ -3834,6 +3924,30 @@ export default function App() {
                        />
                     </div>
                   ))}
+                </div>
+              )}
+
+              {settingsTab === 'system' && (
+                <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Python Path Override</span>
+                      <span className="text-xs text-white/40 block leading-relaxed">
+                        Specify absolute path to your python executable if it cannot be found in PATH.
+                        Leave empty for auto-detection.
+                      </span>
+                    </div>
+                    <div>
+                      <input 
+                         title="Python Executable Path"
+                         type="text" 
+                         value={pythonPath}
+                         onChange={(e) => setPythonPath(e.target.value)}
+                         className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono text-white focus:outline-none focus:border-primary-500 transition-colors"
+                         placeholder="C:\Python310\python.exe or /usr/bin/python3"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 

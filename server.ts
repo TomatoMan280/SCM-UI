@@ -329,6 +329,109 @@ async function startServer() {
     }
   });
 
+  app.get("/api/setup-python-stream", (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const sendEvent = (type: string, data: any) => {
+      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    const runCommand = (command: string, args: string[], cwd?: string): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        const { spawn } = require('child_process');
+        const child = spawn(command, args, { cwd, shell: true });
+        
+        child.stdout.on('data', (data: any) => {
+          sendEvent('stdout', data.toString());
+        });
+        
+        child.stderr.on('data', (data: any) => {
+          sendEvent('stdout', data.toString());
+        });
+        
+        child.on('close', (code: number) => {
+          if (code === 0) resolve();
+          else reject(new Error(`Command failed with code ${code}`));
+        });
+      });
+    };
+
+    const runSetup = async () => {
+      try {
+        const os = require('os');
+        const fs = require('fs');
+        const path = require('path');
+        const https = require('https');
+
+        const platform = os.platform();
+        let pythonExecutable = 'python';
+
+        if (platform === 'win32') {
+          sendEvent('progress', { step: 'Downloading Python...', detail: 'Fetching Python 3.11 installer for Windows' });
+          const installerPath = path.join(os.tmpdir(), 'python-installer.exe');
+          
+          await new Promise<void>((resolve, reject) => {
+            const file = fs.createWriteStream(installerPath);
+            https.get('https://www.python.org/ftp/python/3.11.8/python-3.11.8-amd64.exe', (response: any) => {
+              response.pipe(file);
+              file.on('finish', () => {
+                file.close();
+                resolve();
+              });
+            }).on('error', (err: any) => {
+              fs.unlink(installerPath, () => {});
+              reject(err);
+            });
+          });
+
+          sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Running installer silently in the background' });
+          await runCommand(installerPath, ['/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0']);
+          pythonExecutable = 'python';
+          
+        } else {
+          // Mock or use apt-get for non-Windows assuming user is root or in a container
+          sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Using apt-get / brew' });
+          if (platform === 'linux') {
+             try {
+                await runCommand('sudo', ['apt-get', 'update']);
+                await runCommand('sudo', ['apt-get', 'install', '-y', 'python3', 'python3-pip', 'python3-venv']);
+             } catch(e) {
+                await runCommand('apt-get', ['update']);
+                await runCommand('apt-get', ['install', '-y', 'python3', 'python3-pip', 'python3-venv']);
+             }
+             pythonExecutable = 'python3';
+          }
+        }
+
+        sendEvent('progress', { step: 'Setting up dependencies...', detail: 'Creating virtual environment and installing packages' });
+        
+        const scmPath = path.join(process.cwd(), 'src', 'silhouette-card-maker-main');
+        const venvPath = path.join(scmPath, 'venv');
+        
+        sendEvent('stdout', 'Creating virtual environment...');
+        await runCommand(pythonExecutable, ['-m', 'venv', 'venv'], scmPath);
+        
+        const pipExecutable = platform === 'win32' 
+            ? path.join(venvPath, 'Scripts', 'pip.exe')
+            : path.join(venvPath, 'bin', 'pip');
+
+        sendEvent('stdout', 'Installing requirements...');
+        await runCommand(pipExecutable, ['install', '-r', 'requirements.txt'], scmPath);
+
+        sendEvent('progress', { step: 'Ready!', detail: 'Python environment setup complete' });
+        sendEvent('done', { success: true });
+      } catch (err: any) {
+        sendEvent('error', `Setup failed: ${err.message}`);
+        sendEvent('done', { success: false });
+      }
+      res.end();
+    };
+
+    runSetup();
+  });
+
   app.get("/api/status", (req, res) => {
     try {
       const fetchScript = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
@@ -405,6 +508,65 @@ async function startServer() {
         return [];
       };
 
+      import('child_process').then(({ spawnSync }) => {
+        let pythonHasBeenFound = false;
+        
+        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+        
+        if (fs.existsSync(venvPythonPath) || fs.existsSync(venvPythonPathFallback)) {
+           pythonHasBeenFound = true;
+        } else {
+          try {
+            const check = spawnSync("python3", ["--version"]);
+            if (check.status === 0) pythonHasBeenFound = true;
+          } catch (e) {}
+
+          if (!pythonHasBeenFound) {
+            try {
+              const check2 = spawnSync("python", ["--version"]);
+              if (check2.status === 0) pythonHasBeenFound = true;
+            } catch (e) {}
+          }
+        }
+
+        res.json({
+          installed: toolInstalled,
+          version: toolVersion,
+          rootDir: rootDir,
+          pythonFound: pythonHasBeenFound,
+          dependenciesOk: toolInstalled,
+          assets: mockCards,
+          library: mockLibrary,
+          integrityOk: integrityOk,
+          isElectron: isElectron,
+          libraryPath: libraryPath,
+          userDataPath: baseDataPath,
+          plugins: {
+            fronts: actualPluginsFronts,
+            backs: actualPluginsBacks,
+            double_sided: actualPluginsDoubleSided
+          },
+          savedProjects: getProjects()
+        });
+      }).catch(() => {
+         res.json({
+            installed: toolInstalled,
+            version: toolVersion,
+            rootDir: rootDir,
+            pythonFound: true,
+            dependenciesOk: toolInstalled,
+            assets: mockCards,
+            library: mockLibrary,
+            libraryPath: libraryPath,
+            userDataPath: baseDataPath,
+            plugins: { fronts: [], backs: [], double_sided: [] },
+            savedProjects: getProjects()
+         });
+      });
+      return;
+
+    } catch(e) {
       res.json({
         installed: toolInstalled,
         version: toolVersion,
@@ -413,34 +575,12 @@ async function startServer() {
         dependenciesOk: toolInstalled,
         assets: mockCards,
         library: mockLibrary,
-        integrityOk: integrityOk,
-        isElectron: isElectron,
         libraryPath: libraryPath,
         userDataPath: baseDataPath,
-        plugins: {
-          fronts: actualPluginsFronts,
-          backs: actualPluginsBacks,
-          double_sided: actualPluginsDoubleSided
-        },
-        savedProjects: getProjects()
+        plugins: { fronts: [], backs: [], double_sided: [] },
+        savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
       });
-      return;
-
-    } catch(e) {}
-
-    res.json({
-      installed: toolInstalled,
-      version: toolVersion,
-      rootDir: rootDir,
-      pythonFound: true,
-      dependenciesOk: toolInstalled,
-      assets: mockCards,
-      library: mockLibrary,
-      libraryPath: libraryPath,
-      userDataPath: baseDataPath,
-      plugins: { fronts: [], backs: [], double_sided: [] },
-      savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
-    });
+    }
   });
 
   app.post("/api/project/save", (req, res) => {
@@ -1034,7 +1174,7 @@ async function startServer() {
   });
 
   app.post("/api/run-command-stream", (req, res) => {
-    const { command, args } = req.body;
+    const { command, args, pythonPath } = req.body;
     
     // Set up SSE
     res.setHeader('Content-Type', 'text/event-stream');
@@ -1050,16 +1190,36 @@ async function startServer() {
     }).join(" ");
     
     import('child_process').then(({ spawn, spawnSync }) => {
-      let pythonCmd = "python";
-      try {
-        const check = spawnSync("python3", ["--version"]);
-        if (check.status === 0) pythonCmd = "python3";
-      } catch (e) {}
+      let pythonCmd = pythonPath || "python";
 
-      if (pythonCmd === "python") {
+      if (!pythonPath) {
+        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+        
+        if (fs.existsSync(venvPythonPath)) {
+           pythonCmd = venvPythonPath;
+        } else if (fs.existsSync(venvPythonPathFallback)) {
+           pythonCmd = venvPythonPathFallback;
+        } else {
+          try {
+            const check = spawnSync("python3", ["--version"]);
+            if (check.status === 0) pythonCmd = "python3";
+          } catch (e) {}
+
+          if (pythonCmd === "python") {
+            try {
+              const check2 = spawnSync("python", ["--version"]);
+              if (check2.status !== 0) pythonCmd = "";
+            } catch (e) {}
+          }
+        }
+      } else {
+        // Soft check override
         try {
-          const check2 = spawnSync("python", ["--version"]);
-          if (check2.status !== 0) pythonCmd = "";
+          const check = spawnSync(pythonCmd, ["--version"]);
+          if (check.status !== 0 && check.error) {
+            console.warn("Override python path seems invalid:", pythonCmd);
+          }
         } catch (e) {}
       }
 
@@ -1192,7 +1352,7 @@ async function startServer() {
   });
 
   app.post("/api/run-command", (req, res) => {
-    const { command, args } = req.body;
+    const { command, args, pythonPath } = req.body;
     
     // Construct CLI string from args array
     const argString = (args || []).map((arg: any) => {
@@ -1203,16 +1363,37 @@ async function startServer() {
     // Check if python is available and run the child process based on it.
     import('child_process').then(({ exec, spawnSync }) => {
       // Find whether to use python3 or python or none
-      let pythonCmd = "python";
-      try {
-        const check = spawnSync("python3", ["--version"]);
-        if (check.status === 0) pythonCmd = "python3";
-      } catch (e) {}
+      let pythonCmd = pythonPath || "python";
 
-      if (pythonCmd === "python") {
+      if (!pythonPath) {
+        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+        
+        if (fs.existsSync(venvPythonPath)) {
+           pythonCmd = venvPythonPath;
+        } else if (fs.existsSync(venvPythonPathFallback)) {
+           pythonCmd = venvPythonPathFallback;
+        } else {
+          try {
+            const check = spawnSync("python3", ["--version"]);
+            if (check.status === 0) pythonCmd = "python3";
+          } catch (e) {}
+
+          if (pythonCmd === "python") {
+            try {
+              const check2 = spawnSync("python", ["--version"]);
+              if (check2.status !== 0) pythonCmd = "";
+            } catch (e) {}
+          }
+        }
+      } else {
+        // If an override is provided, we should just assume it's good or valid, but let's test it
         try {
-          const check2 = spawnSync("python", ["--version"]);
-          if (check2.status !== 0) pythonCmd = "";
+          const check = spawnSync(pythonCmd, ["--version"]);
+          if (check.status !== 0 && check.error) {
+            console.warn("Override python path seems invalid:", pythonCmd);
+            // We'll still try to use it and let it fail naturally
+          }
         } catch (e) {}
       }
 
