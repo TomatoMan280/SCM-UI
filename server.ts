@@ -73,12 +73,24 @@ async function startServer() {
   });
 
   // If in Electron production, we should check if our python scripts exist in the writable location
-  // and if not, copy them from the app bundle (ASAR)
+  // and if not, copy them from the unpacked resources folder (ASAR Bypass)
   if (isElectron) {
-    const scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
+    let resourcesPath = baseAppPath;
+    if (baseAppPath.includes('app.asar')) {
+      resourcesPath = baseAppPath.substring(0, baseAppPath.indexOf('app.asar'));
+    }
+    
+    let scmSourcePath = path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-main');
+    if (!fs.existsSync(scmSourcePath)) {
+      scmSourcePath = path.join(resourcesPath, 'silhouette-card-maker-main');
+    }
+    if (!fs.existsSync(scmSourcePath)) {
+       scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
+    }
+
     const markerFile = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
     
-    console.log(`[System] Initializing scripts: ${scmSourcePath} -> ${scmPath}`);
+    console.log(`[System] Initializing scripts from physical resources: ${scmSourcePath} -> ${scmPath}`);
     
     try {
       let sourceToUse = scmSourcePath;
@@ -430,6 +442,55 @@ async function startServer() {
     };
 
     runSetup();
+  });
+
+  app.get("/api/python-status", (req, res) => {
+    import('child_process').then(({ exec }) => {
+      const pythonOverride = req.query.path ? String(req.query.path) : null;
+      let checkCmd = 'python';
+      let envType = 'System';
+      
+      if (pythonOverride) {
+        checkCmd = `"${pythonOverride}"`;
+        envType = 'Override';
+      } else {
+        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+        
+        if (fs.existsSync(venvPythonPath)) {
+           checkCmd = `"${venvPythonPath}"`;
+           envType = 'Sandboxed';
+        } else if (fs.existsSync(venvPythonPathFallback)) {
+           checkCmd = `"${venvPythonPathFallback}"`;
+           envType = 'Sandboxed';
+        } else {
+           checkCmd = 'python3';
+           envType = 'System';
+        }
+      }
+      
+      // Fallback for mac/linux where `python3` is standard
+      let cmdToRun = `${checkCmd} --version`;
+      exec(cmdToRun, (error, stdout, stderr) => {
+        let output = (stdout || stderr || '').trim();
+        if (error && checkCmd === 'python3') {
+           // Try plain `python`
+           checkCmd = 'python';
+           exec(`${checkCmd} --version`, (err2, stdout2, stderr2) => {
+             if (err2) {
+               return res.json({ found: false, version: '', type: '' });
+             }
+             const outver = (stdout2 || stderr2 || '').trim().replace('Python ', '');
+             return res.json({ found: true, version: outver, type: envType });
+           });
+           return;
+        } else if (error) {
+           return res.json({ found: false, version: '', type: '' });
+        }
+        const outver = output.replace('Python ', '');
+        res.json({ found: true, version: outver, type: envType });
+      });
+    });
   });
 
   app.get("/api/status", (req, res) => {
@@ -1648,7 +1709,17 @@ async function startServer() {
       console.log("[Admin] Diagnostic listing failed:", err.message);
     }
 
-    const scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
+    let resourcesPath = baseAppPath;
+    if (baseAppPath.includes('app.asar')) {
+      resourcesPath = baseAppPath.substring(0, baseAppPath.indexOf('app.asar'));
+    }
+    let scmSourcePath = path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-main');
+    if (!fs.existsSync(scmSourcePath)) {
+      scmSourcePath = path.join(resourcesPath, 'silhouette-card-maker-main');
+    }
+    if (!fs.existsSync(scmSourcePath)) {
+       scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
+    }
     
     try {
       console.log(`[Admin] Manually repairing scripts from ${scmSourcePath} to ${scmPath}`);

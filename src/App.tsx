@@ -969,12 +969,30 @@ export default function App() {
     };
   };
 
+  const [pythonStatus, setPythonStatus] = useState<{ found: boolean, version: string, type: string } | null>(null);
+
+  const fetchPythonStatus = async () => {
+    try {
+      const overridePath = localStorage.getItem('scm_python_path');
+      const url = overridePath ? `/api/python-status?path=${encodeURIComponent(overridePath)}` : '/api/python-status';
+      const res = await fetch(url);
+      const data = await res.json();
+      setPythonStatus(data);
+    } catch(e) {}
+  };
+
+  useEffect(() => {
+    fetchPythonStatus();
+  }, [pythonPath]);
+
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/status?_=' + new Date().getTime());
       const data = await res.json();
       setStatus(data);
       
+      fetchPythonStatus();
+
       if (data && data.pythonFound === false) {
         if (!isSettingUpPython && !localStorage.getItem('scm_python_path')) {
            startPythonSetup();
@@ -1925,7 +1943,13 @@ export default function App() {
               <div className="space-y-1 text-xs">
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Python</span>
-                  <span className="text-emerald-400 font-mono text-[10px]">Found 3.10</span>
+                  {pythonStatus === null ? (
+                     <span className="text-white/40 font-mono text-[10px]">Checking...</span>
+                  ) : pythonStatus.found ? (
+                     <span className="text-emerald-400 font-mono text-[10px] flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> {pythonStatus.version} ({pythonStatus.type})</span>
+                  ) : (
+                     <span className="text-rose-400 font-mono text-[10px] flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Python Not Found</span>
+                  )}
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
