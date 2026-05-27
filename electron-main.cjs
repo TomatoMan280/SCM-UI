@@ -74,11 +74,6 @@ function createWindow() {
        console.log('[Main] Server is ready. Loading app...');
        mainWindow.loadURL('http://127.0.0.1:3000');
     }
-    if (output.includes('RESTART_ELECTRON_APP_NOW')) {
-       console.log('[Main] Restart signal received. Relaunching...');
-       app.relaunch();
-       app.exit();
-    }
   });
   
   serverProcess.stderr.on('data', (data) => {
