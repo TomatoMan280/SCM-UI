@@ -45,6 +45,9 @@
       "build/icon.png",
       "Build/icon.png"
     ],
+    "asarUnpack": [
+      "src/silhouette-card-maker-main/**/*"
+    ],
     "mac": {
       "target": "dmg",
       "icon": "build/icon.icns"

@@ -445,51 +445,49 @@ async function startServer() {
   });
 
   app.get("/api/python-status", (req, res) => {
-    import('child_process').then(({ exec }) => {
-      const pythonOverride = req.query.path ? String(req.query.path) : null;
-      let checkCmd = 'python';
-      let envType = 'System';
+    const pythonOverride = req.query.path ? String(req.query.path) : null;
+    let checkCmd = 'python';
+    let envType = 'System';
+    
+    if (pythonOverride) {
+      checkCmd = `"${pythonOverride}"`;
+      envType = 'Override';
+    } else {
+      const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+      const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
       
-      if (pythonOverride) {
-        checkCmd = `"${pythonOverride}"`;
-        envType = 'Override';
+      if (fs.existsSync(venvPythonPath)) {
+         checkCmd = `"${venvPythonPath}"`;
+         envType = 'Sandboxed';
+      } else if (fs.existsSync(venvPythonPathFallback)) {
+         checkCmd = `"${venvPythonPathFallback}"`;
+         envType = 'Sandboxed';
       } else {
-        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
-        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
-        
-        if (fs.existsSync(venvPythonPath)) {
-           checkCmd = `"${venvPythonPath}"`;
-           envType = 'Sandboxed';
-        } else if (fs.existsSync(venvPythonPathFallback)) {
-           checkCmd = `"${venvPythonPathFallback}"`;
-           envType = 'Sandboxed';
-        } else {
-           checkCmd = 'python3';
-           envType = 'System';
-        }
+         checkCmd = 'python3';
+         envType = 'System';
       }
-      
-      // Fallback for mac/linux where `python3` is standard
-      let cmdToRun = `${checkCmd} --version`;
-      exec(cmdToRun, (error, stdout, stderr) => {
-        let output = (stdout || stderr || '').trim();
-        if (error && checkCmd === 'python3') {
-           // Try plain `python`
-           checkCmd = 'python';
-           exec(`${checkCmd} --version`, (err2, stdout2, stderr2) => {
-             if (err2) {
-               return res.json({ found: false, version: '', type: '' });
-             }
-             const outver = (stdout2 || stderr2 || '').trim().replace('Python ', '');
-             return res.json({ found: true, version: outver, type: envType });
-           });
-           return;
-        } else if (error) {
-           return res.json({ found: false, version: '', type: '' });
-        }
-        const outver = output.replace('Python ', '');
-        res.json({ found: true, version: outver, type: envType });
-      });
+    }
+    
+    // Fallback for mac/linux where `python3` is standard
+    let cmdToRun = `${checkCmd} --version`;
+    exec(cmdToRun, (error, stdout, stderr) => {
+      let output = (stdout || stderr || '').trim();
+      if (error && checkCmd === 'python3') {
+         // Try plain `python`
+         checkCmd = 'python';
+         exec(`${checkCmd} --version`, (err2, stdout2, stderr2) => {
+           if (err2) {
+             return res.json({ found: false, version: '', type: '' });
+           }
+           const outver = (stdout2 || stderr2 || '').trim().replace('Python ', '');
+           return res.json({ found: true, version: outver, type: envType });
+         });
+         return;
+      } else if (error) {
+         return res.json({ found: false, version: '', type: '' });
+      }
+      const outver = output.replace('Python ', '');
+      res.json({ found: true, version: outver, type: envType });
     });
   });
 
