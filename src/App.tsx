@@ -177,7 +177,7 @@ const PLUGINS: PluginConfig[] = [
     name: 'Pokemon', 
     formats: ['limitless'],
     options: [],
-    websites: [{ name: 'Limitless', url: 'https://play.limitlesstcg.com/' }]
+    websites: [{ name: 'Limitless', url: 'https://my.limitlesstcg.com/builder' }]
   },
   { 
     id: 'one_piece', 
@@ -244,7 +244,7 @@ const PLUGINS: PluginConfig[] = [
       { name: 'DeckPlanet', url: 'https://www.deckplanet.com/' },
       { name: 'Egman Events', url: 'https://egmanevents.com/' },
       { name: 'ExBurst', url: 'https://www.exburst.com/' },
-      { name: 'Limitless', url: 'https://play.limitlesstcg.com/' }
+      { name: 'Limitless', url: 'https://my.limitlesstcg.com/builder' }
     ]
   },
   { 
@@ -610,7 +610,8 @@ export default function App() {
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
-  const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[]} | null>(null);
+  const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check'|'keep'|'replace'} | null>(null);
+  const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'} | null>(null);
   const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'>} | null>(null);
 
   useEffect(() => {
@@ -653,7 +654,13 @@ export default function App() {
       if (match('tabDashboard')) { e.preventDefault(); setActiveTab('dashboard'); return; }
       if (match('tabWorkspace')) { e.preventDefault(); setActiveTab('assets'); setAssetViewMode('project'); return; }
       if (match('tabLibrary')) { e.preventDefault(); setActiveTab('assets'); setAssetViewMode('library'); return; }
-      if (match('tabPlugins')) { e.preventDefault(); setActiveTab('assets'); setAssetViewMode('plugins'); return; }
+      if (match('tabPlugins')) { 
+        e.preventDefault(); 
+        setActiveTab('assets'); 
+        setAssetViewMode('plugins'); 
+        if (assetFilter === 'back') setAssetFilter('all');
+        return; 
+      }
       if (match('saveProject') && activeTab === 'assets' && assetViewMode === 'project') {
         e.preventDefault();
         setShowSaveModal(true);
@@ -845,6 +852,14 @@ export default function App() {
     localStorage.setItem('scm_calibration_collapsed', String(isCalibrationCollapsed));
   }, [isCalibrationCollapsed]);
 
+  const [isAdvancedCollapsed, setIsAdvancedCollapsed] = useState(() => {
+    return localStorage.getItem('scm_advanced_collapsed') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_advanced_collapsed', String(isAdvancedCollapsed));
+  }, [isAdvancedCollapsed]);
+
   const CALIBRATION_SHEETS = [
     { label: 'Letter', value: 'letter-calibration.pdf' },
     { label: 'A3', value: 'a3-calibration.pdf' },
@@ -1003,6 +1018,25 @@ export default function App() {
       });
       addLog(`[Plugins] Loaded configuration '${name}' for ${plugin.name}.`);
       setShowPluginLoadModal(false);
+    }
+  };
+
+  const deletePluginConfig = async (e: React.MouseEvent, name: string) => {
+    e.stopPropagation();
+    const config = pluginConfigs[name];
+    if (!config) return;
+    try {
+      const res = await fetch('/api/library/delete-decklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, pluginId: config.pluginId })
+      });
+      if (res.ok) {
+        addLog(`[Plugins] Deleted configuration '${name}'.`);
+        await fetchPluginConfigs();
+      }
+    } catch(err) {
+      addLog(`[Error] Failed to delete config: ${err}`);
     }
   };
 
@@ -1329,8 +1363,25 @@ export default function App() {
     }
   };
 
+  const cleanUpOutputs = async () => {
+    setTaskProgress({ current: 1, total: 1, message: `Cleaning up workspace...` });
+    addLog("[Project] Cleaning up workspace...");
+    try {
+      const res = await fetch('/api/project/clean-up', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        addLog(`[Project] Success: ${data.message}`);
+        setTaskProgress(prev => prev ? { ...prev, message: 'Cleaned successfully.' } : null);
+        await fetchStatus();
+      }
+    } catch(err) {
+      addLog(`[Error] Cleanup failed: ${err}`);
+      setTaskProgress(prev => prev ? { ...prev, message: 'Failed.' } : null);
+    }
+    setTimeout(() => setTaskProgress(null), 1500);
+  };
+
   const clearProject = async () => {
-    if (!confirm("Are you sure you want to clear all project assets? This cannot be undone.")) return;
     setTaskProgress({ current: 1, total: 1, message: `Clearing project...` });
     addLog("[Project] Clearing project assets...");
     try {
@@ -1340,6 +1391,7 @@ export default function App() {
         addLog(`[Project] Success: ${data.message}`);
         setTaskProgress(prev => prev ? { ...prev, message: 'Cleared successfully.' } : null);
         await fetchStatus();
+        setLocalAssets(prev => prev.filter(a => a.view !== 'project'));
         setSelectedAssets(new Set());
         setLoadedProject(null);
       }
@@ -1403,13 +1455,31 @@ export default function App() {
     }
   };
 
-  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' = 'check') => {
+  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
       let finalItems = [...items];
       const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
       
+      // 1. Back image check (workspace only)
+      if (destination === 'project' && backResolution === 'check') {
+         if (targetObj && targetObj.backs.length > 0) {
+            const hasBack = items.some(item => item.startsWith('back:'));
+            if (hasBack) {
+               setBackConflictData({ items, destination, source, conflictResolution });
+               return; // pause for back check
+            }
+         }
+      }
+
+      if (backResolution === 'keep') {
+          // Remove back items from the transfer
+          finalItems = finalItems.filter(item => !item.startsWith('back:'));
+          if (finalItems.length === 0) return;
+      }
+
+      // 2. Name collision check
       if (conflictResolution === 'check') {
          if (targetObj) {
-            const collisions = items.filter(item => {
+            const collisions = finalItems.filter(item => {
                 const [type, name] = item.split(':');
                 if (type === 'front' && targetObj.fronts.includes(name)) return true;
                 if (type === 'back' && targetObj.backs.includes(name)) return true;
@@ -1417,13 +1487,13 @@ export default function App() {
                 return false;
             });
             if (collisions.length > 0) {
-               setImportConflictData({ items, destination, source, collisions });
-               return; // pause for user
+               setImportConflictData({ items: finalItems, destination, source, collisions, backResolution });
+               return; // pause for user name collision check
             }
          }
       } else if (conflictResolution === 'keep') {
          if (targetObj) {
-            finalItems = items.filter(item => {
+            finalItems = finalItems.filter(item => {
                 const [type, name] = item.split(':');
                 if (type === 'front' && targetObj.fronts.includes(name)) return false;
                 if (type === 'back' && targetObj.backs.includes(name)) return false;
@@ -1435,14 +1505,17 @@ export default function App() {
       
       if (finalItems.length === 0) return;
 
+      let clearBackFirst = backResolution === 'replace';
+
       let allResults: any[] = [];
       for (let i = 0; i < finalItems.length; i++) {
          setTaskProgress({ current: i + 1, total: finalItems.length, message: `Processing ${finalItems[i].split(':')[1]}...` });
          try {
+             // Pass clearBackFirst only on the first item to avoid doing it multiple times
              const res = await fetch('/api/plugin/import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ identity: finalItems[i], destination, source })
+                body: JSON.stringify({ identity: finalItems[i], destination, source, clearBackFirst: clearBackFirst && i === 0 })
              });
              const data = await res.json();
              if (data.results) {
@@ -1518,9 +1591,71 @@ export default function App() {
     }
   };
 
+  const deleteProject = async (e: React.MouseEvent, name: string) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch('/api/project/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      if (res.ok) {
+        addLog(`[Project] Deleted project '${name}'.`);
+        await fetchStatus();
+      }
+    } catch(err) {
+      addLog(`[Error] Failed to delete project: ${err}`);
+    }
+  };
+
   const exportProject = () => {
     addLog("[Project] Exporting project to file...");
     window.open('/api/project/export', '_blank');
+  };
+
+  const importProjectRef = useRef<HTMLInputElement>(null);
+  const handleImportProject = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const data = JSON.parse(event.target?.result as string);
+        const itemsToUpload = [
+          ...(data.fronts || []).map((f: string) => `front:${f}`),
+          ...(data.backs || []).map((b: string) => `back:${b}`),
+          ...(data.double_sided || []).map((d: string) => `double_sided:${d}`)
+        ];
+
+        if (itemsToUpload.length === 0) {
+          addLog(`[Error] Imported JSON contains no items.`);
+          return;
+        }
+
+        setTaskProgress({ current: 1, total: 1, message: "Importing project assets..." });
+        
+        const res = await fetch('/api/project/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: itemsToUpload })
+        });
+        const result = await res.json();
+        
+        if (result.success) {
+          addLog(`[Project] Successfully imported project JSON (${itemsToUpload.length} items).`);
+          await fetchStatus();
+        } else {
+          addLog(`[Error] Failed to import: ${result.error}`);
+        }
+      } catch (err) {
+        addLog(`[Error] Invalid JSON format uploaded`);
+      } finally {
+        setTimeout(() => setTaskProgress(null), 1500);
+      }
+    };
+    reader.readAsText(file);
+    if (e.target) e.target.value = '';
   };
 
   const handleRepair = async () => {
@@ -1708,23 +1843,43 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.4'}</span>
+                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.5'}</span>
                 </div>
               </div>
             </div>
 
-            <a 
-              href="https://alan-cha.github.io/silhouette-card-maker/donate/" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="w-full flex items-center justify-between text-xs text-white/40 hover:text-white transition-colors px-2"
-            >
-              <span>Donate</span>
-              <ExternalLink size={14} />
-            </a>
+            <div className="space-y-4 px-2 pt-2 border-t border-white/5">
+              <p className="text-[10px] font-semibold text-white/20 uppercase tracking-widest">Support the Creators</p>
+              <div className="space-y-3">
+                <a 
+                  href="https://www.paypal.com/donate/?hosted_button_id=ZH2XCSLXERBW8" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="w-full flex flex-col group transition-all"
+                >
+                  <div className="flex items-center justify-between text-xs text-white/40 group-hover:text-amber-400 transition-colors">
+                    <span className="font-semibold">Donate to Alan Cha</span>
+                    <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  <span className="text-[10px] text-white/20 mt-0.5">SCM Creator</span>
+                </a>
+                <a 
+                  href="https://www.paypal.com/donate/?business=YB3JBRNMXGUWG&no_recurring=0&item_name=Thanks+for+supporting+SCMUI%21&currency_code=USD" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="w-full flex flex-col group transition-all"
+                >
+                  <div className="flex items-center justify-between text-xs text-white/40 group-hover:text-primary-400 transition-colors">
+                    <span className="font-semibold">Donate to Cecil Carnes</span>
+                    <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  <span className="text-[10px] text-white/20 mt-0.5">SCM UI Creator</span>
+                </a>
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="mt-auto p-4 flex flex-col items-center gap-4 py-8 border-t border-white/5">
+          <div className="mt-auto p-4 flex flex-col items-center gap-4 py-8 invisible">
             <div className={cn("w-2 h-2 rounded-full", status?.installed ? "bg-emerald-500" : "bg-amber-500")} />
             <button className="text-white/20 hover:text-white transition-colors">
               <MessageSquare size={18} />
@@ -1747,24 +1902,26 @@ export default function App() {
             )}
           </div>
           <div className="flex items-center gap-2 md:gap-4 ml-auto">
-            <div className="hidden sm:flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/5">
-              <button 
-                onClick={handleUndo}
-                disabled={activeTab === 'assets' ? fileUndoStack.length === 0 : historyState.index <= 0}
-                className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
-                title="Undo (Ctrl+Z)"
-              >
-                <RotateCcw size={16} />
-              </button>
-              <button 
-                onClick={handleRedo}
-                disabled={historyState.index >= historyState.items.length - 1}
-                className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
-                title="Redo (Ctrl+Y)"
-              >
-                <RotateCcw size={16} className="transform -scale-x-100" />
-              </button>
-            </div>
+            {activeTab === 'assets' && assetViewMode === 'library' && (
+              <div className="hidden sm:flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/5">
+                <button 
+                  onClick={handleUndo}
+                  disabled={fileUndoStack.length === 0}
+                  className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
+                  title="Undo (Ctrl+Z)"
+                >
+                  <RotateCcw size={16} />
+                </button>
+                <button 
+                  onClick={handleRedo}
+                  disabled={true}
+                  className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
+                  title="Redo (Ctrl+Y)"
+                >
+                  <RotateCcw size={16} className="transform -scale-x-100" />
+                </button>
+              </div>
+            )}
             
             {pdfReady && (
               <div className="flex items-center gap-1.5 md:gap-2">
@@ -1936,46 +2093,64 @@ export default function App() {
                     </div>
 
                     {/* Advanced Options */}
-                    <div className="space-y-4 md:col-span-2">
-                       <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400">Advanced</h4>
-                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Crop Backs (mm)</label>
-                            <input 
-                              type="text" 
-                              value={cmdOptions.crop_backs} 
-                              onChange={(e) => setCmdOptions(p => ({...p, crop_backs: e.target.value}))} 
-                              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Extend Corners (px)</label>
-                            <input 
-                              type="number" 
-                              value={cmdOptions.extend_corners} 
-                              onChange={(e) => setCmdOptions(p => ({...p, extend_corners: parseInt(e.target.value) || 0}))} 
-                              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Skip (index)</label>
-                            <input 
-                              type="number" 
-                              value={cmdOptions.skip} 
-                              onChange={(e) => setCmdOptions(p => ({...p, skip: e.target.value}))} 
-                              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Label</label>
-                            <input 
-                              type="text" 
-                              value={cmdOptions.label} 
-                              onChange={(e) => setCmdOptions(p => ({...p, label: e.target.value}))} 
-                              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
-                            />
-                          </div>
-                       </div>
+                    <div className="flex flex-col gap-4 md:col-span-2 pt-2">
+                      <div 
+                        className="flex items-center gap-2 cursor-pointer select-none group w-fit"
+                        onClick={() => setIsAdvancedCollapsed(!isAdvancedCollapsed)}
+                      >
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400 group-hover:text-primary-300 transition-colors">Advanced</h4>
+                        <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isAdvancedCollapsed && "rotate-180")} />
+                      </div>
+                      
+                      <AnimatePresence>
+                        {!isAdvancedCollapsed && (
+                          <motion.div 
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                             <div className="grid grid-cols-2 md:grid-cols-8 gap-4 pb-2 px-1">
+                                <div className="space-y-1.5 col-span-1 md:col-span-2">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Crop Backs (mm)</label>
+                                  <input 
+                                    type="text" 
+                                    value={cmdOptions.crop_backs} 
+                                    onChange={(e) => setCmdOptions(p => ({...p, crop_backs: e.target.value}))} 
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
+                                  />
+                                </div>
+                                <div className="space-y-1.5 col-span-1 md:col-span-2">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Extend (px)</label>
+                                  <input 
+                                    type="number" 
+                                    value={cmdOptions.extend_corners} 
+                                    onChange={(e) => setCmdOptions(p => ({...p, extend_corners: parseInt(e.target.value) || 0}))} 
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
+                                  />
+                                </div>
+                                <div className="space-y-1.5 col-span-1 md:col-span-1">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Skip</label>
+                                  <input 
+                                    type="number" 
+                                    value={cmdOptions.skip} 
+                                    onChange={(e) => setCmdOptions(p => ({...p, skip: e.target.value}))} 
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
+                                  />
+                                </div>
+                                <div className="space-y-1.5 col-span-1 md:col-span-3">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Label</label>
+                                  <input 
+                                    type="text" 
+                                    value={cmdOptions.label} 
+                                    onChange={(e) => setCmdOptions(p => ({...p, label: e.target.value}))} 
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
+                                  />
+                                </div>
+                             </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </div>
 
@@ -1988,9 +2163,6 @@ export default function App() {
                         <h4 className="font-bold text-amber-500 flex items-center gap-2 text-xl tracking-tight">
                           <Layers size={20} />
                           Calibration
-                          <span className="text-xs font-normal text-white/40 ml-1">
-                            {isCalibrationCollapsed ? "(Click to Expand)" : "(Click to Collapse)"}
-                          </span>
                         </h4>
                         <a 
                           href="https://alan-cha.github.io/silhouette-card-maker/docs/offset/" 
@@ -2003,25 +2175,23 @@ export default function App() {
                         </a>
                       </div>
                       <div className="flex items-center gap-4">
-                        <div className="w-full md:w-56 space-y-1.5" onClick={(e) => e.stopPropagation()}>
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Paper Size</label>
-                          <div className="relative group">
-                            <select 
-                              value={calibration.sheet}
-                              onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
-                              className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/5 shadow-inner"
-                            >
-                              {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
-                            </select>
-                            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-amber-400/50 transition-colors" />
+                        {!isCalibrationCollapsed && (
+                          <div className="w-full md:w-32 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Paper Size</label>
+                            <div className="relative group">
+                              <select 
+                                value={calibration.sheet}
+                                onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
+                                className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/5 shadow-inner"
+                              >
+                                {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-amber-400/50 transition-colors" />
+                            </div>
                           </div>
-                        </div>
+                        )}
                         <button 
                           className="p-2 hover:bg-white/5 rounded-xl text-white/40 hover:text-white transition-all transform shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsCalibrationCollapsed(!isCalibrationCollapsed);
-                          }}
                         >
                           <ChevronDown size={18} className={cn("transition-transform duration-300", !isCalibrationCollapsed && "rotate-180")} />
                         </button>
@@ -2029,7 +2199,8 @@ export default function App() {
                     </div>
 
                     {!isCalibrationCollapsed && (
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="space-y-6 pt-4 border-t border-white/5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Step 1 */}
                         <div className="space-y-4">
                           <div className="flex items-center gap-2">
@@ -2127,6 +2298,7 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -2159,12 +2331,6 @@ export default function App() {
                       <ToggleItem label="Show Cut Outline" checked={cmdOptions.show_outline} onChange={(v) => setCmdOptions(p => ({...p, show_outline: v}))} />
                       <ToggleItem label="Only Fronts" checked={cmdOptions.only_fronts} onChange={(v) => setCmdOptions(p => ({...p, only_fronts: v}))} />
                       <ToggleItem label="Output Images" checked={cmdOptions.output_images} onChange={(v) => setCmdOptions(p => ({...p, output_images: v}))} />
-                      <button 
-                        onClick={() => runCommand('clean_up.py', [], { startMessage: 'Cleaning up outputs...' })}
-                        className="w-full py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-lg text-xs font-bold"
-                      >
-                        Run Clean Up
-                      </button>
                     </div>
 
                     {pdfReady && (
@@ -2195,6 +2361,25 @@ export default function App() {
                       <Play size={20} fill="currentColor" />
                       Generate PDF
                     </button>
+
+                    <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                      <h4 className="text-sm font-bold text-white/80 mb-2">Cutting Templates</h4>
+                      <p className="text-xs text-white/40 pb-2">Templates matching your selected paper and card size.</p>
+                      <div className="flex gap-2">
+                         <a 
+                           href={`/api/cutting-template?paper_size=${cmdOptions.paper_size}&card_size=${cmdOptions.card_size}&format=studio3`}
+                           className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white"
+                         >
+                           Download .studio3
+                         </a>
+                         <a 
+                           href={`/api/cutting-template?paper_size=${cmdOptions.paper_size}&card_size=${cmdOptions.card_size}&format=dxf`}
+                           className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white"
+                         >
+                           Download .dxf
+                         </a>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -2284,6 +2469,21 @@ export default function App() {
                           <FolderOpen size={14} />
                           Load
                         </button>
+                        <input 
+                           type="file" 
+                           accept=".json" 
+                           className="hidden" 
+                           ref={importProjectRef} 
+                           onChange={handleImportProject} 
+                        />
+                        <button 
+                          onClick={() => importProjectRef.current?.click()}
+                          className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold transition-all text-white/60 hover:text-white active:scale-95"
+                          title="Import Project JSON"
+                        >
+                          <PlusCircle size={14} />
+                          Import
+                        </button>
                         <button 
                           onClick={exportProject}
                           className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold transition-all text-white/60 hover:text-white active:scale-95"
@@ -2344,6 +2544,7 @@ export default function App() {
                           setActiveTab('assets');
                           setAssetViewMode('plugins');
                           setSelectedAssets(new Set());
+                          if (assetFilter === 'back') setAssetFilter('all');
                         }}
                         className={cn(
                           "flex-1 py-2 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
@@ -2450,15 +2651,17 @@ export default function App() {
                         >
                           Fronts
                         </button>
-                        <button 
-                          onClick={() => setAssetFilter('back')}
-                          className={cn(
-                            "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
-                            assetFilter === 'back' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          Backs
-                        </button>
+                        {assetViewMode !== 'plugins' && (
+                          <button 
+                            onClick={() => setAssetFilter('back')}
+                            className={cn(
+                              "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
+                              assetFilter === 'back' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+                            )}
+                          >
+                            Backs
+                          </button>
+                        )}
                       </div>
 
                       <div className="hidden sm:block h-6 w-px bg-white/5" />
@@ -2713,7 +2916,7 @@ export default function App() {
 
                 <div className="space-y-16">
                   {/* Back Patterns Section */}
-                  {(assetFilter === 'all' || assetFilter === 'back') && (
+                  {(assetFilter === 'all' || assetFilter === 'back') && assetViewMode !== 'plugins' && (
                     <section className="space-y-6">
                       <DropZone 
                         label="Drag and drop area for backs"
@@ -2954,14 +3157,14 @@ export default function App() {
               exit={{ scale: 0.9, opacity: 0 }}
               className="bg-[#0f0f13] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden"
             >
-              <div className="p-6 border-b border-white/5 bg-amber-500/10">
+              <div className="p-6 border-b border-white/5 bg-primary-500/10">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-amber-500/20 rounded-lg">
-                    <ShieldCheck size={24} className="text-amber-500" />
+                  <div className="p-2 bg-primary-500/20 rounded-lg">
+                    <ShieldCheck size={24} className="text-primary-500" />
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-white">Item Exists</h2>
-                    <p className="text-amber-500 text-sm">
+                    <p className="text-primary-500 text-sm">
                       {importConflictData.collisions.length} item(s) already exist in {importConflictData.destination}.
                     </p>
                   </div>
@@ -2980,9 +3183,9 @@ export default function App() {
                 <div className="flex flex-col gap-3">
                   <button 
                     onClick={async () => {
-                      const { items, destination, source } = importConflictData;
+                      const { items, destination, source, backResolution = 'check' } = importConflictData;
                       setImportConflictData(null);
-                      await performMoveOrCopy(items, destination, source, 'keep');
+                      await performMoveOrCopy(items, destination, source, 'keep', backResolution);
                     }}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
                   >
@@ -2991,17 +3194,77 @@ export default function App() {
 
                   <button 
                     onClick={async () => {
-                      const { items, destination, source } = importConflictData;
+                      const { items, destination, source, backResolution = 'check' } = importConflictData;
                       setImportConflictData(null);
-                      await performMoveOrCopy(items, destination, source, 'replace');
+                      await performMoveOrCopy(items, destination, source, 'replace', backResolution);
                     }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-bold transition-all"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
                   >
                     Replace Existing
                   </button>
 
                   <button 
                     onClick={() => setImportConflictData(null)}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {backConflictData && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#0f0f13] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 border-b border-white/5 bg-primary-500/10">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-primary-500/20 rounded-lg">
+                    <ShieldCheck size={24} className="text-primary-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Back Image Exists</h2>
+                    <p className="text-primary-500 text-sm">
+                      A card back already exists in your workspace.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <p className="text-white/70 text-sm">Do you want to replace the current workspace card back, or keep the existing one and skip adding this new back image?</p>
+
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={async () => {
+                      const { items, destination, source, conflictResolution = 'check' } = backConflictData;
+                      setBackConflictData(null);
+                      await performMoveOrCopy(items, destination, source, conflictResolution, 'keep');
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
+                  >
+                    Keep Existing
+                  </button>
+
+                  <button 
+                    onClick={async () => {
+                      const { items, destination, source, conflictResolution = 'check' } = backConflictData;
+                      setBackConflictData(null);
+                      await performMoveOrCopy(items, destination, source, conflictResolution, 'replace');
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
+                  >
+                    Replace
+                  </button>
+
+                  <button 
+                    onClick={() => setBackConflictData(null)}
                     className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
                   >
                     Cancel
@@ -3020,14 +3283,14 @@ export default function App() {
               exit={{ scale: 0.9, opacity: 0 }}
               className="bg-[#0f0f13] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden"
             >
-              <div className="p-6 border-b border-white/5 bg-amber-500/10">
+              <div className="p-6 border-b border-white/5 bg-primary-500/10">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-amber-500/20 rounded-lg">
-                    <ShieldCheck size={24} className="text-amber-500" />
+                  <div className="p-2 bg-primary-500/20 rounded-lg">
+                    <ShieldCheck size={24} className="text-primary-500" />
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-white">Item Exists</h2>
-                    <p className="text-amber-500 text-sm">
+                    <p className="text-primary-500 text-sm">
                       {fetchConflictData.collisions.length} fetched item(s) already exist in plugin gallery.
                     </p>
                   </div>
@@ -3079,7 +3342,7 @@ export default function App() {
                       await fetchStatus();
                       setTaskProgress(null);
                     }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-amber-500 hover:bg-amber-400 text-black rounded-xl font-bold transition-all"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
                   >
                     Replace All Existing
                   </button>
@@ -3112,8 +3375,8 @@ export default function App() {
               exit={{ scale: 0.9, opacity: 0 }}
               className="w-full max-w-md bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6"
             >
-              <div className="flex items-center gap-4 text-amber-500">
-                <div className="p-3 bg-amber-500/10 rounded-2xl">
+              <div className="flex items-center gap-4 text-primary-500">
+                <div className="p-3 bg-primary-500/10 rounded-2xl">
                   <Info size={24} />
                 </div>
                 <div>
@@ -3277,14 +3540,25 @@ export default function App() {
               <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                 {Object.keys(pluginConfigs).length > 0 ? (
                   Object.keys(pluginConfigs).map((name, idx) => (
-                    <button
+                    <div
                       key={`${name}-${idx}`}
-                      onClick={() => loadPluginConfig(name)}
-                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl text-left transition-all group"
+                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all group gap-2"
                     >
-                      <span className="font-semibold text-white/80 group-hover:text-white break-all pr-4">{name}</span>
-                      <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 translate-x-0 group-hover:translate-x-1 transition-all" />
-                    </button>
+                      <button
+                        onClick={() => loadPluginConfig(name)}
+                        className="flex-1 text-left flex items-center justify-between outline-none"
+                      >
+                        <span className="font-semibold text-white/80 group-hover:text-white break-all pr-4">{name}</span>
+                        <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 translate-x-0 group-hover:translate-x-1 transition-all" />
+                      </button>
+                      <button 
+                        onClick={(e) => deletePluginConfig(e, name)}
+                        className="p-2 text-white/20 hover:text-red-400 hover:bg-white/5 rounded-lg transition-colors"
+                        title="Delete Configuration"
+                      >
+                         <Trash2 size={16} />
+                      </button>
+                    </div>
                   ))
                 ) : (
                   <div className="text-center py-8 text-white/20 text-xs font-bold uppercase tracking-widest">
@@ -3460,18 +3734,18 @@ export default function App() {
 
                   <div className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between">
                     <div className="space-y-1">
-                      <span className="text-sm font-medium text-white block">Purge Cache</span>
+                      <span className="text-sm font-medium text-white block">Workspace Cleanup</span>
                       <span className="text-xs text-white/40 block">Delete all images from card image directories.</span>
                     </div>
                     <button
                       onClick={() => {
                         setShowThemeSettings(false);
-                        runCommand('clean_up.py', undefined, { startMessage: 'Purging cache...' });
+                        cleanUpOutputs();
                       }}
                       className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 active:scale-95"
                     >
                       <Trash2 size={14} />
-                      Purge
+                      Run Cleanup
                     </button>
                   </div>
 
@@ -3512,14 +3786,32 @@ export default function App() {
                   </div>
 
                   <div className="space-y-2 pt-2 border-t border-white/10">
+                    <div className="px-4 pb-1">
+                      <p className="text-[10px] font-semibold text-white/20 uppercase tracking-widest">Open Source Repositories</p>
+                    </div>
+                    <a
+                      href="https://github.com/Alan-Cha/silhouette-card-maker"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-sm text-white/60 group-hover:text-amber-400 font-medium transition-colors">Original SCM Engine</span>
+                        <span className="text-[10px] text-white/40">Python Backend Logic</span>
+                      </div>
+                      <ExternalLink size={16} className="text-white/40 group-hover:text-amber-400 transition-colors" />
+                    </a>
                     <a
                       href="https://github.com/TomatoMan280/SCM-UI"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors"
+                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group"
                     >
-                      <span className="text-sm text-white/60 font-medium">GitHub Repository</span>
-                      <ExternalLink size={16} className="text-white/40" />
+                       <div className="flex flex-col">
+                        <span className="text-sm text-white/60 group-hover:text-primary-400 font-medium transition-colors">SCMUI Wrapper</span>
+                        <span className="text-[10px] text-white/40">React UI Frontend</span>
+                      </div>
+                      <ExternalLink size={16} className="text-white/40 group-hover:text-primary-400 transition-colors" />
                     </a>
                   </div>
                 </div>
@@ -3625,14 +3917,25 @@ export default function App() {
               <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
                 {(status?.savedProjects && status.savedProjects.length > 0) ? (
                   status.savedProjects.map((name, idx) => (
-                    <button
+                    <div
                       key={`${name}-${idx}`}
-                      onClick={() => loadProject(name)}
-                      className="w-full text-left p-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 transition-all flex items-center justify-between group"
+                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all group gap-2"
                     >
-                      <span className="font-bold text-white/80 group-hover:text-white">{name}</span>
-                      <ChevronRight size={16} className="text-white/20 group-hover:text-primary-400 group-hover:translate-x-1 transition-all" />
-                    </button>
+                      <button
+                        onClick={() => loadProject(name)}
+                        className="flex-1 text-left flex items-center justify-between outline-none"
+                      >
+                        <span className="font-bold text-white/80 group-hover:text-white break-all pr-4">{name}</span>
+                        <ChevronRight size={16} className="text-white/20 group-hover:text-primary-400 group-hover:translate-x-1 transition-all" />
+                      </button>
+                      <button 
+                        onClick={(e) => deleteProject(e, name)}
+                        className="p-2 text-white/20 hover:text-red-400 hover:bg-white/5 rounded-lg transition-colors"
+                        title="Delete Project"
+                      >
+                         <Trash2 size={16} />
+                      </button>
+                    </div>
                   ))
                 ) : (
                   <div className="py-8 text-center text-white/20 border-2 border-dashed border-white/5 rounded-2xl">

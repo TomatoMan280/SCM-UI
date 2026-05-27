@@ -211,6 +211,29 @@ async function startServer() {
     res.json({ success: true, message: `Decklist saved for ${pluginId}.` });
   });
 
+  app.post("/api/library/delete-decklist", (req, res) => {
+    const { name, pluginId } = req.body;
+    if (!name || !pluginId) return res.status(400).json({ error: "Missing fields" });
+    const libraryDecklistDir = path.join(pluginsPath, 'decklist');
+    const targetFile = path.join(libraryDecklistDir, `${pluginId}_${name}.txt`);
+    const targetJson = path.join(libraryDecklistDir, `${pluginId}_${name}.json`);
+    
+    let deleted = false;
+    if (fs.existsSync(targetFile)) {
+       fs.unlinkSync(targetFile);
+       deleted = true;
+    }
+    if (fs.existsSync(targetJson)) {
+       fs.unlinkSync(targetJson);
+       deleted = true;
+    }
+    
+    if (!deleted) {
+       return res.status(404).json({ error: "Config not found" });
+    }
+    res.json({ success: true, message: `Decklist config deleted.` });
+  });
+
   app.get("/api/library/load-decklists", (req, res) => {
     const libraryDecklistDir = path.join(pluginsPath, 'decklist');
     let configs: Record<string, any> = {};
@@ -450,6 +473,15 @@ async function startServer() {
     }
   });
 
+  app.post("/api/project/delete", (req, res) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: "Name is required" });
+    const targetDir = path.join(projectsDir, name);
+    if (!fs.existsSync(targetDir)) return res.status(404).json({ error: "Project not found" });
+    fs.rmSync(targetDir, { recursive: true, force: true });
+    res.json({ success: true, message: `Project '${name}' deleted.` });
+  });
+
   app.post("/api/project/load", (req, res) => {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
@@ -486,6 +518,23 @@ async function startServer() {
     } catch (e) {
       res.status(500).json({ error: "Failed to load project" });
     }
+  });
+
+  app.get("/api/cutting-template", (req, res) => {
+    const { paper_size, card_size, format = "studio3" } = req.query;
+    if (!paper_size || !card_size) return res.status(400).json({ error: "Missing parameters" });
+    
+    const templatesDir = format === 'dxf' ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates');
+    if (!fs.existsSync(templatesDir)) return res.status(404).json({ error: "Templates directory not found" });
+
+    const prefix = `${paper_size}-${card_size}-`;
+    const ext = `.${format}`;
+    
+    // Find the matching file with the highest version (if multiple)
+    const files = fs.readdirSync(templatesDir).filter(f => f.startsWith(prefix) && f.endsWith(ext));
+    if (files.length === 0) return res.status(404).json({ error: "Template not found for specified sizes." });
+    
+    res.download(path.join(templatesDir, files[0]));
   });
 
   app.get("/api/project/export", (req, res) => {
@@ -610,12 +659,34 @@ async function startServer() {
     }
   });
 
+  app.post("/api/project/clean-up", (req, res) => {
+    import('fs').then((fs) => {
+      const dirs = [
+        path.join(scmPath, 'game', 'front'),
+        path.join(scmPath, 'game', 'back'),
+        path.join(scmPath, 'game', 'double_sided')
+      ];
+      dirs.forEach(dir => {
+        if (fs.existsSync(dir)) {
+          fs.readdirSync(dir).forEach(file => {
+              if (!file.startsWith('.') && file !== 'README.md' && file !== 'EMPTY.md') {
+                 try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
+              }
+          });
+        }
+      });
+      res.json({ success: true, message: "Project cleaned up." });
+    });
+  });
+
   app.post("/api/project/clear", (req, res) => {
     import('fs').then((fs) => {
       const dirs = [
         path.join(scmPath, 'game', 'front'),
-        path.join(scmPath, 'game', 'back')
+        path.join(scmPath, 'game', 'back'),
+        path.join(scmPath, 'game', 'double_sided')
       ];
+
       dirs.forEach(dir => {
         if (fs.existsSync(dir)) {
           fs.readdirSync(dir).forEach(file => {
@@ -791,12 +862,33 @@ async function startServer() {
   });
 
   app.post("/api/plugin/import", (req, res) => {
-    const { identity, destination, source = 'plugins' } = req.body;
+    const { identity, destination, source = 'plugins', clearBackFirst } = req.body;
     if (!identity) return res.status(400).json({error: "No identity"});
     
     const identities = Array.isArray(identity) ? identity : [identity];
     const targetBase = destination === 'library' ? libraryPath : path.join(scmPath, 'game');
     const sourceBase = source === 'plugins' ? pluginsPath : (source === 'project' ? path.join(scmPath, 'game') : libraryPath);
+
+    if (clearBackFirst) {
+        const destBackDir = path.join(targetBase, 'back');
+        if (fs.existsSync(destBackDir)) {
+            try {
+                fs.readdirSync(destBackDir).forEach(f => {
+                    const fPath = path.join(destBackDir, f);
+                    if (fs.statSync(fPath).isFile()) {
+                        fs.unlinkSync(fPath);
+                    }
+                });
+                
+                // Also update mock states if applicable
+                if (destination === 'project') {
+                    mockCards.backs = [];
+                } else if (destination === 'library') {
+                    mockLibrary.backs = [];
+                }
+            } catch(e) {}
+        }
+    }
 
     const results: Array<{name: string, from: string, to: string}> = [];
     identities.forEach(id => {
@@ -1014,15 +1106,37 @@ async function startServer() {
 
       const customEnv = Object.assign({}, process.env);
       customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
+      let spawnCwd = scmPath;
+      let spawnCommand = command;
+
       if (req.body.tempDirId) {
         customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        
+        const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
+        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        if (fs.existsSync(sourceDecklistDir)) {
+          fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
+        }
+        
+        spawnCwd = customEnv.SCM_GAME_DIR;
+        spawnCommand = path.join(scmPath, command);
       } else if (command.startsWith('plugins/')) {
         customEnv.SCM_GAME_DIR = pluginsPath;
+        spawnCwd = customEnv.SCM_GAME_DIR;
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        
+        const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
+        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        if (fs.existsSync(sourceDecklistDir)) {
+          fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
+        }
+        
+        spawnCommand = path.join(scmPath, command);
       }
 
-      const child = spawn(pythonCmd, ['-u', command, ...(args || [])], { cwd: scmPath, env: customEnv });
+      const child = spawn(pythonCmd, ['-u', spawnCommand, ...(args || [])], { cwd: spawnCwd, env: customEnv });
       let hasError = false;
       
       const pingInterval = setInterval(() => {
@@ -1065,7 +1179,7 @@ async function startServer() {
           if (req.body.tempDirId) {
              const getFiles = (dir: string) => {
                try {
-                 return fs.readdirSync(path.join(customEnv.SCM_GAME_DIR, dir)).filter(f => !f.startsWith('.'));
+                 return fs.readdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', dir)).filter(f => !f.startsWith('.'));
                } catch(e) { return []; }
              };
              const fetchedFiles = {
@@ -1074,6 +1188,20 @@ async function startServer() {
                double_sided: getFiles('double_sided')
              };
              sendEvent('fetched_files', fetchedFiles);
+          } else if (command.startsWith('plugins/')) {
+             ['front', 'back', 'double_sided'].forEach(df => {
+                const srcDir = path.join(pluginsPath, 'game', df);
+                const dstDir = path.join(pluginsPath, df);
+                if (fs.existsSync(srcDir)) {
+                    fs.mkdirSync(dstDir, { recursive: true });
+                    fs.readdirSync(srcDir).forEach(f => {
+                       if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
+                           fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
+                       }
+                    });
+                    fs.rmSync(srcDir, { recursive: true, force: true });
+                }
+             });
           }
           
           res.end();
@@ -1129,15 +1257,37 @@ async function startServer() {
 
       const customEnv = Object.assign({}, process.env);
       customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
+      let execCwd = scmPath;
+      let execCommand = fullCommand;
+
       if (req.body.tempDirId) {
         customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        
+        const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
+        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        if (fs.existsSync(sourceDecklistDir)) {
+          fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
+        }
+        
+        execCwd = customEnv.SCM_GAME_DIR;
       } else if (command.startsWith('plugins/')) {
         customEnv.SCM_GAME_DIR = pluginsPath;
+        execCwd = customEnv.SCM_GAME_DIR;
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        
+        const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
+        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        if (fs.existsSync(sourceDecklistDir)) {
+          fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
+        }
       }
+      
+      const scriptAbsPath = path.join(scmPath, command);
+      execCommand = `${pythonCmd} "${scriptAbsPath}" ${argString}`;
 
-      console.log(`[System] Executing: ${fullCommand} in ${scmPath}`);
+      console.log(`[System] Executing: ${execCommand} in ${execCwd}`);
       
       // Verify script existence before running
       const scriptPath = path.join(scmPath, command);
@@ -1156,7 +1306,7 @@ async function startServer() {
         return res.json({ output: [`$ ${fullCommand}`, errorMsg] });
       }
 
-      exec(fullCommand, { cwd: scmPath, env: customEnv, timeout: 900000, maxBuffer: 1024 * 1024 * 500 }, (error, stdout, stderr) => {
+      exec(execCommand, { cwd: execCwd, env: customEnv, timeout: 900000, maxBuffer: 1024 * 1024 * 500 }, (error, stdout, stderr) => {
         if (stdout) {
           console.log(`[SCM STDOUT] ${stdout}`);
           output.push(...stdout.split('\n').filter(Boolean));
@@ -1200,9 +1350,23 @@ async function startServer() {
              } catch (e) { }
              return [];
            };
-           fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'front'));
-           fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'back'));
-           fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'double_sided'));
+           fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'front'));
+           fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'back'));
+           fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'double_sided'));
+        } else if (command.startsWith('plugins/')) {
+           ['front', 'back', 'double_sided'].forEach(df => {
+              const srcDir = path.join(pluginsPath, 'game', df);
+              const dstDir = path.join(pluginsPath, df);
+              if (fs.existsSync(srcDir)) {
+                  fs.mkdirSync(dstDir, { recursive: true });
+                  fs.readdirSync(srcDir).forEach(f => {
+                     if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
+                         fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
+                     }
+                  });
+                  fs.rmSync(srcDir, { recursive: true, force: true });
+              }
+           });
         }
 
         res.json({ output, fetchedFiles });
@@ -1216,15 +1380,16 @@ async function startServer() {
     const { tempDirId, resolutions, abort } = req.body;
     if (!tempDirId) return res.status(400).json({ error: "No tempDirId" });
     
-    const tempBasePath = path.join(libraryPath, `Temp_Fetch_${tempDirId}`);
+    const tempGamePath = path.join(libraryPath, `Temp_Fetch_${tempDirId}`, 'game');
+    const tempParentPath = path.join(libraryPath, `Temp_Fetch_${tempDirId}`);
     const pluginsBasePath = pluginsPath;
     
-    if (!fs.existsSync(tempBasePath)) {
+    if (!fs.existsSync(tempGamePath)) {
        return res.status(404).json({ error: "Temp dir not found" });
     }
     
     if (abort) {
-       fs.rmSync(tempBasePath, { recursive: true, force: true });
+       fs.rmSync(tempParentPath, { recursive: true, force: true });
        return res.json({ success: true, message: "Fetch aborted." });
     }
     
@@ -1232,7 +1397,7 @@ async function startServer() {
     
     let addedCount = 0;
     ['front', 'back', 'double_sided'].forEach(type => {
-       const srcFolder = path.join(tempBasePath, type);
+       const srcFolder = path.join(tempGamePath, type);
        const dstFolder = path.join(pluginsBasePath, type);
        fs.mkdirSync(dstFolder, { recursive: true });
        
@@ -1251,7 +1416,7 @@ async function startServer() {
     });
     
     // Clean up
-    fs.rmSync(tempBasePath, { recursive: true, force: true });
+    fs.rmSync(tempParentPath, { recursive: true, force: true });
     
     res.json({ success: true, message: "Fetch committed.", addedCount });
   });
