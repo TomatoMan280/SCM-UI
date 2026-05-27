@@ -380,6 +380,36 @@ async function startServer() {
         const platform = os.platform();
         let pythonExecutable = 'python';
 
+        const setupStatePath = path.join(baseDataPath, 'python_setup_state.json');
+        let state = 'none';
+        if (fs.existsSync(setupStatePath)) {
+            try { state = JSON.parse(fs.readFileSync(setupStatePath, 'utf8')).state; } catch(e) {}
+        }
+        
+        if (state === 'python_installed_needs_pip') {
+            sendEvent('progress', { step: 'Setting up dependencies...', detail: 'Creating virtual environment and installing packages' });
+            
+            const venvPath = path.join(scmPath, 'venv');
+            pythonExecutable = platform === 'win32' ? 'python' : 'python3';
+            
+            sendEvent('stdout', 'Creating virtual environment...');
+            await runCommand(pythonExecutable, ['-m', 'venv', 'venv'], scmPath);
+            
+            const pipExecutable = platform === 'win32' 
+                ? path.join(venvPath, 'Scripts', 'pip.exe')
+                : path.join(venvPath, 'bin', 'pip');
+
+            sendEvent('stdout', 'Installing requirements...');
+            await runCommand(pipExecutable, ['install', '-r', 'requirements.txt'], scmPath);
+
+            fs.writeFileSync(setupStatePath, JSON.stringify({ state: 'fully_installed' }));
+            
+            sendEvent('progress', { step: 'Ready!', detail: 'Python environment setup complete' });
+            sendEvent('done', { success: true });
+            res.end();
+            return;
+        }
+
         if (platform === 'win32') {
           sendEvent('progress', { step: 'Downloading Python...', detail: 'Fetching Python 3.11 installer for Windows' });
           const installerPath = path.join(os.tmpdir(), 'python-installer.exe');
@@ -400,7 +430,17 @@ async function startServer() {
 
           sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Running installer silently in the background' });
           await runCommand(installerPath, ['/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0']);
-          pythonExecutable = 'python';
+          
+          fs.writeFileSync(setupStatePath, JSON.stringify({ state: 'python_installed_needs_pip' }));
+          sendEvent('progress', { step: 'Restarting Application...', detail: 'Restarting to refresh system PATH' });
+          console.log('RESTART_ELECTRON_APP_NOW');
+          
+          // DO NOT send 'done', because we want the frontend to wait while we restart.
+          // Wait briefly, then close the stream.
+          setTimeout(() => {
+             res.end();
+          }, 3000);
+          return;
           
         } else {
           // Mock or use apt-get for non-Windows assuming user is root or in a container
@@ -415,25 +455,17 @@ async function startServer() {
              }
              pythonExecutable = 'python3';
           }
+          
+          fs.writeFileSync(setupStatePath, JSON.stringify({ state: 'python_installed_needs_pip' }));
+          sendEvent('progress', { step: 'Restarting Application...', detail: 'Restarting to refresh system PATH' });
+          console.log('RESTART_ELECTRON_APP_NOW');
+          
+          setTimeout(() => {
+             res.end();
+          }, 3000);
+          return;
         }
 
-        sendEvent('progress', { step: 'Setting up dependencies...', detail: 'Creating virtual environment and installing packages' });
-        
-        const scmPath = path.join(process.cwd(), 'src', 'silhouette-card-maker-main');
-        const venvPath = path.join(scmPath, 'venv');
-        
-        sendEvent('stdout', 'Creating virtual environment...');
-        await runCommand(pythonExecutable, ['-m', 'venv', 'venv'], scmPath);
-        
-        const pipExecutable = platform === 'win32' 
-            ? path.join(venvPath, 'Scripts', 'pip.exe')
-            : path.join(venvPath, 'bin', 'pip');
-
-        sendEvent('stdout', 'Installing requirements...');
-        await runCommand(pipExecutable, ['install', '-r', 'requirements.txt'], scmPath);
-
-        sendEvent('progress', { step: 'Ready!', detail: 'Python environment setup complete' });
-        sendEvent('done', { success: true });
       } catch (err: any) {
         sendEvent('error', `Setup failed: ${err.message}`);
         sendEvent('done', { success: false });
@@ -570,23 +602,33 @@ async function startServer() {
       import('child_process').then(({ spawnSync }) => {
         let pythonHasBeenFound = false;
         
-        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
-        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+        const setupStatePath = path.join(baseDataPath, 'python_setup_state.json');
+        let setupState = 'none';
+        if (fs.existsSync(setupStatePath)) {
+            try { setupState = JSON.parse(fs.readFileSync(setupStatePath, 'utf8')).state; } catch(e) {}
+        }
         
-        if (fs.existsSync(venvPythonPath) || fs.existsSync(venvPythonPathFallback)) {
-           pythonHasBeenFound = true;
+        if (setupState === 'python_installed_needs_pip') {
+            pythonHasBeenFound = false; // Force frontend to trigger startPythonSetup() for Stage 2
         } else {
-          try {
-            const check = spawnSync("python3", ["--version"]);
-            if (check.status === 0) pythonHasBeenFound = true;
-          } catch (e) {}
+            const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+            const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+            
+            if (fs.existsSync(venvPythonPath) || fs.existsSync(venvPythonPathFallback)) {
+               pythonHasBeenFound = true;
+            } else {
+              try {
+                const check = spawnSync("python3", ["--version"]);
+                if (check.status === 0) pythonHasBeenFound = true;
+              } catch (e) {}
 
-          if (!pythonHasBeenFound) {
-            try {
-              const check2 = spawnSync("python", ["--version"]);
-              if (check2.status === 0) pythonHasBeenFound = true;
-            } catch (e) {}
-          }
+              if (!pythonHasBeenFound) {
+                try {
+                  const check2 = spawnSync("python", ["--version"]);
+                  if (check2.status === 0) pythonHasBeenFound = true;
+                } catch (e) {}
+              }
+            }
         }
 
         res.json({
