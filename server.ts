@@ -72,22 +72,22 @@ async function startServer() {
     }
   });
 
+  let resourcesPath = baseAppPath;
+  if (baseAppPath.includes('app.asar')) {
+    resourcesPath = baseAppPath.substring(0, baseAppPath.indexOf('app.asar'));
+  }
+  
+  let scmSourcePath = path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-main');
+  if (!fs.existsSync(scmSourcePath)) {
+    scmSourcePath = path.join(resourcesPath, 'silhouette-card-maker-main');
+  }
+  if (!fs.existsSync(scmSourcePath)) {
+     scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
+  }
+  
   // If in Electron production, we should check if our python scripts exist in the writable location
   // and if not, copy them from the unpacked resources folder (ASAR Bypass)
   if (isElectron) {
-    let resourcesPath = baseAppPath;
-    if (baseAppPath.includes('app.asar')) {
-      resourcesPath = baseAppPath.substring(0, baseAppPath.indexOf('app.asar'));
-    }
-    
-    let scmSourcePath = path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-main');
-    if (!fs.existsSync(scmSourcePath)) {
-      scmSourcePath = path.join(resourcesPath, 'silhouette-card-maker-main');
-    }
-    if (!fs.existsSync(scmSourcePath)) {
-       scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
-    }
-
     const markerFile = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
     
     console.log(`[System] Initializing scripts from physical resources: ${scmSourcePath} -> ${scmPath}`);
@@ -1316,6 +1316,22 @@ async function startServer() {
       let spawnCwd = scmPath;
       let spawnCommand = command;
 
+      if (command === 'create_pdf.py') {
+        spawnCwd = scmSourcePath;
+        spawnCommand = path.join(scmSourcePath, command);
+        
+        ['front', 'back', 'double_sided'].forEach(df => {
+           const srcBaseDir = path.join(scmPath, 'game', df);
+           const destBaseDir = path.join(scmSourcePath, 'game', df);
+           if (fs.existsSync(srcBaseDir)) {
+               fs.mkdirSync(destBaseDir, { recursive: true });
+               fs.readdirSync(srcBaseDir).forEach(file => {
+                   fs.copyFileSync(path.join(srcBaseDir, file), path.join(destBaseDir, file));
+               });
+           }
+        });
+      }
+
       if (req.body.tempDirId) {
         customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
@@ -1367,17 +1383,18 @@ async function startServer() {
       child.on('close', (code) => {
           clearInterval(pingInterval);
           if (command === 'create_pdf.py') {
-            const srcPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-            if (code === 0 && fs.existsSync(srcPdf)) {
+            const generatedPdf = path.join(scmSourcePath, 'game', 'output', 'game.pdf');
+            const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+            
+            if (code === 0 && fs.existsSync(generatedPdf)) {
+              fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
+              fs.copyFileSync(generatedPdf, targetPdf);
               sendEvent('stdout', "[System] PDF generated successfully.");
             } else {
               sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
               hasError = true;
-              if (fs.existsSync(srcPdf)) {
-                try {
-                  fs.unlinkSync(srcPdf);
-                  sendEvent('stdout', "[System] Corrupted incomplete PDF was deleted.");
-                } catch (e) {}
+              if (fs.existsSync(targetPdf)) {
+                try { fs.unlinkSync(targetPdf); } catch (e) {}
               }
             }
           }
@@ -1486,7 +1503,23 @@ async function startServer() {
       const customEnv = Object.assign({}, process.env);
       customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
       let execCwd = scmPath;
-      let execCommand = fullCommand;
+      let scriptAbsPath = path.join(scmPath, command);
+
+      if (command === 'create_pdf.py') {
+        execCwd = scmSourcePath;
+        scriptAbsPath = path.join(scmSourcePath, command);
+        
+        ['front', 'back', 'double_sided'].forEach(df => {
+           const srcBaseDir = path.join(scmPath, 'game', df);
+           const destBaseDir = path.join(scmSourcePath, 'game', df);
+           if (fs.existsSync(srcBaseDir)) {
+               fs.mkdirSync(destBaseDir, { recursive: true });
+               fs.readdirSync(srcBaseDir).forEach(file => {
+                   fs.copyFileSync(path.join(srcBaseDir, file), path.join(destBaseDir, file));
+               });
+           }
+        });
+      }
 
       if (req.body.tempDirId) {
         customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
@@ -1512,19 +1545,17 @@ async function startServer() {
         }
       }
       
-      const scriptAbsPath = path.join(scmPath, command);
-      execCommand = `${pythonCmd} "${scriptAbsPath}" ${argString}`;
+      let execCommand = `${pythonCmd} "${scriptAbsPath}" ${argString}`;
 
       console.log(`[System] Executing: ${execCommand} in ${execCwd}`);
       
       // Verify script existence before running
-      const scriptPath = path.join(scmPath, command);
-      if (!fs.existsSync(scriptPath)) {
-        const errorMsg = `[System Error] Script not found: ${scriptPath}`;
+      if (!fs.existsSync(scriptAbsPath)) {
+        const errorMsg = `[System Error] Script not found: ${scriptAbsPath}`;
         console.error(errorMsg);
         // List parent directory to see what's there
         try {
-          const parentDir = path.dirname(scriptPath);
+          const parentDir = path.dirname(scriptAbsPath);
           if (fs.existsSync(parentDir)) {
              console.log(`[Diagnostics] Contents of ${parentDir}:`, fs.readdirSync(parentDir));
           } else {
@@ -1550,18 +1581,21 @@ async function startServer() {
 
         // Post-command actions (Moving PDF omitted, kept in place)
         if (command === 'create_pdf.py') {
-          const srcPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+          const generatedPdf = path.join(scmSourcePath, 'game', 'output', 'game.pdf');
+          const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
           
-          if (!error && fs.existsSync(srcPdf)) {
+          if (!error && fs.existsSync(generatedPdf)) {
+            fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
+            fs.copyFileSync(generatedPdf, targetPdf);
             const successMsg = "[System] PDF generated successfully.";
             console.log(successMsg);
             output.push(successMsg);
           } else {
-            console.warn(`[System] Warning: create_pdf.py finished with error or ${srcPdf} was not found.`);
+            console.warn(`[System] Warning: create_pdf.py finished with error or ${generatedPdf} was not found.`);
             output.push("[Error] PDF file was not generated properly. Check output for detailed Python errors.");
-            if (fs.existsSync(srcPdf)) {
+            if (fs.existsSync(targetPdf)) {
               try {
-                fs.unlinkSync(srcPdf);
+                fs.unlinkSync(targetPdf);
                 output.push("[System] Corrupted incomplete PDF was deleted.");
               } catch (e) {}
             }
