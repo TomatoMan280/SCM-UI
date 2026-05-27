@@ -3,10 +3,7 @@ import express from "express";
 import path from "path";
 import multer from "multer";
 import fs from "fs";
-import * as archiverModule from "archiver";
 import { execSync, exec } from "child_process";
-
-const archiver = (archiverModule as any).default || archiverModule;
 
 console.log("[System] Modules imported successfully.");
 
@@ -576,21 +573,6 @@ async function startServer() {
     res.download(pdfPath, 'game.pdf');
   });
 
-  app.get("/api/project/download-zip", (req, res) => {
-    const outputDir = path.join(scmPath, 'game', 'output');
-    if (!fs.existsSync(outputDir)) return res.status(404).json({ error: "Output directory not found" });
-
-    if (req.method === 'HEAD') {
-      return res.status(200).end();
-    }
-
-    const archive = archiver('zip', { zlib: { level: 9 } });
-
-    res.attachment('game_output.zip');
-    archive.pipe(res);
-    archive.directory(outputDir, false);
-    archive.finalize();
-  });
 
   app.post("/api/project/upload", (req, res) => {
     try {

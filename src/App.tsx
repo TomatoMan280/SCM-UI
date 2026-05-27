@@ -1934,15 +1934,6 @@ export default function App() {
                   <Download size={14} />
                   <span className="hidden md:inline">Download PDF</span>
                 </a>
-                <a 
-                  href="/api/project/download-zip" 
-                  download="game_output.zip"
-                  className="flex items-center gap-2 px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                  title="Download Output (ZIP)"
-                >
-                  <Download size={14} />
-                  <span className="hidden md:inline">ZIP</span>
-                </a>
               </div>
             )}
             <button 
@@ -2342,15 +2333,6 @@ export default function App() {
                         >
                           <Download size={20} />
                           Download PDF
-                        </a>
-                        <a 
-                          href="/api/project/download-zip" 
-                          download="game_output.zip"
-                          className="flex-1 py-4 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/20 text-blue-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
-                          title="Download ZIP of all output files"
-                        >
-                          <Download size={20} />
-                          ZIP
                         </a>
                       </div>
                     )}
