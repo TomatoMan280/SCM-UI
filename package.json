@@ -10,7 +10,7 @@
   "scripts": {
     "postinstall": "node install.cjs",
     "dev": "tsx server.ts",
-    "build": "node -e \"const {execSync} = require('child_process'); try { execSync('python process_icon.py', { stdio: 'inherit' }); } catch { try { execSync('python3 process_icon.py', { stdio: 'inherit' }); } catch {} }\" && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && node process_icon.js && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "npx rimraf dist release server.cjs",
@@ -65,9 +65,9 @@
       "artifactName": "SCMUI-Setup-${version}.${ext}",
       "uninstallDisplayName": "SCMUI",
       "deleteAppDataOnUninstall": false,
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
-      "installerHeaderIcon": "icon.ico",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
       "include": "installer.nsh"
     }
   },
@@ -82,9 +82,11 @@
     "electron-updater": "^6.8.3",
     "express": "^4.21.2",
     "fix-path": "^5.0.0",
+    "jimp": "^1.6.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "multer": "^2.1.1",
+    "png-to-ico": "^3.0.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-markdown": "^10.1.0",
