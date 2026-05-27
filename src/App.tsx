@@ -2112,7 +2112,7 @@ export default function App() {
                                   />
                                 </div>
                                 <div className="space-y-1.5 col-span-1 md:col-span-2">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Extend (px)</label>
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Extend Corners (px)</label>
                                   <input 
                                     type="number" 
                                     value={cmdOptions.extend_corners} 
