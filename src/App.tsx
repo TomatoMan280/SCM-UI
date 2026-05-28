@@ -32,7 +32,8 @@ import {
   PlusCircle,
   AlertCircle,
   Sliders,
-  LayoutGrid
+  LayoutGrid,
+  Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -901,6 +902,8 @@ export default function App() {
     };
   });
 
+  const [pluginFile, setPluginFile] = useState<File | null>(null);
+
   useEffect(() => {
     const stateToSave = {
       selectedPluginId: pluginState.selectedPlugin.id,
@@ -932,6 +935,8 @@ export default function App() {
   const [pythonSetupProgress, setPythonSetupProgress] = useState<{step: string, detail: string, percent?: number}>({ step: 'Initializing setup...', detail: '', percent: 10 });
   const [setupLogs, setSetupLogs] = useState<string[]>([]);
   const setupLogEndRef = useRef<HTMLDivElement>(null);
+
+  const [cacheBusts, setCacheBusts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (setupLogEndRef.current) {
@@ -1143,7 +1148,7 @@ export default function App() {
     addLog("[Plugins] Exported configuration to JSON file.");
   };
 
-  const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string }) => {
+  const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string }) => {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     const abortController = new AbortController();
@@ -1152,7 +1157,7 @@ export default function App() {
       const res = await fetch('/api/run-command-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId, pythonPath }),
+        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId, uploadedPluginFilePath: options?.uploadedPluginFilePath, pythonPath }),
         signal: abortController.signal
       });
       if (!res.ok) {
@@ -1545,7 +1550,7 @@ export default function App() {
     }
   };
 
-  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
+  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' | 'keep_both' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
       let finalItems = [...items];
       const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
       
@@ -1605,7 +1610,13 @@ export default function App() {
              const res = await fetch('/api/plugin/import', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ identity: finalItems[i], destination, source, clearBackFirst: clearBackFirst && i === 0 })
+                body: JSON.stringify({ 
+                    identity: finalItems[i], 
+                    destination, 
+                    source, 
+                    clearBackFirst: clearBackFirst && i === 0,
+                    keepBoth: conflictResolution === 'keep_both'
+                })
              });
              const data = await res.json();
              if (data.results) {
@@ -1619,6 +1630,15 @@ export default function App() {
       
       if (allResults.length > 0) {
          setFileUndoStack(prev => [...prev, { action: 'import', items: allResults, destination }]);
+         
+         if (conflictResolution === 'replace') {
+             const newBusts = { ...cacheBusts };
+             items.forEach(item => {
+                 const name = item.split(':')[1];
+                 newBusts[name] = Date.now();
+             });
+             setCacheBusts(newBusts);
+         }
       }
       
       const actionStr = destination === 'project' ? 'added' : 'copied';
@@ -2919,12 +2939,70 @@ export default function App() {
                               </div>
                             </div>
                           </div>
-                          <textarea 
-                            value={pluginState.decklist}
-                            onChange={(e) => setPluginState(prev => ({ ...prev, decklist: e.target.value }))}
-                            placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here (e.g. 4x Lightning Bolt)..."}
-                            className="flex-1 w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm font-mono focus:outline-none focus:border-primary-500 transition-all resize-none shadow-inner min-h-[160px] mb-4"
-                          />
+                          <div 
+                            className={`relative flex-1 flex flex-col mb-4 bg-black/40 border-2 border-dashed ${pluginFile ? 'border-primary-500' : 'border-white/10 hover:border-white/30'} rounded-xl transition-all shadow-inner group min-h-[160px]`}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                setPluginFile(e.dataTransfer.files[0]);
+                                setPluginState(prev => ({ ...prev, decklist: "" }));
+                              }
+                            }}
+                          >
+                            {pluginFile ? (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
+                                <div className="p-4 bg-primary-500/10 rounded-full mb-3 text-primary-400">
+                                  <FileText size={32} />
+                                </div>
+                                <span className="font-mono text-sm font-bold text-white/80 mb-1">{pluginFile.name}</span>
+                                <span className="text-xs text-white/40">{(pluginFile.size / 1024).toFixed(1)} KB</span>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPluginFile(null);
+                                  }}
+                                  className="mt-4 px-3 py-1.5 bg-red-500/20 text-red-500 hover:bg-red-500/30 rounded-lg text-xs font-bold transition-colors"
+                                >
+                                  Remove File
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <textarea 
+                                  value={pluginState.decklist}
+                                  onChange={(e) => setPluginState(prev => ({ ...prev, decklist: e.target.value }))}
+                                  placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here (e.g. 4x Lightning Bolt)..."}
+                                  className="absolute inset-0 w-full h-full bg-transparent p-4 text-sm font-mono focus:outline-none transition-all resize-none"
+                                />
+                                <div className="absolute right-4 bottom-4 pointer-events-none opacity-20 group-hover:opacity-40 transition-opacity">
+                                  <Upload size={24} />
+                                </div>
+                              </>
+                            )}
+                            <div className="absolute top-4 right-4 z-10 flex gap-2">
+                               {/* Hidden file input */}
+                               <input 
+                                  type="file" 
+                                  className="hidden" 
+                                  id="plugin-file-upload"
+                                  onChange={(e) => {
+                                      if (e.target.files && e.target.files.length > 0) {
+                                          setPluginFile(e.target.files[0]);
+                                          setPluginState(prev => ({ ...prev, decklist: "" }));
+                                      }
+                                  }}
+                               />
+                               {!pluginFile && (
+                                   <button 
+                                        onClick={() => document.getElementById('plugin-file-upload')?.click()}
+                                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 backdrop-blur-md"
+                                   >
+                                        <Upload size={14} /> Upload File
+                                   </button>
+                               )}
+                            </div>
+                          </div>
 
                           {FORMAT_HINTS[pluginState.format] && (
                             <div className="mb-4 text-xs text-white/50 bg-white/[0.02] border border-white/5 rounded-xl p-3 flex items-start gap-2.5">
@@ -2938,22 +3016,49 @@ export default function App() {
 
                           <button 
                             onClick={async () => {
-                              // 1. Save decklist
-                              addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
-                              try {
-                                await fetch('/api/project/save-decklist', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ content: pluginState.decklist })
-                                });
-                              } catch (err) {
-                                addLog(`[Error] Failed to stage decklist: ${err}`);
-                                return;
+                              let targetInput = '';
+                              let uploadedPluginFilePath: string | undefined = undefined;
+
+                              if (pluginFile) {
+                                  addLog(`[System] Uploading plugin file ${pluginFile.name}...`);
+                                  const fd = new FormData();
+                                  fd.append('file', pluginFile);
+                                  try {
+                                      const uploadRes = await fetch('/api/plugin/upload-file', {
+                                          method: 'POST',
+                                          body: fd
+                                      });
+                                      const uploadData = await uploadRes.json();
+                                      if (uploadData.success) {
+                                          targetInput = uploadData.path;
+                                          uploadedPluginFilePath = uploadData.path;
+                                      } else {
+                                          addLog(`[Error] Failed to upload plugin file: ${uploadData.error}`);
+                                          return;
+                                      }
+                                  } catch (e) {
+                                      addLog(`[Error] Failed to upload plugin file: ${e}`);
+                                      return;
+                                  }
+                              } else {
+                                  // 1. Save decklist
+                                  addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
+                                  try {
+                                    await fetch('/api/project/save-decklist', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ content: pluginState.decklist })
+                                    });
+                                  } catch (err) {
+                                    addLog(`[Error] Failed to stage decklist: ${err}`);
+                                    return;
+                                  }
+    
+                                  const isDirectInput = pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke';
+                                  targetInput = isDirectInput ? pluginState.decklist.trim() : `game/decklist/current.txt`;
                               }
 
                               // 2. Build and run command
-                              const isDirectInput = pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke';
-                              const targetInput = isDirectInput ? pluginState.decklist.trim() : `game/decklist/current.txt`;
                               const args = [targetInput, pluginState.format];
                               Object.entries(pluginState.options).forEach(([flag, val]) => {
                                 if (val === true) {
@@ -2978,7 +3083,8 @@ export default function App() {
                               const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
                                 startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
                                 hideProgressOnComplete: true,
-                                tempDirId
+                                tempDirId,
+                                uploadedPluginFilePath
                               });
                               
                               if (result && result.fetchedFiles) {
@@ -3078,6 +3184,7 @@ export default function App() {
                               .map((img: string, i: number) => (
                                 <AssetItem 
                                   key={`b-${img}-${i}`} 
+                                  cacheBustToken={cacheBusts[img]}
                                   name={img} 
                                   type="back" 
                                   allAssets={getCurrentAssets()} 
@@ -3152,6 +3259,7 @@ export default function App() {
                               .map((img: string, i: number) => (
                                 <AssetItem 
                                   key={`f-${img}-${i}`} 
+                                  cacheBustToken={cacheBusts[img]}
                                   name={img} 
                                   type="front" 
                                   allAssets={getCurrentAssets()}
@@ -3228,6 +3336,7 @@ export default function App() {
                               .map((img: string, i: number) => (
                                 <AssetItem 
                                   key={`d-${img}-${i}`} 
+                                  cacheBustToken={cacheBusts[img]}
                                   name={img} 
                                   type="double_sided" 
                                   allAssets={getCurrentAssets()}
@@ -3307,6 +3416,17 @@ export default function App() {
                     className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
                   >
                     Replace Existing
+                  </button>
+
+                  <button 
+                    onClick={async () => {
+                      const { items, destination, source, backResolution = 'check' } = importConflictData;
+                      setImportConflictData(null);
+                      await performMoveOrCopy(items, destination, source, 'keep_both', backResolution);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
+                  >
+                    Keep Both
                   </button>
 
                   <button 
@@ -3437,7 +3557,7 @@ export default function App() {
 
                   <button 
                     onClick={async () => {
-                      const { tempDirId } = fetchConflictData;
+                      const { tempDirId, collisions } = fetchConflictData;
                       setFetchConflictData(null);
                       setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
                       await fetch('/api/plugin/fetch-commit', {
@@ -3445,12 +3565,43 @@ export default function App() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, resolutions: {} })
                       });
+                      
+                      const newBusts = { ...cacheBusts };
+                      collisions.forEach(c => {
+                          const name = c.split(':')[1];
+                          newBusts[name] = Date.now();
+                      });
+                      setCacheBusts(newBusts);
+                      
                       await fetchStatus();
                       setTaskProgress(null);
                     }}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
                   >
                     Replace All Existing
+                  </button>
+
+                  <button 
+                    onClick={async () => {
+                      const { tempDirId, collisions } = fetchConflictData;
+                      setFetchConflictData(null);
+                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      
+                      const resolutions: Record<string, 'keep_both'> = {};
+                      collisions.forEach(c => resolutions[c] = 'keep_both');
+                      
+                      await fetch('/api/plugin/fetch-commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tempDirId, resolutions })
+                      });
+                      
+                      await fetchStatus();
+                      setTaskProgress(null);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
+                  >
+                    Keep Both for All
                   </button>
 
                   <button 
@@ -4589,9 +4740,10 @@ interface AssetItemProps {
   addLog?: (log: string) => void;
   assetViewMode: 'library' | 'project' | 'plugins';
   cardDimming?: 'none' | 'tint' | 'dark';
+  cacheBustToken?: number;
 }
 
-const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint' }) => {
+const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken }) => {
 
   
   const getBaseUrl = () => {
@@ -4613,9 +4765,11 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     }
     
     const baseUrl = getBaseUrl();
+    const appendBust = (url: string) => cacheBustToken ? `${url}?t=${cacheBustToken}` : url;
+
     // 2. Determine base path based on type/double-sided status
     if (type === 'back') {
-      return `${baseUrl}/back/${name}`;
+      return appendBust(`${baseUrl}/back/${name}`);
     }
     
     // 3. For front faces & double-sided faces, verify where the front face image is
@@ -4623,14 +4777,14 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     if (isDoubleSided) {
       const exactFront = allAssets?.fronts?.find(f => f.toLowerCase() === name.toLowerCase());
       if (exactFront) {
-        return `${baseUrl}/front/${exactFront}`;
+        return appendBust(`${baseUrl}/front/${exactFront}`);
       } else {
-        return `${baseUrl}/front/${name}`;
+        return appendBust(`${baseUrl}/front/${name}`);
       }
     }
     
     // 4. Default to front
-    return `${baseUrl}/front/${name}`;
+    return appendBust(`${baseUrl}/front/${name}`);
   };
 
   const imgSrc = getImgSrc();
@@ -4760,7 +4914,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 {backFace ? (
                   <>
                     <img 
-                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || `${getBaseUrl()}/${backFace.folder}/${backFace.name}`}
+                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${backFace.name}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${backFace.name}`)}
                       alt={backFace.name}
                       loading="lazy"
                       className={cn(

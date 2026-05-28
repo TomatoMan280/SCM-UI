@@ -206,6 +206,24 @@ async function startServer() {
     res.json({ success: true, message: "Decklist saved to game/decklist/current.txt" });
   });
 
+  app.post("/api/plugin/upload-file", upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const tempDir = path.join(scmPath, 'game', 'temp_uploads');
+    fs.mkdirSync(tempDir, { recursive: true });
+    
+    // Safely move the file from multer's temp dest to our temp_uploads folder with original extension
+    const ext = path.extname(req.file.originalname) || '';
+    const tempFileName = `upload_${Date.now()}${ext}`;
+    const targetPath = path.join(tempDir, tempFileName);
+    
+    try {
+        fs.renameSync(req.file.path, targetPath);
+        res.json({ success: true, path: `game/temp_uploads/${tempFileName}` });
+    } catch(err) {
+        res.status(500).json({ error: "Failed to save temp file" });
+    }
+  });
+
   app.post("/api/library/save-decklist", (req, res) => {
     const { pluginId, saveName, decklist, format, options } = req.body;
     if (!pluginId || !saveName || decklist === undefined) return res.status(400).json({ error: "Missing fields" });
@@ -1012,7 +1030,7 @@ async function startServer() {
   });
 
   app.post("/api/plugin/import", (req, res) => {
-    const { identity, destination, source = 'plugins', clearBackFirst } = req.body;
+    const { identity, destination, source = 'plugins', clearBackFirst, keepBoth } = req.body;
     if (!identity) return res.status(400).json({error: "No identity"});
     
     const identities = Array.isArray(identity) ? identity : [identity];
@@ -1037,8 +1055,12 @@ async function startServer() {
     identities.forEach(id => {
       const [type, name] = id.split(':');
       
+      const ext = path.extname(name);
+      const baseName = name.slice(0, name.length - ext.length);
+      const finalName = keepBoth ? `${baseName}_${Date.now()}${ext}` : name;
+      
       const sourcePath = path.join(sourceBase, type, name);
-      const targetPath = path.join(targetBase, type, name);
+      const targetPath = path.join(targetBase, type, finalName);
       
       try {
         if (!fs.existsSync(path.dirname(targetPath))) {
@@ -1046,13 +1068,14 @@ async function startServer() {
         }
         if (fs.existsSync(sourcePath)) {
             fs.copyFileSync(sourcePath, targetPath);
-            results.push({ name, from: sourcePath, to: targetPath });
+            results.push({ name: finalName, from: sourcePath, to: targetPath });
         }
 
         if (type === 'front') {
             const dsSourcePath = path.join(sourceBase, 'double_sided', name);
+            const dsTargetPath = path.join(targetBase, 'double_sided', finalName);
+            
             if (fs.existsSync(dsSourcePath)) {
-                const dsTargetPath = path.join(targetBase, 'double_sided', name);
                 if (!fs.existsSync(path.dirname(dsTargetPath))) {
                     fs.mkdirSync(path.dirname(dsTargetPath), { recursive: true });
                 }
@@ -1060,11 +1083,15 @@ async function startServer() {
                 if (fs.existsSync(dsTargetPath)) {
                     // verification successful
                 }
+            } else if (fs.existsSync(dsTargetPath)) {
+                // Pair-aware Replacement: if new front has no double_sided back but old one did, remove it
+                try { fs.unlinkSync(dsTargetPath); } catch(e) {}
             }
         } else if (type === 'double_sided') {
             const frontSourcePath = path.join(sourceBase, 'front', name);
+            const frontTargetPath = path.join(targetBase, 'front', finalName);
+            
             if (fs.existsSync(frontSourcePath)) {
-                const frontTargetPath = path.join(targetBase, 'front', name);
                 if (!fs.existsSync(path.dirname(frontTargetPath))) {
                     fs.mkdirSync(path.dirname(frontTargetPath), { recursive: true });
                 }
@@ -1072,6 +1099,9 @@ async function startServer() {
                 if (fs.existsSync(frontTargetPath)) {
                     // verification successful
                 }
+            } else if (fs.existsSync(frontTargetPath)) {
+                // Unlikely to import just a back to overwrite without a front, but just in case
+                // try { fs.unlinkSync(frontTargetPath); } catch(e) {}
             }
         }
       } catch (e) {
@@ -1366,6 +1396,15 @@ async function startServer() {
           }
           sendEvent('close', { code, hasError });
           
+          if (req.body.uploadedPluginFilePath) {
+              try {
+                  const toDelete = path.join(scmPath, req.body.uploadedPluginFilePath);
+                  if (fs.existsSync(toDelete)) {
+                      fs.unlinkSync(toDelete);
+                  }
+              } catch (e) {}
+          }
+          
           if (req.body.tempDirId) {
              const getFiles = (dir: string) => {
                try {
@@ -1558,6 +1597,16 @@ async function startServer() {
         }
 
         let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
+        
+        if (req.body.uploadedPluginFilePath) {
+            try {
+                const toDelete = path.join(scmPath, req.body.uploadedPluginFilePath);
+                if (fs.existsSync(toDelete)) {
+                    fs.unlinkSync(toDelete);
+                }
+            } catch (e) {}
+        }
+        
         if (req.body.tempDirId) {
            const getFiles = (dir: string) => {
              try {
@@ -1624,8 +1673,26 @@ async function startServer() {
                 const identity = `${type}:${file}`;
                 const resolution = resolutions?.[identity] || 'replace';
                 if (!(resolution === 'skip' && fs.existsSync(path.join(dstFolder, file)))) {
-                   fs.copyFileSync(path.join(srcFolder, file), path.join(dstFolder, file));
+                   let targetFile = file;
+                   if (resolution === 'keep_both') {
+                       const ext = path.extname(file);
+                       const baseName = file.slice(0, file.length - ext.length);
+                       targetFile = `${baseName}_${Date.now()}${ext}`;
+                   }
+                   fs.copyFileSync(path.join(srcFolder, file), path.join(dstFolder, targetFile));
                    addedCount++;
+                   
+                   // Pair-Aware Replacement: if new front has no double_sided back but old one did, remove it
+                   if (type === 'front') {
+                       const dsSrc = path.join(tempGamePath, 'double_sided', file);
+                       const dsDst = path.join(pluginsBasePath, 'double_sided', targetFile);
+                       if (!fs.existsSync(dsSrc) && fs.existsSync(dsDst)) {
+                           try { fs.unlinkSync(dsDst); } catch(e) {}
+                       }
+                   } else if (type === 'double_sided') {
+                       // If for some reason we copy double_sided but not front, well that's odd,
+                       // but generally double_sided should have a front. If it doesn't, we probably don't delete front.
+                   }
                 }
              }
           });
