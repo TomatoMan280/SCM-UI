@@ -385,14 +385,32 @@ async function startServer() {
 
         if (platform === 'win32') {
           sendEvent('progress', { step: 'Downloading Python...', detail: 'Fetching Python 3.11 installer for Windows', percent: 40 });
+          sendEvent('stdout', '> Initiating Python download from official servers...');
           const installerPath = path.join(os.tmpdir(), 'python-installer.exe');
           
           await new Promise<void>((resolve, reject) => {
             const file = fs.createWriteStream(installerPath);
             https.get('https://www.python.org/ftp/python/3.11.8/python-3.11.8-amd64.exe', (response: any) => {
+              const totalBytes = parseInt(response.headers['content-length'] || '0', 10);
+              let downloadedBytes = 0;
+              let lastPercent = 0;
+              
+              response.on('data', (chunk: any) => {
+                  downloadedBytes += chunk.length;
+                  if (totalBytes > 0) {
+                      const percent = Math.floor((downloadedBytes / totalBytes) * 10) * 10;
+                      if (percent > lastPercent && percent < 100) {
+                          sendEvent('stdout', `> Downloading... ${percent}%`);
+                          lastPercent = percent;
+                      }
+                  }
+              });
+
               response.pipe(file);
               file.on('finish', () => {
                 file.close();
+                sendEvent('stdout', '> Download complete. Executing Python silent installer...');
+                sendEvent('stdout', '> Please wait, this may take several minutes depending on your system...');
                 resolve();
               });
             }).on('error', (err: any) => {
@@ -1165,6 +1183,28 @@ async function startServer() {
     
     import('child_process').then(({ spawn, spawnSync }) => {
       let pythonCmd = pythonPath || "python";
+      
+      if (command === 'create_pdf.py') {
+          try {
+              const frontDir = path.join(scmPath, 'game', 'front');
+              const dsDir = path.join(scmPath, 'game', 'double_sided');
+              if (fs.existsSync(frontDir) && fs.existsSync(dsDir)) {
+                  const fronts = fs.readdirSync(frontDir);
+                  const doubleSided = fs.readdirSync(dsDir);
+                  
+                  const frontMap = new Map();
+                  fronts.forEach(f => frontMap.set(f.toLowerCase(), f));
+                  
+                  doubleSided.forEach(ds => {
+                      const lowerDs = ds.toLowerCase();
+                      if (frontMap.has(lowerDs) && frontMap.get(lowerDs) !== ds) {
+                          const exactFrontName = frontMap.get(lowerDs);
+                          fs.renameSync(path.join(dsDir, ds), path.join(dsDir, exactFrontName));
+                      }
+                  });
+              }
+          } catch (e) {}
+      }
 
       if (!pythonPath) {
         const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
@@ -1349,6 +1389,28 @@ async function startServer() {
     import('child_process').then(({ exec, spawnSync }) => {
       // Find whether to use python3 or python or none
       let pythonCmd = pythonPath || "python";
+
+      if (command === 'create_pdf.py') {
+          try {
+              const frontDir = path.join(scmPath, 'game', 'front');
+              const dsDir = path.join(scmPath, 'game', 'double_sided');
+              if (fs.existsSync(frontDir) && fs.existsSync(dsDir)) {
+                  const fronts = fs.readdirSync(frontDir);
+                  const doubleSided = fs.readdirSync(dsDir);
+                  
+                  const frontMap = new Map();
+                  fronts.forEach(f => frontMap.set(f.toLowerCase(), f));
+                  
+                  doubleSided.forEach(ds => {
+                      const lowerDs = ds.toLowerCase();
+                      if (frontMap.has(lowerDs) && frontMap.get(lowerDs) !== ds) {
+                          const exactFrontName = frontMap.get(lowerDs);
+                          fs.renameSync(path.join(dsDir, ds), path.join(dsDir, exactFrontName));
+                      }
+                  });
+              }
+          } catch (e) {}
+      }
 
       if (!pythonPath) {
         const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');

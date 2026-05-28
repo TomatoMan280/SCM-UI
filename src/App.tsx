@@ -1214,9 +1214,9 @@ export default function App() {
                  addLog(`[Console Error] ${eventData}`);
              } else if (eventType === 'fetched_files') {
                  fetchedFiles = eventData as any;
-             } else if (eventType === 'close') {
-                 const closeData = eventData as any;
-                 success = closeData.code === 0 && !closeData.hasError;
+             } else if (eventType === 'exit') {
+                 const exitData = eventData as any;
+                 success = exitData.code === 0 && !exitData.hasError;
              }
           }
         }
@@ -4619,11 +4619,11 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     }
     
     // 3. For front faces & double-sided faces, verify where the front face image is
-    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.includes(name);
+    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.some(d => d.toLowerCase() === name.toLowerCase());
     if (isDoubleSided) {
-      const hasFrontOnDisk = allAssets?.fronts?.includes(name);
-      if (hasFrontOnDisk) {
-        return `${baseUrl}/front/${name}`;
+      const exactFront = allAssets?.fronts?.find(f => f.toLowerCase() === name.toLowerCase());
+      if (exactFront) {
+        return `${baseUrl}/front/${exactFront}`;
       } else {
         return `${baseUrl}/double_sided/${name}`;
       }
@@ -4639,11 +4639,12 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     if (type === 'back') return null;
     
     // Check if double sided
-    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.includes(name);
+    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.some(d => d.toLowerCase() === name.toLowerCase());
     if (isDoubleSided) {
-      const hasDoubleSidedOnDisk = allAssets?.double_sided?.includes(name) || type === 'double_sided';
-      if (hasDoubleSidedOnDisk && (allAssets?.fronts?.includes(name) || type === 'double_sided' || assetViewMode === 'library' || assetViewMode === 'plugins')) {
-        return { name, folder: 'double_sided' };
+      const exactDoubleSided = allAssets?.double_sided?.find(d => d.toLowerCase() === name.toLowerCase());
+      const hasDoubleSidedOnDisk = !!exactDoubleSided || type === 'double_sided';
+      if (hasDoubleSidedOnDisk && (allAssets?.fronts?.some(f => f.toLowerCase() === name.toLowerCase()) || type === 'double_sided' || assetViewMode === 'library' || assetViewMode === 'plugins')) {
+        return { name: exactDoubleSided || name, folder: 'double_sided' };
       }
       // If we only have double_sided on disk and no fronts of same name, we fallback to standard backs
       if (allAssets?.backs && allAssets.backs.length > 0) {
