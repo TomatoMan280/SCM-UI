@@ -344,9 +344,13 @@ async function startServer() {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
 
     const sendEvent = (type: string, data: any) => {
       res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+      if (typeof (res as any).flush === 'function') {
+        (res as any).flush();
+      }
     };
 
     const runCommand = (command: string, args: string[], cwd?: string): Promise<void> => {
@@ -909,6 +913,19 @@ async function startServer() {
             const doubleSidedDir = path.join(targetBase, 'double_sided');
             if(!fs.existsSync(doubleSidedDir)) fs.mkdirSync(doubleSidedDir, { recursive: true });
             fs.copyFileSync(doubleSidedSrc, path.join(doubleSidedDir, newName));
+            if (fs.existsSync(path.join(doubleSidedDir, newName))) {
+                // Done
+            }
+        }
+    } else if (type === 'double_sided') {
+        const frontSrc = path.join(targetBase, 'front', name);
+        if (fs.existsSync(frontSrc)) {
+            const frontDir = path.join(targetBase, 'front');
+            if (!fs.existsSync(frontDir)) fs.mkdirSync(frontDir, { recursive: true });
+            fs.copyFileSync(frontSrc, path.join(frontDir, newName));
+            if (fs.existsSync(path.join(frontDir, newName))) {
+                // Done
+            }
         }
     }
     
@@ -957,6 +974,15 @@ async function startServer() {
                 try {
                     fs.renameSync(doubleSidedSrc, dsTrashPath);
                     results.push({ name, from: doubleSidedSrc, trashPath: dsTrashPath, type: 'double_sided' });
+                } catch(e) {}
+            }
+        } else if (type === 'double_sided') {
+            const frontSrc = path.join(targetBase, 'front', name);
+            if (fs.existsSync(frontSrc)) {
+                const frontTrashPath = path.join(trashDir, `deleted_front_${Date.now()}_${name}`);
+                try {
+                    fs.renameSync(frontSrc, frontTrashPath);
+                    results.push({ name, from: frontSrc, trashPath: frontTrashPath, type: 'front' });
                 } catch(e) {}
             }
         }
@@ -1031,6 +1057,21 @@ async function startServer() {
                     fs.mkdirSync(path.dirname(dsTargetPath), { recursive: true });
                 }
                 fs.copyFileSync(dsSourcePath, dsTargetPath);
+                if (fs.existsSync(dsTargetPath)) {
+                    // verification successful
+                }
+            }
+        } else if (type === 'double_sided') {
+            const frontSourcePath = path.join(sourceBase, 'front', name);
+            if (fs.existsSync(frontSourcePath)) {
+                const frontTargetPath = path.join(targetBase, 'front', name);
+                if (!fs.existsSync(path.dirname(frontTargetPath))) {
+                    fs.mkdirSync(path.dirname(frontTargetPath), { recursive: true });
+                }
+                fs.copyFileSync(frontSourcePath, frontTargetPath);
+                if (fs.existsSync(frontTargetPath)) {
+                    // verification successful
+                }
             }
         }
       } catch (e) {
@@ -1172,9 +1213,13 @@ async function startServer() {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
     
     const sendEvent = (type: string, data: any) => {
         res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+        if (typeof (res as any).flush === 'function') {
+            (res as any).flush();
+        }
     };
 
     const argString = (args || []).map((arg: any) => {
@@ -1183,28 +1228,6 @@ async function startServer() {
     
     import('child_process').then(({ spawn, spawnSync }) => {
       let pythonCmd = pythonPath || "python";
-      
-      if (command === 'create_pdf.py') {
-          try {
-              const frontDir = path.join(scmPath, 'game', 'front');
-              const dsDir = path.join(scmPath, 'game', 'double_sided');
-              if (fs.existsSync(frontDir) && fs.existsSync(dsDir)) {
-                  const fronts = fs.readdirSync(frontDir);
-                  const doubleSided = fs.readdirSync(dsDir);
-                  
-                  const frontMap = new Map();
-                  fronts.forEach(f => frontMap.set(f.toLowerCase(), f));
-                  
-                  doubleSided.forEach(ds => {
-                      const lowerDs = ds.toLowerCase();
-                      if (frontMap.has(lowerDs) && frontMap.get(lowerDs) !== ds) {
-                          const exactFrontName = frontMap.get(lowerDs);
-                          fs.renameSync(path.join(dsDir, ds), path.join(dsDir, exactFrontName));
-                      }
-                  });
-              }
-          } catch (e) {}
-      }
 
       if (!pythonPath) {
         const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
@@ -1389,28 +1412,6 @@ async function startServer() {
     import('child_process').then(({ exec, spawnSync }) => {
       // Find whether to use python3 or python or none
       let pythonCmd = pythonPath || "python";
-
-      if (command === 'create_pdf.py') {
-          try {
-              const frontDir = path.join(scmPath, 'game', 'front');
-              const dsDir = path.join(scmPath, 'game', 'double_sided');
-              if (fs.existsSync(frontDir) && fs.existsSync(dsDir)) {
-                  const fronts = fs.readdirSync(frontDir);
-                  const doubleSided = fs.readdirSync(dsDir);
-                  
-                  const frontMap = new Map();
-                  fronts.forEach(f => frontMap.set(f.toLowerCase(), f));
-                  
-                  doubleSided.forEach(ds => {
-                      const lowerDs = ds.toLowerCase();
-                      if (frontMap.has(lowerDs) && frontMap.get(lowerDs) !== ds) {
-                          const exactFrontName = frontMap.get(lowerDs);
-                          fs.renameSync(path.join(dsDir, ds), path.join(dsDir, exactFrontName));
-                      }
-                  });
-              }
-          } catch (e) {}
-      }
 
       if (!pythonPath) {
         const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');

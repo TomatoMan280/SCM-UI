@@ -4625,7 +4625,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
       if (exactFront) {
         return `${baseUrl}/front/${exactFront}`;
       } else {
-        return `${baseUrl}/double_sided/${name}`;
+        return `${baseUrl}/front/${name}`;
       }
     }
     
