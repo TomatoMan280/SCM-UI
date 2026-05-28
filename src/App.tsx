@@ -930,9 +930,18 @@ export default function App() {
 
   const [isSettingUpPython, setIsSettingUpPython] = useState(false);
   const [pythonSetupProgress, setPythonSetupProgress] = useState<{step: string, detail: string, percent?: number}>({ step: 'Initializing setup...', detail: '', percent: 10 });
+  const [setupLogs, setSetupLogs] = useState<string[]>([]);
+  const setupLogEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (setupLogEndRef.current) {
+        setupLogEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [setupLogs]);
 
   const startPythonSetup = () => {
     setIsSettingUpPython(true);
+    setSetupLogs([]);
     setPythonSetupProgress({ step: 'Initializing background process', detail: 'Please wait...', percent: 10 });
     
     const eventSource = new EventSource('/api/setup-python-stream');
@@ -945,11 +954,13 @@ export default function App() {
     eventSource.addEventListener('stdout', (e: Event) => {
       const data = JSON.parse((e as MessageEvent).data);
       addLog(`[System Setup] ${data}`);
+      setSetupLogs(prev => [...prev, data]);
     });
 
     eventSource.addEventListener('error', (e: Event) => {
       const err = JSON.parse((e as MessageEvent).data);
       addLog(`[Setup Error] ${err}`);
+      setSetupLogs(prev => [...prev, `[ERROR] ${err}`]);
       setPythonSetupProgress({ step: 'Setup Failed', detail: err });
     });
 
@@ -1156,6 +1167,7 @@ export default function App() {
       let output: string[] = [];
       let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
       let pendingData = "";
+      let success = true;
       
       let totalCards = 0;
       let currentCard = 0;
@@ -1174,7 +1186,7 @@ export default function App() {
         const events = pendingData.split('\n\n');
         pendingData = events.pop() || '';
         
-        for (const event of events) {
+         for (const event of events) {
           const lines = event.split('\n');
           let eventType = 'stdout';
           let eventData = null;
@@ -1202,6 +1214,9 @@ export default function App() {
                  addLog(`[Console Error] ${eventData}`);
              } else if (eventType === 'fetched_files') {
                  fetchedFiles = eventData as any;
+             } else if (eventType === 'close') {
+                 const closeData = eventData as any;
+                 success = closeData.code === 0 && !closeData.hasError;
              }
           }
         }
@@ -1215,7 +1230,7 @@ export default function App() {
          setTimeout(() => setTaskProgress(null), 1500);
       }
       
-      return { output, assets, fetchedFiles };
+      return { output, assets, fetchedFiles, success };
     } catch (err: any) {
       if (err.name === 'AbortError') {
          addLog(`[System] Task canceled by user.`);
@@ -1303,12 +1318,12 @@ export default function App() {
     if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
     const result = await runCommand('create_pdf.py', args, { startMessage: 'Generating PDF...' });
-    if (result?.output && result.output.some((line: string) => line.includes('PDF successfully moved') || line.includes('Generated PDF') || line.includes('PDF generated successfully'))) {
+    if (result?.success && result?.output && result.output.some((line: string) => line.includes('PDF generated successfully') || line.includes('PDF successfully moved') || line.includes('Generated PDF'))) {
       setPdfReady(true);
       setPdfReadyToastOpen(true);
       playDing();
       setTimeout(() => setPdfReadyToastOpen(false), 5000);
-    } else if (result?.output && result.output.some((line: string) => line.includes('[Error]'))) {
+    } else {
       addLog("[Error] PDF Generation failed. Check console for details.");
     }
   };
@@ -1498,7 +1513,7 @@ export default function App() {
   
       const url = URL.createObjectURL(file);
       const name = file.name;
-      setUploadedImages(prev => ({ ...prev, [name]: url }));
+      setUploadedImages(prev => ({ ...prev, [`${type}_${name}`]: url }));
 
       // Optimistically add to localAssets regardless of library state
       // (Since we fetchStatus 1s later anyway)
@@ -1768,7 +1783,7 @@ export default function App() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/80 backdrop-blur-md pointer-events-auto"
           >
-            <div className="flex flex-col items-center gap-6 p-10 bg-[#0f0f13] rounded-3xl border border-primary-500/20 shadow-[0_0_60px_-15px_rgba(16,185,129,0.3)] max-w-sm w-full text-center">
+            <div className="flex flex-col items-center gap-6 p-10 bg-[#0f0f13] rounded-3xl border border-primary-500/20 shadow-[0_0_60px_-15px_rgba(16,185,129,0.3)] max-w-xl w-full text-center">
               <div className="space-y-2">
                 <h3 className="text-lg font-bold tracking-wide text-white">{pythonSetupProgress.step}</h3>
                 {pythonSetupProgress.detail && (
@@ -1780,6 +1795,12 @@ export default function App() {
                    className="h-full bg-primary-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all duration-500 ease-in-out" 
                    style={{ width: `${pythonSetupProgress.percent || 10}%` }}
                  ></div>
+              </div>
+              <div className="w-full h-48 bg-black/50 border border-white/10 rounded-xl mt-4 overflow-y-auto text-left p-3 font-mono text-xs text-white/70">
+                 {setupLogs.map((log, i) => (
+                   <div key={i} className={log.includes('[ERROR]') ? 'text-red-400' : ''}>{log}</div>
+                 ))}
+                 <div ref={setupLogEndRef} />
               </div>
             </div>
           </motion.div>
@@ -4581,9 +4602,14 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
 
   const getImgSrc = () => {
     // 1. If we have a blob URL from a recent upload, use it.
-    if (uploadedImages?.[name]) {
+    if (uploadedImages?.[`${type}_${name}`]) {
       addLog?.(`AssetItem Debug: ${name} FOUND in uploadedImages.`);
-      return uploadedImages[name];
+      return uploadedImages[`${type}_${name}`];
+    }
+    
+    // Check if we uploaded the front of a double sided card
+    if ((type === 'front' || type === 'double_sided') && uploadedImages?.[`front_${name}`]) {
+       return uploadedImages[`front_${name}`];
     }
     
     const baseUrl = getBaseUrl();
@@ -4661,7 +4687,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
             const backFaceFolder = getBackFace()?.folder;
             
             const enlargeSrc = isFlipped && getBackFace() 
-              ? (uploadedImages?.[getBackFace()!.name] || `${baseUrl}/${backFaceFolder}/${getBackFace()!.name}`) 
+              ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${getBackFace()!.name}`) 
               : imgSrc;
             onEnlarge?.(enlargeSrc);
           }
@@ -4733,7 +4759,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 {backFace ? (
                   <>
                     <img 
-                      src={uploadedImages?.[backFace.name] || `${getBaseUrl()}/${backFace.folder}/${backFace.name}`}
+                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || `${getBaseUrl()}/${backFace.folder}/${backFace.name}`}
                       alt={backFace.name}
                       loading="lazy"
                       className={cn(

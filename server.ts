@@ -355,11 +355,13 @@ async function startServer() {
         const child = spawn(command, args, { cwd, shell: true });
         
         child.stdout.on('data', (data: any) => {
-          sendEvent('stdout', data.toString());
+          const lines = data.toString().split('\n').filter(Boolean);
+          lines.forEach((line: string) => sendEvent('stdout', line));
         });
         
         child.stderr.on('data', (data: any) => {
-          sendEvent('stdout', data.toString());
+          const lines = data.toString().split('\n').filter(Boolean);
+          lines.forEach((line: string) => sendEvent('stdout', line));
         });
         
         child.on('close', (code: number) => {
@@ -1273,7 +1275,12 @@ async function startServer() {
 
       child.stderr.on('data', (data) => {
           const lines = data.toString().split('\n').filter(Boolean);
-          lines.forEach((line: string) => sendEvent('stderr', line));
+          lines.forEach((line: string) => {
+             if (line.includes('[Console Error]') || line.includes('Exception:')) {
+                 hasError = true;
+             }
+             sendEvent('stderr', line);
+          });
       });
 
       child.on('close', (code) => {
@@ -1282,7 +1289,7 @@ async function startServer() {
             const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
             const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
             
-            if (code === 0 && fs.existsSync(generatedPdf)) {
+            if (code === 0 && !hasError && fs.existsSync(generatedPdf)) {
               fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
               fs.copyFileSync(generatedPdf, targetPdf);
               sendEvent('stdout', "[System] PDF generated successfully.");
