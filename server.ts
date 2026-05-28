@@ -1051,14 +1051,29 @@ async function startServer() {
         }
     }
 
+    const keepBothSuffixes: Record<string, string> = {};
+    const processedFaces: Record<string, boolean> = {};
+
     const results: Array<{name: string, from: string, to: string}> = [];
     identities.forEach(id => {
       const [type, name] = id.split(':');
       
       const ext = path.extname(name);
       const baseName = name.slice(0, name.length - ext.length);
-      const finalName = keepBoth ? `${baseName}_${Date.now()}${ext}` : name;
       
+      let finalName = name;
+      if (keepBoth) {
+          if (!keepBothSuffixes[name]) {
+              keepBothSuffixes[name] = Date.now().toString();
+          }
+          finalName = `${baseName}_${keepBothSuffixes[name]}${ext}`;
+      }
+      
+      // Prevent double processing if we already processed this exact identity pair
+      if (processedFaces[`${type}:${name}`]) return;
+      processedFaces[`front:${name}`] = true;
+      processedFaces[`double_sided:${name}`] = true;
+
       const sourcePath = path.join(sourceBase, type, name);
       const targetPath = path.join(targetBase, type, finalName);
       
@@ -1253,7 +1268,11 @@ async function startServer() {
     };
 
     const argString = (args || []).map((arg: any) => {
-        return arg.toString().includes(' ') ? `"${arg}"` : arg;
+        let finalArg = arg;
+        if (req.body.uploadedPluginFilePath && arg === req.body.uploadedPluginFilePath) {
+            finalArg = path.join(scmPath, arg);
+        }
+        return finalArg.toString().includes(' ') ? `"${finalArg}"` : finalArg;
     }).join(" ");
     
     import('child_process').then(({ spawn, spawnSync }) => {
@@ -1350,7 +1369,14 @@ async function startServer() {
         spawnCommand = path.join(scmPath, command);
       }
 
-      const child = spawn(pythonCmd, ['-u', spawnCommand, ...(args || [])], { cwd: spawnCwd, env: customEnv });
+      let finalArgs = [...(args || [])];
+      if (req.body.uploadedPluginFilePath) {
+         finalArgs = finalArgs.map(arg => 
+            arg === req.body.uploadedPluginFilePath ? path.join(scmPath, arg) : arg
+         );
+      }
+
+      const child = spawn(pythonCmd, ['-u', spawnCommand, ...finalArgs], { cwd: spawnCwd, env: customEnv });
       let hasError = false;
       
       const pingInterval = setInterval(() => {
@@ -1443,8 +1469,12 @@ async function startServer() {
     
     // Construct CLI string from args array
     const argString = (args || []).map((arg: any) => {
+        let finalArg = arg;
+        if (req.body.uploadedPluginFilePath && arg === req.body.uploadedPluginFilePath) {
+            finalArg = path.join(scmPath, arg);
+        }
         // Simple quoting for strings containing spaces
-        return arg.toString().includes(' ') ? `"${arg}"` : arg;
+        return finalArg.toString().includes(' ') ? `"${finalArg}"` : finalArg;
     }).join(" ");
     
     // Check if python is available and run the child process based on it.
@@ -1662,6 +1692,11 @@ async function startServer() {
     fs.mkdirSync(pluginsBasePath, { recursive: true });
     
     let addedCount = 0;
+    
+    const keepBothSuffixes: Record<string, string> = {};
+    const replaceAllSuffixes: Record<string, string[]> = {};
+    const purgeRecord: Record<string, boolean> = {};
+
     ['front', 'back', 'double_sided'].forEach(type => {
        const srcFolder = path.join(tempGamePath, type);
        const dstFolder = path.join(pluginsBasePath, type);
@@ -1674,24 +1709,66 @@ async function startServer() {
                 const resolution = resolutions?.[identity] || 'replace';
                 if (!(resolution === 'skip' && fs.existsSync(path.join(dstFolder, file)))) {
                    let targetFile = file;
+                   const ext = path.extname(file);
+                   const baseName = file.slice(0, file.length - ext.length);
+
                    if (resolution === 'keep_both') {
-                       const ext = path.extname(file);
-                       const baseName = file.slice(0, file.length - ext.length);
-                       targetFile = `${baseName}_${Date.now()}${ext}`;
+                       if (!keepBothSuffixes[file]) {
+                           keepBothSuffixes[file] = Date.now().toString();
+                       }
+                       targetFile = `${baseName}_${keepBothSuffixes[file]}${ext}`;
+                       fs.copyFileSync(path.join(srcFolder, file), path.join(dstFolder, targetFile));
+                       addedCount++;
+                   } else {
+                       // Replace / Replace All logic with quantity replication
+                       if (!purgeRecord[file]) {
+                           let previousQuantity = 0;
+                           
+                           ['front', 'double_sided'].forEach(face => {
+                               const faceDir = path.join(pluginsBasePath, face);
+                               if (fs.existsSync(faceDir)) {
+                                   const existingFiles = fs.readdirSync(faceDir);
+                                   existingFiles.forEach(existingFile => {
+                                       if (existingFile === file || (existingFile.startsWith(baseName + '_') && existingFile.endsWith(ext))) {
+                                           if (face === 'front') { 
+                                               previousQuantity++;
+                                           }
+                                           try { fs.unlinkSync(path.join(faceDir, existingFile)); } catch(e) {}
+                                       }
+                                   });
+                               }
+                           });
+                           
+                           purgeRecord[file] = true;
+                           
+                           const suffixesToCreate = [];
+                           if (previousQuantity > 1) {
+                               for (let i = 1; i < previousQuantity; i++) {
+                                   suffixesToCreate.push(Date.now().toString() + '_' + i);
+                               }
+                           }
+                           replaceAllSuffixes[file] = suffixesToCreate;
+                       }
+
+                       fs.copyFileSync(path.join(srcFolder, file), path.join(dstFolder, targetFile));
+                       addedCount++;
+
+                       if (replaceAllSuffixes[file] && replaceAllSuffixes[file].length > 0) {
+                           replaceAllSuffixes[file].forEach(suffix => {
+                               const dupName = `${baseName}_${suffix}${ext}`;
+                               fs.copyFileSync(path.join(srcFolder, file), path.join(dstFolder, dupName));
+                               addedCount++;
+                           });
+                       }
                    }
-                   fs.copyFileSync(path.join(srcFolder, file), path.join(dstFolder, targetFile));
-                   addedCount++;
-                   
+
                    // Pair-Aware Replacement: if new front has no double_sided back but old one did, remove it
-                   if (type === 'front') {
+                   if (type === 'front' && resolution !== 'keep_both') {
                        const dsSrc = path.join(tempGamePath, 'double_sided', file);
                        const dsDst = path.join(pluginsBasePath, 'double_sided', targetFile);
                        if (!fs.existsSync(dsSrc) && fs.existsSync(dsDst)) {
                            try { fs.unlinkSync(dsDst); } catch(e) {}
                        }
-                   } else if (type === 'double_sided') {
-                       // If for some reason we copy double_sided but not front, well that's odd,
-                       // but generally double_sided should have a front. If it doesn't, we probably don't delete front.
                    }
                 }
              }
