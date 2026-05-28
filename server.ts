@@ -164,7 +164,7 @@ async function startServer() {
 
   // Serve library static files
   app.use('/library', express.static(path.join(baseDataPath, 'src', 'Library')));
-  app.use('/game', express.static(path.join(scmSourcePath, 'game')));
+  app.use('/game', express.static(path.join(scmPath, 'game')));
   app.use('/plugins_staging', express.static(path.join(baseDataPath, 'src', 'Library', 'Plugins')));
   app.use('/uploads', express.static(path.join(baseDataPath, 'uploads')));
 
@@ -177,7 +177,7 @@ async function startServer() {
     const type = req.body.type === 'back' ? 'back' : (req.body.type === 'double_sided' ? 'double_sided' : 'front');
     const replaceBack = req.body.replaceBack === 'true';
     
-    const targetBase = isLibrary ? libraryPath : path.join(scmSourcePath, 'game');
+    const targetBase = isLibrary ? libraryPath : path.join(scmPath, 'game');
     const targetDir = path.join(targetBase, type);
     
     fs.mkdirSync(targetDir, { recursive: true });
@@ -501,9 +501,9 @@ async function startServer() {
       const fetchScript = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
       const integrityOk = fs.existsSync(fetchScript);
 
-      const frontsDir = path.join(scmSourcePath, 'game', 'front');
-      const backsDir = path.join(scmSourcePath, 'game', 'back');
-      const doubleSidedDir = path.join(scmSourcePath, 'game', 'double_sided');
+      const frontsDir = path.join(scmPath, 'game', 'front');
+      const backsDir = path.join(scmPath, 'game', 'back');
+      const doubleSidedDir = path.join(scmPath, 'game', 'double_sided');
 
       const libFrontsDir = path.join(libraryPath, 'front');
       const libBacksDir = path.join(libraryPath, 'back');
@@ -757,7 +757,7 @@ async function startServer() {
       }
 
       if (replaceBack) {
-        const destDir = path.join(scmSourcePath, 'game', 'back');
+        const destDir = path.join(scmPath, 'game', 'back');
         if (fs.existsSync(destDir)) {
           fs.rmSync(destDir, { recursive: true, force: true });
         }
@@ -769,20 +769,27 @@ async function startServer() {
         if (type === 'front') {
           // Copy file
           try {
-            // Double sided check
-            const isDouble = fs.existsSync(path.join(libraryPath, 'double_sided', name));
-            const libPath = path.join(libraryPath, isDouble ? 'double_sided' : 'front', name);
-            const destDir = path.join(scmSourcePath, 'game', isDouble ? 'double_sided' : 'front');
-            fs.mkdirSync(destDir, { recursive: true });
+            const libPath = path.join(libraryPath, 'front', name);
+            const destDir = path.join(scmPath, 'game', 'front');
+            if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+            
             if (fs.existsSync(libPath)) {
               fs.copyFileSync(libPath, path.join(destDir, name));
+            }
+
+            // Double sided check
+            const dsLibPath = path.join(libraryPath, 'double_sided', name);
+            if (fs.existsSync(dsLibPath)) {
+                const dsDestDir = path.join(scmPath, 'game', 'double_sided');
+                if (!fs.existsSync(dsDestDir)) fs.mkdirSync(dsDestDir, { recursive: true });
+                fs.copyFileSync(dsLibPath, path.join(dsDestDir, name));
             }
           } catch(e) { console.error('Copy front failed:', e); }
         } else if (type === 'back') {
           try {
             const libPath = path.join(libraryPath, 'back', name);
             const altLibPath = path.join(libraryPath, 'Back', name); // Keep fallback if old files exist
-            const destDir = path.join(scmSourcePath, 'game', 'back');
+            const destDir = path.join(scmPath, 'game', 'back');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
               fs.copyFileSync(libPath, path.join(destDir, name));
@@ -793,7 +800,7 @@ async function startServer() {
         } else if (type === 'double_sided') {
           try {
             const libPath = path.join(libraryPath, 'double_sided', name);
-            const destDir = path.join(scmSourcePath, 'game', 'double_sided');
+            const destDir = path.join(scmPath, 'game', 'double_sided');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
               fs.copyFileSync(libPath, path.join(destDir, name));
@@ -858,15 +865,9 @@ async function startServer() {
     
     let isLibrary = assetViewMode === 'library';
     let isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmSourcePath, 'game'));
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
     
-    // Check if double sided
-    let dirType = type;
-    if (type === 'front') {
-      if (fs.existsSync(path.join(targetBase, 'double_sided', name))) dirType = 'double_sided';
-    }
-
-    const dir = path.join(targetBase, dirType);
+    const dir = path.join(targetBase, type);
     const srcPath = path.join(dir, name);
     
     if (!fs.existsSync(srcPath)) return res.status(404).json({error: "File not found"});
@@ -881,6 +882,15 @@ async function startServer() {
     }
     
     fs.copyFileSync(srcPath, path.join(dir, newName));
+
+    if (type === 'front') {
+        const doubleSidedSrc = path.join(targetBase, 'double_sided', name);
+        if (fs.existsSync(doubleSidedSrc)) {
+            const doubleSidedDir = path.join(targetBase, 'double_sided');
+            if(!fs.existsSync(doubleSidedDir)) fs.mkdirSync(doubleSidedDir, { recursive: true });
+            fs.copyFileSync(doubleSidedSrc, path.join(doubleSidedDir, newName));
+        }
+    }
     
     res.json({ success: true, message: `Duplicated to ${newName}`, newName });
   });
@@ -892,7 +902,7 @@ async function startServer() {
     const identities = Array.isArray(identity) ? identity : [identity];
     const isLibrary = assetViewMode === 'library';
     const isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmSourcePath, 'game'));
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
     
     // Create a trash folder
     const trashDir = path.join(baseDataPath, '.trash');
@@ -902,12 +912,7 @@ async function startServer() {
     identities.forEach(id => {
         const [type, name] = id.split(':');
         
-        let dirType = type;
-        if (type === 'front') {
-            if (fs.existsSync(path.join(targetBase, 'double_sided', name))) dirType = 'double_sided';
-        }
-        
-        const dir = path.join(targetBase, dirType);
+        const dir = path.join(targetBase, type);
         const srcPath = path.join(dir, name);
         const trashPath = path.join(trashDir, `deleted_${Date.now()}_${name}`);
 
@@ -916,11 +921,24 @@ async function startServer() {
           if(fs.existsSync(srcPath)) {
             fs.renameSync(srcPath, trashPath); 
             console.log('Moved to trash:', srcPath); 
+          } else {
+             success = false;
           }
         } catch(e) { console.error('Delete fail:', srcPath, e); success = false; }
         
         if (success) {
-            results.push({ name, from: srcPath, trashPath, type: dirType });
+            results.push({ name, from: srcPath, trashPath, type });
+        }
+
+        if (type === 'front') {
+            const doubleSidedSrc = path.join(targetBase, 'double_sided', name);
+            if (fs.existsSync(doubleSidedSrc)) {
+                const dsTrashPath = path.join(trashDir, `deleted_ds_${Date.now()}_${name}`);
+                try {
+                    fs.renameSync(doubleSidedSrc, dsTrashPath);
+                    results.push({ name, from: doubleSidedSrc, trashPath: dsTrashPath, type: 'double_sided' });
+                } catch(e) {}
+            }
         }
     });
 
@@ -931,7 +949,7 @@ async function startServer() {
     const { items, assetViewMode } = req.body;
     const isLibrary = assetViewMode === 'library';
     const isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmSourcePath, 'game'));
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
     
     // items is array of { name, trashPath, type }
     items.forEach((item: any) => {
@@ -952,8 +970,8 @@ async function startServer() {
     if (!identity) return res.status(400).json({error: "No identity"});
     
     const identities = Array.isArray(identity) ? identity : [identity];
-    const targetBase = destination === 'library' ? libraryPath : path.join(scmSourcePath, 'game');
-    const sourceBase = source === 'plugins' ? pluginsPath : (source === 'project' ? path.join(scmSourcePath, 'game') : libraryPath);
+    const targetBase = destination === 'library' ? libraryPath : path.join(scmPath, 'game');
+    const sourceBase = source === 'plugins' ? pluginsPath : (source === 'project' ? path.join(scmPath, 'game') : libraryPath);
 
     if (clearBackFirst) {
         const destBackDir = path.join(targetBase, 'back');
@@ -972,25 +990,29 @@ async function startServer() {
     const results: Array<{name: string, from: string, to: string}> = [];
     identities.forEach(id => {
       const [type, name] = id.split(':');
-      let sourceFolder = type;
-      let targetFolder = type;
       
-      if (type === 'front') {
-         if (fs.existsSync(path.join(sourceBase, 'double_sided', name))) {
-            sourceFolder = 'double_sided';
-            targetFolder = 'double_sided';
-         }
-      }
-      
-      const sourcePath = path.join(sourceBase, sourceFolder, name);
-      const targetPath = path.join(targetBase, targetFolder, name);
+      const sourcePath = path.join(sourceBase, type, name);
+      const targetPath = path.join(targetBase, type, name);
       
       try {
         if (!fs.existsSync(path.dirname(targetPath))) {
             fs.mkdirSync(path.dirname(targetPath), { recursive: true });
         }
-        fs.copyFileSync(sourcePath, targetPath);
-        results.push({ name, from: sourcePath, to: targetPath });
+        if (fs.existsSync(sourcePath)) {
+            fs.copyFileSync(sourcePath, targetPath);
+            results.push({ name, from: sourcePath, to: targetPath });
+        }
+
+        if (type === 'front') {
+            const dsSourcePath = path.join(sourceBase, 'double_sided', name);
+            if (fs.existsSync(dsSourcePath)) {
+                const dsTargetPath = path.join(targetBase, 'double_sided', name);
+                if (!fs.existsSync(path.dirname(dsTargetPath))) {
+                    fs.mkdirSync(path.dirname(dsTargetPath), { recursive: true });
+                }
+                fs.copyFileSync(dsSourcePath, dsTargetPath);
+            }
+        }
       } catch (e) {
          console.error("Error copy plugin card:", e);
       }
@@ -1102,9 +1124,9 @@ async function startServer() {
 
   app.get("/api/assets", (req, res) => {
     import('fs').then((fs) => {
-      const frontsDir = path.join(scmSourcePath, 'game', 'front');
-      const backsDir = path.join(scmSourcePath, 'game', 'back');
-      const doubleSidedDir = path.join(scmSourcePath, 'game', 'double_sided');
+      const frontsDir = path.join(scmPath, 'game', 'front');
+      const backsDir = path.join(scmPath, 'game', 'back');
+      const doubleSidedDir = path.join(scmPath, 'game', 'double_sided');
       
       const getFiles = (dir: string) => {
         try {
@@ -1202,8 +1224,8 @@ async function startServer() {
       let spawnCommand = command;
 
       if (command === 'create_pdf.py') {
-        spawnCwd = scmSourcePath;
-        spawnCommand = path.join(scmSourcePath, command);
+        spawnCwd = scmPath;
+        spawnCommand = path.join(scmPath, command);
       }
 
       if (req.body.tempDirId) {
@@ -1257,7 +1279,7 @@ async function startServer() {
       child.on('close', (code) => {
           clearInterval(pingInterval);
           if (command === 'create_pdf.py') {
-            const generatedPdf = path.join(scmSourcePath, 'game', 'output', 'game.pdf');
+            const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
             const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
             
             if (code === 0 && fs.existsSync(generatedPdf)) {
@@ -1380,8 +1402,8 @@ async function startServer() {
       let scriptAbsPath = path.join(scmPath, command);
 
       if (command === 'create_pdf.py') {
-        execCwd = scmSourcePath;
-        scriptAbsPath = path.join(scmSourcePath, command);
+        execCwd = scmPath;
+        scriptAbsPath = path.join(scmPath, command);
       }
 
       if (req.body.tempDirId) {
@@ -1444,7 +1466,7 @@ async function startServer() {
 
         // Post-command actions (Moving PDF omitted, kept in place)
         if (command === 'create_pdf.py') {
-          const generatedPdf = path.join(scmSourcePath, 'game', 'output', 'game.pdf');
+          const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
           const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
           
           if (!error && fs.existsSync(generatedPdf)) {
