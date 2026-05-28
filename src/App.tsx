@@ -612,7 +612,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
   const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check'|'keep'|'replace'} | null>(null);
-  const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'} | null>(null);
+  const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'|'keep_both'} | null>(null);
   const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'>} | null>(null);
 
   useEffect(() => {
@@ -3502,12 +3502,12 @@ export default function App() {
         )}
 
         {fetchConflictData && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6 bg-black/80 backdrop-blur-md">
             <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[#0f0f13] rounded-2xl w-full max-w-md border border-white/10 shadow-2xl overflow-hidden"
+              className="bg-[#0f0f13] rounded-2xl w-full max-w-4xl border border-white/10 shadow-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-white/5 bg-primary-500/10">
                 <div className="flex items-center gap-3">
@@ -3524,15 +3524,48 @@ export default function App() {
               </div>
               
               <div className="p-6 space-y-6">
-                <div className="bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs text-white/60 max-h-32 overflow-y-auto">
-                  <ul className="space-y-1">
-                    {fetchConflictData.collisions.map((c, i) => (
-                      <li key={`${c}-${i}`} className="truncate">• {c.split(':')[1]}</li>
-                    ))}
-                  </ul>
+                <div className="bg-black/40 border border-white/5 rounded-xl p-4 max-h-[50vh] overflow-y-auto space-y-8">
+                  {fetchConflictData.collisions.map((c, i) => {
+                    const type = c.split(':')[0];
+                    const name = c.split(':')[1];
+                    const ext = name.substring(name.lastIndexOf('.'));
+                    const baseName = name.substring(0, name.lastIndexOf('.'));
+                    
+                    const existingList = type === 'back' 
+                      ? status?.plugins?.backs 
+                      : (type === 'double_sided' ? status?.plugins?.double_sided : status?.plugins?.fronts);
+                      
+                    const variants = (existingList || []).filter(f => f === name || (f.startsWith(`${baseName}_`) && f.endsWith(ext)));
+
+                    return (
+                      <div key={`${c}-${i}`} className="space-y-4 border-b border-white/10 pb-6 last:border-0 last:pb-0">
+                        <div className="text-white font-bold truncate text-sm px-2 text-center md:text-left">{name}</div>
+                        
+                        <div className="flex flex-col md:flex-row gap-6">
+                           <div className="w-full md:w-1/3 flex flex-col gap-3">
+                             <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
+                             <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
+                                <img src={`/library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
+                             </div>
+                           </div>
+
+                           <div className="w-full md:w-2/3 flex flex-col gap-3">
+                             <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
+                             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
+                                {variants.map(v => (
+                                   <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
+                                      <img src={`/plugins_staging/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                   </div>
+                                ))}
+                             </div>
+                           </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col md:flex-row gap-3">
                   <button 
                     onClick={async () => {
                       const { tempDirId, collisions } = fetchConflictData;
