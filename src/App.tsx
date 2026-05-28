@@ -1989,7 +1989,7 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.6'}</span>
+                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.7'}</span>
                 </div>
               </div>
             </div>
