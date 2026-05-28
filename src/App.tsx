@@ -4616,7 +4616,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.includes(name);
     if (isDoubleSided) {
       const hasDoubleSidedOnDisk = allAssets?.double_sided?.includes(name) || type === 'double_sided';
-      if (hasDoubleSidedOnDisk && allAssets?.fronts?.includes(name)) {
+      if (hasDoubleSidedOnDisk && (allAssets?.fronts?.includes(name) || type === 'double_sided' || assetViewMode === 'library' || assetViewMode === 'plugins')) {
         return { name, folder: 'double_sided' };
       }
       // If we only have double_sided on disk and no fronts of same name, we fallback to standard backs

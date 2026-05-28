@@ -1323,8 +1323,11 @@ async function startServer() {
         ['front', 'back', 'double_sided'].forEach(df => {
            const srcBaseDir = path.join(scmPath, 'game', df);
            const destBaseDir = path.join(scmSourcePath, 'game', df);
+           if (fs.existsSync(destBaseDir)) {
+               try { fs.rmSync(destBaseDir, { recursive: true, force: true }); } catch (e) {}
+           }
+           fs.mkdirSync(destBaseDir, { recursive: true });
            if (fs.existsSync(srcBaseDir)) {
-               fs.mkdirSync(destBaseDir, { recursive: true });
                fs.readdirSync(srcBaseDir).forEach(file => {
                    fs.copyFileSync(path.join(srcBaseDir, file), path.join(destBaseDir, file));
                });
@@ -1512,8 +1515,11 @@ async function startServer() {
         ['front', 'back', 'double_sided'].forEach(df => {
            const srcBaseDir = path.join(scmPath, 'game', df);
            const destBaseDir = path.join(scmSourcePath, 'game', df);
+           if (fs.existsSync(destBaseDir)) {
+               try { fs.rmSync(destBaseDir, { recursive: true, force: true }); } catch (e) {}
+           }
+           fs.mkdirSync(destBaseDir, { recursive: true });
            if (fs.existsSync(srcBaseDir)) {
-               fs.mkdirSync(destBaseDir, { recursive: true });
                fs.readdirSync(srcBaseDir).forEach(file => {
                    fs.copyFileSync(path.join(srcBaseDir, file), path.join(destBaseDir, file));
                });
