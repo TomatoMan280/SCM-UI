@@ -1748,17 +1748,33 @@ async function startServer() {
                                }
                            }
                            replaceAllSuffixes[file] = suffixesToCreate;
-                       }
 
-                       fs.copyFileSync(path.join(srcFolder, file), path.join(dstFolder, targetFile));
-                       addedCount++;
-
-                       if (replaceAllSuffixes[file] && replaceAllSuffixes[file].length > 0) {
-                           replaceAllSuffixes[file].forEach(suffix => {
-                               const dupName = `${baseName}_${suffix}${ext}`;
-                               fs.copyFileSync(path.join(srcFolder, file), path.join(dstFolder, dupName));
-                               addedCount++;
+                           // --- PAIR-AWARE INITIAL COPY ---
+                           ['front', 'double_sided'].forEach(face => {
+                               const faceSrc = path.join(tempGamePath, face, file);
+                               const faceDst = path.join(pluginsBasePath, face, targetFile);
+                               if (fs.existsSync(faceSrc)) {
+                                   if (!fs.existsSync(path.dirname(faceDst))) fs.mkdirSync(path.dirname(faceDst), { recursive: true });
+                                   fs.copyFileSync(faceSrc, faceDst);
+                                   addedCount++;
+                               }
                            });
+
+                           // --- PAIR-AWARE MULTIPLICATION ---
+                           if (suffixesToCreate.length > 0) {
+                               suffixesToCreate.forEach(suffix => {
+                                   const dupName = `${baseName}_${suffix}${ext}`;
+                                   ['front', 'double_sided'].forEach(face => {
+                                       const faceSrc = path.join(tempGamePath, face, file);
+                                       const faceDst = path.join(pluginsBasePath, face, dupName);
+                                       if (fs.existsSync(faceSrc)) {
+                                           if (!fs.existsSync(path.dirname(faceDst))) fs.mkdirSync(path.dirname(faceDst), { recursive: true });
+                                           fs.copyFileSync(faceSrc, faceDst);
+                                           addedCount++;
+                                       }
+                                   });
+                               });
+                           }
                        }
                    }
 
