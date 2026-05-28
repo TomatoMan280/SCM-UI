@@ -164,7 +164,7 @@ async function startServer() {
 
   // Serve library static files
   app.use('/library', express.static(path.join(baseDataPath, 'src', 'Library')));
-  app.use('/game', express.static(path.join(scmPath, 'game')));
+  app.use('/game', express.static(path.join(scmSourcePath, 'game')));
   app.use('/plugins_staging', express.static(path.join(baseDataPath, 'src', 'Library', 'Plugins')));
   app.use('/uploads', express.static(path.join(baseDataPath, 'uploads')));
 
@@ -177,7 +177,7 @@ async function startServer() {
     const type = req.body.type === 'back' ? 'back' : (req.body.type === 'double_sided' ? 'double_sided' : 'front');
     const replaceBack = req.body.replaceBack === 'true';
     
-    const targetBase = isLibrary ? libraryPath : path.join(scmPath, 'game');
+    const targetBase = isLibrary ? libraryPath : path.join(scmSourcePath, 'game');
     const targetDir = path.join(targetBase, type);
     
     fs.mkdirSync(targetDir, { recursive: true });
@@ -187,7 +187,6 @@ async function startServer() {
             const existing = fs.readdirSync(targetDir);
             existing.forEach(f => fs.unlinkSync(path.join(targetDir, f)));
         } catch(e) {}
-        mockCards.backs = [];
     }
 
     const targetPath = path.join(targetDir, req.file.originalname);
@@ -502,9 +501,9 @@ async function startServer() {
       const fetchScript = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
       const integrityOk = fs.existsSync(fetchScript);
 
-      const frontsDir = path.join(scmPath, 'game', 'front');
-      const backsDir = path.join(scmPath, 'game', 'back');
-      const doubleSidedDir = path.join(scmPath, 'game', 'double_sided');
+      const frontsDir = path.join(scmSourcePath, 'game', 'front');
+      const backsDir = path.join(scmSourcePath, 'game', 'back');
+      const doubleSidedDir = path.join(scmSourcePath, 'game', 'double_sided');
 
       const libFrontsDir = path.join(libraryPath, 'front');
       const libBacksDir = path.join(libraryPath, 'back');
@@ -527,35 +526,6 @@ async function startServer() {
       const actualLibBacks = getFiles(libBacksDir);
       const actualLibDoubleSided = getFiles(libDoubleSidedDir);
 
-      // Remove deleted files
-      mockCards.fronts = mockCards.fronts.filter(f => actualFronts.includes(f));
-      mockCards.backs = mockCards.backs.filter(f => actualBacks.includes(f));
-      mockCards.double_sided = mockCards.double_sided.filter(f => actualDoubleSided.includes(f));
-
-      mockLibrary.fronts = mockLibrary.fronts.filter(f => actualLibFronts.includes(f));
-      mockLibrary.backs = mockLibrary.backs.filter(f => actualLibBacks.includes(f));
-      mockLibrary.double_sided = mockLibrary.double_sided.filter(f => actualLibDoubleSided.includes(f));
-
-      // Auto-add new files
-      actualFronts.forEach(file => {
-        if (!mockCards.fronts.includes(file)) mockCards.fronts.push(file);
-      });
-      actualBacks.forEach(file => {
-        if (!mockCards.backs.includes(file)) mockCards.backs.push(file);
-      });
-      actualDoubleSided.forEach(file => {
-        if (!mockCards.double_sided.includes(file)) mockCards.double_sided.push(file);
-      });
-
-      actualLibFronts.forEach(file => {
-        if (!mockLibrary.fronts.includes(file)) mockLibrary.fronts.push(file);
-      });
-      actualLibBacks.forEach(file => {
-        if (!mockLibrary.backs.includes(file)) mockLibrary.backs.push(file);
-      });
-      actualLibDoubleSided.forEach(file => {
-        if (!mockLibrary.double_sided.includes(file)) mockLibrary.double_sided.push(file);
-      });
       const pluginsFrontsDir = path.join(pluginsPath, 'front');
       const pluginsBacksDir = path.join(pluginsPath, 'back');
       const pluginsDoubleSidedDir = path.join(pluginsPath, 'double_sided');
@@ -601,8 +571,8 @@ async function startServer() {
           rootDir: rootDir,
           pythonFound: pythonHasBeenFound,
           dependenciesOk: toolInstalled,
-          assets: mockCards,
-          library: mockLibrary,
+          assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
+          library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
           integrityOk: integrityOk,
           isElectron: isElectron,
           libraryPath: libraryPath,
@@ -621,8 +591,8 @@ async function startServer() {
             rootDir: rootDir,
             pythonFound: true,
             dependenciesOk: toolInstalled,
-            assets: mockCards,
-            library: mockLibrary,
+            assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
+            library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
             libraryPath: libraryPath,
             userDataPath: baseDataPath,
             plugins: { fronts: [], backs: [], double_sided: [] },
@@ -638,8 +608,8 @@ async function startServer() {
         rootDir: rootDir,
         pythonFound: true,
         dependenciesOk: toolInstalled,
-        assets: mockCards,
-        library: mockLibrary,
+        assets: { fronts: [], backs: [], double_sided: [] },
+        library: { fronts: [], backs: [], double_sided: [] },
         libraryPath: libraryPath,
         userDataPath: baseDataPath,
         plugins: { fronts: [], backs: [], double_sided: [] },
@@ -787,37 +757,32 @@ async function startServer() {
       }
 
       if (replaceBack) {
-        mockCards.backs = [];
+        const destDir = path.join(scmSourcePath, 'game', 'back');
+        if (fs.existsSync(destDir)) {
+          fs.rmSync(destDir, { recursive: true, force: true });
+        }
+        fs.mkdirSync(destDir, { recursive: true });
       }
 
       items.forEach(item => {
         const [type, name] = item.split(':');
         if (type === 'front') {
-          if (!mockCards.fronts.includes(name)) mockCards.fronts.push(name);
-          
           // Copy file
           try {
             // Double sided check
-            const isDouble = mockLibrary.double_sided.includes(name);
+            const isDouble = fs.existsSync(path.join(libraryPath, 'double_sided', name));
             const libPath = path.join(libraryPath, isDouble ? 'double_sided' : 'front', name);
-            const destDir = path.join(scmPath, 'game', isDouble ? 'double_sided' : 'front');
+            const destDir = path.join(scmSourcePath, 'game', isDouble ? 'double_sided' : 'front');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
               fs.copyFileSync(libPath, path.join(destDir, name));
             }
           } catch(e) { console.error('Copy front failed:', e); }
-
-          // Preserve double-sided status if it exists in library
-          if (mockLibrary.double_sided.includes(name) && !mockCards.double_sided.includes(name)) {
-            mockCards.double_sided.push(name);
-          }
         } else if (type === 'back') {
-          if (!mockCards.backs.includes(name)) mockCards.backs.push(name);
-
           try {
             const libPath = path.join(libraryPath, 'back', name);
             const altLibPath = path.join(libraryPath, 'Back', name); // Keep fallback if old files exist
-            const destDir = path.join(scmPath, 'game', 'back');
+            const destDir = path.join(scmSourcePath, 'game', 'back');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
               fs.copyFileSync(libPath, path.join(destDir, name));
@@ -826,11 +791,9 @@ async function startServer() {
             }
           } catch(e) { console.error('Copy back failed:', e); }
         } else if (type === 'double_sided') {
-          if (!mockCards.double_sided.includes(name)) mockCards.double_sided.push(name);
-          
           try {
             const libPath = path.join(libraryPath, 'double_sided', name);
-            const destDir = path.join(scmPath, 'game', 'double_sided');
+            const destDir = path.join(scmSourcePath, 'game', 'double_sided');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
               fs.copyFileSync(libPath, path.join(destDir, name));
@@ -895,18 +858,12 @@ async function startServer() {
     
     let isLibrary = assetViewMode === 'library';
     let isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmSourcePath, 'game'));
     
     // Check if double sided
     let dirType = type;
     if (type === 'front') {
-      if (isPlugins) {
-        if (fs.existsSync(path.join(targetBase, 'double_sided', name))) dirType = 'double_sided';
-      } else {
-        if (isLibrary ? mockLibrary.double_sided.includes(name) : mockCards.double_sided.includes(name)) {
-          dirType = 'double_sided';
-        }
-      }
+      if (fs.existsSync(path.join(targetBase, 'double_sided', name))) dirType = 'double_sided';
     }
 
     const dir = path.join(targetBase, dirType);
@@ -925,38 +882,6 @@ async function startServer() {
     
     fs.copyFileSync(srcPath, path.join(dir, newName));
     
-    const insertAfter = (arr: string[], target: string, item: string) => {
-      const idx = arr.indexOf(target);
-      if (idx !== -1) arr.splice(idx + 1, 0, item);
-      else arr.push(item);
-    };
-
-    if (isLibrary) {
-      if (type === 'front') insertAfter(mockLibrary.fronts, name, newName);
-      else if (type === 'back') insertAfter(mockLibrary.backs, name, newName);
-      else if (type === 'double_sided') insertAfter(mockLibrary.double_sided, name, newName);
-      
-      if (dirType === 'double_sided') {
-         if (!mockLibrary.double_sided.includes(newName)) {
-            insertAfter(mockLibrary.double_sided, name, newName);
-         }
-         mockLibrary.fronts = mockLibrary.fronts.filter(f => f !== newName);
-         mockLibrary.backs = mockLibrary.backs.filter(b => b !== newName);
-      }
-    } else if (!isPlugins) {
-      if (type === 'front') insertAfter(mockCards.fronts, name, newName);
-      else if (type === 'back') insertAfter(mockCards.backs, name, newName);
-      else if (type === 'double_sided') insertAfter(mockCards.double_sided, name, newName);
-      
-      if (dirType === 'double_sided') {
-         if (!mockCards.double_sided.includes(newName)) {
-            insertAfter(mockCards.double_sided, name, newName);
-         }
-         mockCards.fronts = mockCards.fronts.filter(f => f !== newName);
-         mockCards.backs = mockCards.backs.filter(b => b !== newName);
-      }
-    }
-    
     res.json({ success: true, message: `Duplicated to ${newName}`, newName });
   });
 
@@ -967,7 +892,7 @@ async function startServer() {
     const identities = Array.isArray(identity) ? identity : [identity];
     const isLibrary = assetViewMode === 'library';
     const isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmSourcePath, 'game'));
     
     // Create a trash folder
     const trashDir = path.join(baseDataPath, '.trash');
@@ -979,13 +904,7 @@ async function startServer() {
         
         let dirType = type;
         if (type === 'front') {
-            if (isPlugins) {
-                if (fs.existsSync(path.join(targetBase, 'double_sided', name))) dirType = 'double_sided';
-            } else {
-                if (isLibrary ? mockLibrary.double_sided.includes(name) : mockCards.double_sided.includes(name)) {
-                    dirType = 'double_sided';
-                }
-            }
+            if (fs.existsSync(path.join(targetBase, 'double_sided', name))) dirType = 'double_sided';
         }
         
         const dir = path.join(targetBase, dirType);
@@ -1002,15 +921,6 @@ async function startServer() {
         
         if (success) {
             results.push({ name, from: srcPath, trashPath, type: dirType });
-            if (isLibrary) {
-                mockLibrary.fronts = mockLibrary.fronts.filter(n => n !== name);
-                mockLibrary.backs = mockLibrary.backs.filter(n => n !== name);
-                mockLibrary.double_sided = mockLibrary.double_sided.filter(n => n !== name);
-            } else if (!isPlugins) {
-                mockCards.fronts = mockCards.fronts.filter(n => n !== name);
-                mockCards.backs = mockCards.backs.filter(n => n !== name);
-                mockCards.double_sided = mockCards.double_sided.filter(n => n !== name);
-            }
         }
     });
 
@@ -1021,7 +931,7 @@ async function startServer() {
     const { items, assetViewMode } = req.body;
     const isLibrary = assetViewMode === 'library';
     const isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmSourcePath, 'game'));
     
     // items is array of { name, trashPath, type }
     items.forEach((item: any) => {
@@ -1032,17 +942,6 @@ async function startServer() {
           fs.renameSync(item.trashPath, path.join(targetDir, item.name));
         }
       } catch (e) {}
-
-      // Add back to mock lists
-      if (isLibrary) {
-        if (item.type === 'front') mockLibrary.fronts.push(item.name);
-        else if (item.type === 'back') mockLibrary.backs.push(item.name);
-        else mockLibrary.double_sided.push(item.name);
-      } else if (!isPlugins) {
-        if (item.type === 'front') mockCards.fronts.push(item.name);
-        else if (item.type === 'back') mockCards.backs.push(item.name);
-        else mockCards.double_sided.push(item.name);
-      }
     });
 
     res.json({ success: true });
@@ -1053,8 +952,8 @@ async function startServer() {
     if (!identity) return res.status(400).json({error: "No identity"});
     
     const identities = Array.isArray(identity) ? identity : [identity];
-    const targetBase = destination === 'library' ? libraryPath : path.join(scmPath, 'game');
-    const sourceBase = source === 'plugins' ? pluginsPath : (source === 'project' ? path.join(scmPath, 'game') : libraryPath);
+    const targetBase = destination === 'library' ? libraryPath : path.join(scmSourcePath, 'game');
+    const sourceBase = source === 'plugins' ? pluginsPath : (source === 'project' ? path.join(scmSourcePath, 'game') : libraryPath);
 
     if (clearBackFirst) {
         const destBackDir = path.join(targetBase, 'back');
@@ -1066,13 +965,6 @@ async function startServer() {
                         fs.unlinkSync(fPath);
                     }
                 });
-                
-                // Also update mock states if applicable
-                if (destination === 'project') {
-                    mockCards.backs = [];
-                } else if (destination === 'library') {
-                    mockLibrary.backs = [];
-                }
             } catch(e) {}
         }
     }
@@ -1084,17 +976,9 @@ async function startServer() {
       let targetFolder = type;
       
       if (type === 'front') {
-         if (source === 'plugins') {
-            if (fs.existsSync(path.join(sourceBase, 'double_sided', name))) {
-               sourceFolder = 'double_sided';
-               targetFolder = 'double_sided';
-            }
-         } else {
-            const isLibSrc = source === 'library';
-            if (isLibSrc ? mockLibrary.double_sided.includes(name) : mockCards.double_sided.includes(name)) {
-               sourceFolder = 'double_sided';
-               targetFolder = 'double_sided';
-            }
+         if (fs.existsSync(path.join(sourceBase, 'double_sided', name))) {
+            sourceFolder = 'double_sided';
+            targetFolder = 'double_sided';
          }
       }
       
@@ -1218,13 +1102,14 @@ async function startServer() {
 
   app.get("/api/assets", (req, res) => {
     import('fs').then((fs) => {
-      const frontsDir = path.join(scmPath, 'game', 'front');
-      const backsDir = path.join(scmPath, 'game', 'back');
+      const frontsDir = path.join(scmSourcePath, 'game', 'front');
+      const backsDir = path.join(scmSourcePath, 'game', 'back');
+      const doubleSidedDir = path.join(scmSourcePath, 'game', 'double_sided');
       
       const getFiles = (dir: string) => {
         try {
           if (fs.existsSync(dir)) {
-            return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+            return fs.readdirSync(dir).filter((f: string) => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
           }
         } catch (e) { }
         return [];
@@ -1233,9 +1118,9 @@ async function startServer() {
       res.json({
         fronts: getFiles(frontsDir),
         backs: getFiles(backsDir),
-        double_sided: []
+        double_sided: getFiles(doubleSidedDir)
       });
-    }).catch(() => res.json(mockCards));
+    }).catch(() => res.json({ fronts: [], backs: [], double_sided: [] }));
   });
 
   app.post("/api/run-command-stream", (req, res) => {
@@ -1319,20 +1204,6 @@ async function startServer() {
       if (command === 'create_pdf.py') {
         spawnCwd = scmSourcePath;
         spawnCommand = path.join(scmSourcePath, command);
-        
-        ['front', 'back', 'double_sided'].forEach(df => {
-           const srcBaseDir = path.join(scmPath, 'game', df);
-           const destBaseDir = path.join(scmSourcePath, 'game', df);
-           if (fs.existsSync(destBaseDir)) {
-               try { fs.rmSync(destBaseDir, { recursive: true, force: true }); } catch (e) {}
-           }
-           fs.mkdirSync(destBaseDir, { recursive: true });
-           if (fs.existsSync(srcBaseDir)) {
-               fs.readdirSync(srcBaseDir).forEach(file => {
-                   fs.copyFileSync(path.join(srcBaseDir, file), path.join(destBaseDir, file));
-               });
-           }
-        });
       }
 
       if (req.body.tempDirId) {
@@ -1511,20 +1382,6 @@ async function startServer() {
       if (command === 'create_pdf.py') {
         execCwd = scmSourcePath;
         scriptAbsPath = path.join(scmSourcePath, command);
-        
-        ['front', 'back', 'double_sided'].forEach(df => {
-           const srcBaseDir = path.join(scmPath, 'game', df);
-           const destBaseDir = path.join(scmSourcePath, 'game', df);
-           if (fs.existsSync(destBaseDir)) {
-               try { fs.rmSync(destBaseDir, { recursive: true, force: true }); } catch (e) {}
-           }
-           fs.mkdirSync(destBaseDir, { recursive: true });
-           if (fs.existsSync(srcBaseDir)) {
-               fs.readdirSync(srcBaseDir).forEach(file => {
-                   fs.copyFileSync(path.join(srcBaseDir, file), path.join(destBaseDir, file));
-               });
-           }
-        });
       }
 
       if (req.body.tempDirId) {
