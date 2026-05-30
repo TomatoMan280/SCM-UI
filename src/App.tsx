@@ -1148,7 +1148,7 @@ export default function App() {
     addLog("[Plugins] Exported configuration to JSON file.");
   };
 
-  const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string }) => {
+  const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string }) => {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     const abortController = new AbortController();
@@ -1157,7 +1157,7 @@ export default function App() {
       const res = await fetch('/api/run-command-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId, uploadedPluginFilePath: options?.uploadedPluginFilePath, pythonPath }),
+        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId, uploadedPluginFilePath: options?.uploadedPluginFilePath, pythonPath, crop: options?.crop }),
         signal: abortController.signal
       });
       if (!res.ok) {
@@ -1317,12 +1317,11 @@ export default function App() {
     if (cmdOptions.show_outline) args.push('--show_outline');
     if (cmdOptions.only_fronts) args.push('--only_fronts');
     if (cmdOptions.output_images) args.push('--output_images');
-    if (cmdOptions.crop) { args.push('--crop'); args.push(cmdOptions.crop); }
     if (cmdOptions.crop_backs) { args.push('--crop_backs'); args.push(cmdOptions.crop_backs); }
     if (cmdOptions.label) { args.push('--label'); args.push(cmdOptions.label); }
     if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
-    const result = await runCommand('create_pdf.py', args, { startMessage: 'Generating PDF...' });
+    const result = await runCommand('create_pdf.py', args, { startMessage: 'Generating PDF...', crop: cmdOptions.crop });
     if (result?.success && result?.output && result.output.some((line: string) => line.includes('PDF generated successfully') || line.includes('PDF successfully moved') || line.includes('Generated PDF'))) {
       setPdfReady(true);
       setPdfReadyToastOpen(true);
@@ -1989,7 +1988,7 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">v{status?.version || '1.0.7'}</span>
+                  <span className="text-white/80 font-mono text-[10px]">V1.0.7 Beta</span>
                 </div>
               </div>
             </div>
@@ -2247,9 +2246,18 @@ export default function App() {
                             exit={{ height: 0, opacity: 0 }}
                             className="overflow-hidden"
                           >
-                             <div className="grid grid-cols-2 md:grid-cols-8 gap-4 pb-2 px-1">
-                                <div className="space-y-1.5 col-span-1 md:col-span-2">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Crop Backs (mm)</label>
+                             <div className="grid grid-cols-2 lg:grid-cols-10 gap-x-4 gap-y-4 pb-2 px-1 text-left">
+                                <div className="space-y-1.5 col-span-1 lg:col-span-2">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block overflow-hidden text-ellipsis">Crop Fronts</label>
+                                  <input 
+                                    type="text" 
+                                    value={cmdOptions.crop} 
+                                    onChange={(e) => setCmdOptions(p => ({...p, crop: e.target.value}))} 
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
+                                  />
+                                </div>
+                                <div className="space-y-1.5 col-span-1 lg:col-span-2">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block overflow-hidden text-ellipsis">Crop Backs</label>
                                   <input 
                                     type="text" 
                                     value={cmdOptions.crop_backs} 
@@ -2257,8 +2265,8 @@ export default function App() {
                                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
                                   />
                                 </div>
-                                <div className="space-y-1.5 col-span-1 md:col-span-2">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Extend Corners (px)</label>
+                                <div className="space-y-1.5 col-span-1 lg:col-span-2">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block overflow-hidden text-ellipsis" title="Extend Corners (px)">Extend Corners</label>
                                   <input 
                                     type="number" 
                                     value={cmdOptions.extend_corners} 
@@ -2266,8 +2274,8 @@ export default function App() {
                                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
                                   />
                                 </div>
-                                <div className="space-y-1.5 col-span-1 md:col-span-1">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Skip</label>
+                                <div className="space-y-1.5 col-span-1 lg:col-span-1">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block overflow-hidden text-ellipsis">Skip</label>
                                   <input 
                                     type="number" 
                                     value={cmdOptions.skip} 
@@ -2275,7 +2283,7 @@ export default function App() {
                                     className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
                                   />
                                 </div>
-                                <div className="space-y-1.5 col-span-1 md:col-span-3">
+                                <div className="space-y-1.5 col-span-2 lg:col-span-3">
                                   <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Label</label>
                                   <input 
                                     type="text" 

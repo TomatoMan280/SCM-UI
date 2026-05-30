@@ -1340,6 +1340,13 @@ async function startServer() {
       if (command === 'create_pdf.py') {
         spawnCwd = scmPath;
         spawnCommand = path.join(scmPath, command);
+        try {
+            const versionOutput = spawnSync(pythonCmd, ['--version']);
+            const verStr = "Python Version Diagnostics: " + (versionOutput.stdout?.toString().trim() || versionOutput.stderr?.toString().trim() || 'Unknown');
+            sendEvent('stdout', `[Diagnostics] ${verStr}`);
+        } catch (e: any) {
+            sendEvent('stdout', `[Diagnostics] Failed to determine Python version: ${e.message}`);
+        }
       }
 
       if (req.body.tempDirId) {
@@ -1370,6 +1377,15 @@ async function startServer() {
       }
 
       let finalArgs = [...(args || [])];
+      
+      // Backend Crop Execution: Append crop argument if provided via req.body
+      if (req.body.crop) {
+          const hasCrop = finalArgs.some(a => a === '--crop');
+          if (!hasCrop) {
+              finalArgs.push('--crop', req.body.crop.toString());
+          }
+      }
+
       if (req.body.uploadedPluginFilePath) {
          finalArgs = finalArgs.map(arg => 
             arg === req.body.uploadedPluginFilePath ? path.join(scmPath, arg) : arg
@@ -1392,11 +1408,15 @@ async function startServer() {
           lines.forEach((line: string) => sendEvent('stdout', line));
       });
 
+      let dependencyError = false;
       child.stderr.on('data', (data) => {
           const lines = data.toString().split('\n').filter(Boolean);
           lines.forEach((line: string) => {
              if (line.includes('[Console Error]') || line.includes('Exception:')) {
                  hasError = true;
+             }
+             if (line.includes('ModuleNotFoundError') || line.includes('No module named') || line.includes('click')) {
+                 dependencyError = true;
              }
              sendEvent('stderr', line);
           });
@@ -1413,7 +1433,11 @@ async function startServer() {
               fs.copyFileSync(generatedPdf, targetPdf);
               sendEvent('stdout', "[System] PDF generated successfully.");
             } else {
-              sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+              if (dependencyError) {
+                sendEvent('error', "[Error] Run 'pip install -r requirements.txt' or check Python version compatibility.");
+              } else {
+                sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+              }
               hasError = true;
               if (fs.existsSync(targetPdf)) {
                 try { fs.unlinkSync(targetPdf); } catch (e) {}
@@ -1543,7 +1567,31 @@ async function startServer() {
       if (command === 'create_pdf.py') {
         execCwd = scmPath;
         scriptAbsPath = path.join(scmPath, command);
+        try {
+            const versionOutput = spawnSync(pythonCmd, ['--version']);
+            const verStr = "Python Version Diagnostics: " + (versionOutput.stdout?.toString().trim() || versionOutput.stderr?.toString().trim() || 'Unknown');
+            output.push(`[Diagnostics] ${verStr}`);
+        } catch (e: any) {
+            output.push(`[Diagnostics] Failed to determine Python version: ${e.message}`);
+        }
       }
+
+      let parsedArgs = [...(args || [])];
+      if (req.body.crop) {
+          const hasCrop = parsedArgs.some(a => a === '--crop');
+          if (!hasCrop) {
+              parsedArgs.push('--crop', req.body.crop.toString());
+          }
+      }
+
+    // Only argStringUpdated declaration
+      const argStringUpdated = parsedArgs.map((arg: any) => {
+        let finalArg = arg;
+        if (req.body.uploadedPluginFilePath && arg === req.body.uploadedPluginFilePath) {
+            finalArg = path.join(scmPath, arg);
+        }
+        return finalArg.toString().includes(' ') ? `"${finalArg}"` : finalArg;
+      }).join(" ");
 
       if (req.body.tempDirId) {
         customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
@@ -1569,7 +1617,7 @@ async function startServer() {
         }
       }
       
-      let execCommand = `${pythonCmd} "${scriptAbsPath}" ${argString}`;
+      let execCommand = `${pythonCmd} "${scriptAbsPath}" ${argStringUpdated}`;
 
       console.log(`[System] Executing: ${execCommand} in ${execCwd}`);
       
