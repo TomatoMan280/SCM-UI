@@ -1080,10 +1080,8 @@ export default function App() {
       const baseWithoutExt = f.slice(0, f.length - ext.length);
       const match = baseWithoutExt.match(/^(\d+)(.*)$/);
       
-      let qty = 1;
       let coreName = baseWithoutExt;
       if (match) {
-          qty = parseInt(match[1], 10);
           coreName = match[2];
       }
       const displayName = coreName + ext;
@@ -1092,7 +1090,7 @@ export default function App() {
           groups.set(displayName, { quantity: 0, name: f, displayName: displayName });
       }
       const g = groups.get(displayName)!;
-      g.quantity += qty;
+      g.quantity += 1;
     });
     
     return Array.from(groups.values());
@@ -4892,7 +4890,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
         }}
       >
         {quantity && quantity > 1 && (
-          <div className="absolute top-2 right-2 z-40 min-w-[28px] h-7 px-1.5 rounded-full bg-primary-600/90 backdrop-blur border border-primary-400 text-white font-bold text-xs flex items-center justify-center shadow-lg shadow-black/40">
+          <div className="absolute bottom-2 right-2 z-40 min-w-[28px] h-7 px-1.5 rounded-full bg-primary-600/90 backdrop-blur border border-primary-400 text-white font-bold text-xs flex items-center justify-center shadow-lg shadow-black/40">
             x{quantity}
           </div>
         )}
@@ -4903,7 +4901,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 onToggleFlip(e);
               }
             }}
-            className={cn("absolute right-2 z-30 w-7 h-7 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center transition-all shadow-md active:scale-95 hover:bg-primary-600 hover:border-primary-400 group/flip opacity-0 group-hover:opacity-100", quantity && quantity > 1 ? "top-10" : "top-2")}
+            className={cn("absolute top-2 right-2 z-30 w-7 h-7 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center transition-all shadow-md active:scale-95 hover:bg-primary-600 hover:border-primary-400 group/flip opacity-0 group-hover:opacity-100")}
             title="Flip Card"
           >
             <RotateCcw size={14} className="group-hover/flip:-rotate-180 transition-transform duration-500" />
