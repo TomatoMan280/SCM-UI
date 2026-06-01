@@ -4877,32 +4877,12 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
             >
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                 {backFace ? (
-                  <>
-                    <img 
-                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}`)}
-                      alt={backFace.name}
-                      loading="lazy"
-                      className={cn(
-                        "w-full h-full object-cover",
-                        backFace?.folder === 'double_sided' ? "opacity-100" : "opacity-60"
-                      )}
-                    />
-                    {backFace?.folder !== 'double_sided' && (
-                      <>
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
-                        <div className={cn(
-                          "absolute inset-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2 border-amber-500/20 bg-amber-500/5"
-                        )}>
-                          <span className="text-[10px] font-bold text-white/60 uppercase tracking-tighter">
-                            General Back
-                          </span>
-                          <p className="text-[10px] text-white/80 text-center px-4 font-mono break-all line-clamp-2">
-                            {backFace?.name}
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </>
+                  <img 
+                    src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}`)}
+                    alt={backFace.name}
+                    loading="lazy"
+                    className="w-full h-full object-cover opacity-100"
+                  />
                 ) : (
                   <div className="flex flex-col items-center gap-2 opacity-20">
                     <RefreshCw size={48} />
