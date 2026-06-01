@@ -3,6 +3,7 @@ import express from "express";
 import path from "path";
 import multer from "multer";
 import fs from "fs";
+import crypto from "crypto";
 import { execSync, exec } from "child_process";
 
 console.log("[System] Modules imported successfully.");
@@ -592,30 +593,39 @@ async function startServer() {
       const libBacksDir = path.join(libraryPath, 'back');
       const libDoubleSidedDir = path.join(libraryPath, 'double_sided');
       
-      const getFiles = (dir: string) => {
+      const fileHashes: Record<string, string> = {};
+      const getFiles = (dir: string, typePrefix: string) => {
         try {
           if (fs.existsSync(dir)) {
-            return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+            return fs.readdirSync(dir).filter(f => {
+               if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
+                  try {
+                      fileHashes[`${typePrefix}:${f}`] = crypto.createHash('md5').update(fs.readFileSync(path.join(dir, f))).digest('hex');
+                  } catch (e) {}
+                  return true;
+               }
+               return false;
+            });
           }
         } catch (e) { }
         return [];
       };
 
-      const actualFronts = getFiles(frontsDir);
-      const actualBacks = getFiles(backsDir);
-      const actualDoubleSided = getFiles(doubleSidedDir);
+      const actualFronts = getFiles(frontsDir, 'game:front');
+      const actualBacks = getFiles(backsDir, 'game:back');
+      const actualDoubleSided = getFiles(doubleSidedDir, 'game:double_sided');
 
-      const actualLibFronts = getFiles(libFrontsDir);
-      const actualLibBacks = getFiles(libBacksDir);
-      const actualLibDoubleSided = getFiles(libDoubleSidedDir);
+      const actualLibFronts = getFiles(libFrontsDir, 'library:front');
+      const actualLibBacks = getFiles(libBacksDir, 'library:back');
+      const actualLibDoubleSided = getFiles(libDoubleSidedDir, 'library:double_sided');
 
       const pluginsFrontsDir = path.join(pluginsPath, 'front');
       const pluginsBacksDir = path.join(pluginsPath, 'back');
       const pluginsDoubleSidedDir = path.join(pluginsPath, 'double_sided');
 
-      const actualPluginsFronts = getFiles(pluginsFrontsDir);
-      const actualPluginsBacks = getFiles(pluginsBacksDir);
-      const actualPluginsDoubleSided = getFiles(pluginsDoubleSidedDir);
+      const actualPluginsFronts = getFiles(pluginsFrontsDir, 'plugins:front');
+      const actualPluginsBacks = getFiles(pluginsBacksDir, 'plugins:back');
+      const actualPluginsDoubleSided = getFiles(pluginsDoubleSidedDir, 'plugins:double_sided');
 
       const getProjects = () => {
         try {
@@ -664,6 +674,7 @@ async function startServer() {
           isElectron: isElectron,
           libraryPath: posixLibraryPath,
           userDataPath: posixUserDataPath,
+          fileHashes,
           plugins: {
             fronts: actualPluginsFronts,
             backs: actualPluginsBacks,
@@ -686,6 +697,7 @@ async function startServer() {
             library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
             libraryPath: posixLibraryPath,
             userDataPath: posixUserDataPath,
+            fileHashes,
             plugins: { fronts: [], backs: [], double_sided: [] },
             savedProjects: getProjects()
          });
@@ -707,6 +719,7 @@ async function startServer() {
         library: { fronts: [], backs: [], double_sided: [] },
         libraryPath: posixLibraryPath,
         userDataPath: posixUserDataPath,
+        fileHashes: {},
         plugins: { fronts: [], backs: [], double_sided: [] },
         savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
       });

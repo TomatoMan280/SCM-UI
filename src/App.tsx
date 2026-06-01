@@ -486,7 +486,7 @@ export default function App() {
   const [assetFilter, setAssetFilter] = useState<'all' | 'front' | 'back' | 'double_sided'>('all');
   const [pluginSearch, setPluginSearch] = useState("");
   const [verifyResult, setVerifyResult] = useState<{ missing: number, restored: number, check: string } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type?: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type?: string, files?: string[] } | null>(null);
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
   const [flippedAssets, setFlippedAssets] = useState<Set<string>>(new Set());
   const [uploadedImages, setUploadedImages] = useState<Record<string, string>>({});
@@ -1076,22 +1076,32 @@ export default function App() {
 
   const getGroupedAssets = (type: 'front' | 'back' | 'double_sided') => {
     const assets = getAllAssets(type);
-    const groups = new Map<string, { quantity: number, name: string, displayName: string }>();
+    const groups = new Map<string, { quantity: number, name: string, displayName: string, files: string[] }>();
     
     assets.forEach(f => {
-      const ext = f.match(/\.[^.]+$/)?.[0] || '';
-      const baseWithoutExt = f.slice(0, f.length - ext.length);
-      const coreName = baseWithoutExt.replace(/^\d+|[-_()\s]*\d+$/g, '');
-      const displayName = coreName + ext;
+      let hash = f; // fallback to filename
       
-      if (!groups.has(displayName)) {
-          groups.set(displayName, { quantity: 0, name: f, displayName: displayName });
+      const inGame = type === 'front' ? status?.assets?.fronts?.includes(f) : 
+                     type === 'back' ? status?.assets?.backs?.includes(f) : 
+                     status?.assets?.double_sided?.includes(f);
+                     
+      if (inGame && status?.fileHashes?.[`game:${type}:${f}`]) {
+         hash = status.fileHashes[`game:${type}:${f}`];
+      } else if (assetViewMode === 'plugins' && status?.fileHashes?.[`plugins:${type}:${f}`]) {
+         hash = status.fileHashes[`plugins:${type}:${f}`];
+      } else if (assetViewMode === 'library' && status?.fileHashes?.[`library:${type}:${f}`]) {
+         hash = status.fileHashes[`library:${type}:${f}`];
       }
-      const g = groups.get(displayName)!;
+
+      if (!groups.has(hash)) {
+          groups.set(hash, { quantity: 0, name: f, displayName: f, files: [] });
+      }
+      const g = groups.get(hash)!;
       g.quantity += 1;
+      g.files.push(f);
     });
     
-    return Array.from(groups.values());
+    return Array.from(groups.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
   };
 
 
@@ -1585,8 +1595,29 @@ export default function App() {
     }
   };
 
-  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' | 'keep_both' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
-      let finalItems = [...items];
+  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library' | 'plugins', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' | 'keep_both' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
+      const expandIdentitiesToFiles = (identities: string[]) => {
+          const expanded: string[] = [];
+          const groupedFronts = getGroupedAssets('front');
+          const groupedBacks = getGroupedAssets('back');
+          const groupedDobs = getGroupedAssets('double_sided');
+
+          identities.forEach(id => {
+             const parts = id.split(':');
+             const t = parts[0] as any;
+             const n = parts[1];
+             const pool = t === 'front' ? groupedFronts : t === 'back' ? groupedBacks : groupedDobs;
+             const found = pool.find(p => p.name === n);
+             if (found && found.files) {
+                found.files.forEach(f => expanded.push(`${t}:${f}`));
+             } else {
+                expanded.push(id);
+             }
+          });
+          return Array.from(new Set(expanded));
+      };
+      
+      let finalItems = expandIdentitiesToFiles(items);
       const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
       
       // 1. Back image check (workspace only)
@@ -3299,7 +3330,7 @@ export default function App() {
                                   type="back" 
                                   allAssets={getCurrentAssets()} 
                                   selected={selectedAssets.has(`back:${item.name}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'back' })}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'back', files: item.files })}
                                   onSelect={(e) => handleAssetSelect(`back:${item.name}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   uploadedImages={uploadedImages}
@@ -3376,7 +3407,7 @@ export default function App() {
                                   type="front" 
                                   allAssets={getCurrentAssets()}
                                   selected={selectedAssets.has(`front:${item.name}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'front' })}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'front', files: item.files })}
                                   onSelect={(e) => handleAssetSelect(`front:${item.name}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   isFlipped={flippedAssets.has(`front:${item.name}`)}
@@ -3455,7 +3486,7 @@ export default function App() {
                                   type="double_sided" 
                                   allAssets={getCurrentAssets()}
                                   selected={selectedAssets.has(`double_sided:${item.name}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'double_sided' })}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'double_sided', files: item.files })}
                                   onSelect={(e) => handleAssetSelect(`double_sided:${item.name}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   isFlipped={flippedAssets.has(`double_sided:${item.name}`)}
