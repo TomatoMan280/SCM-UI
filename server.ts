@@ -15,10 +15,10 @@ async function startServer() {
   app.use(express.json());
 
   const isProd = process.env.NODE_ENV === 'production';
-  const isElectron = isProd && !!process.env.USER_DATA_PATH;
+  const isElectron = !!process.env.USER_DATA_PATH;
   
   const baseDataPath = isElectron ? process.env.USER_DATA_PATH! : process.cwd();
-  const baseAppPath = isElectron ? process.env.APP_PATH! : process.cwd();
+  const baseAppPath = isElectron ? (process.env.APP_PATH || process.cwd()) : process.cwd();
 
   console.log(`[System] Data Path: ${baseDataPath}`);
   console.log(`[System] App Path: ${baseAppPath}`);
@@ -305,7 +305,7 @@ async function startServer() {
     console.log(`[Proxy] Local fetch request triggered for Moxfield deck ID: ${deckId}`);
     
     const headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Accept": "application/json, text/plain, */*",
       "Accept-Language": "en-US,en;q=0.9",
       "Referer": "https://www.moxfield.com/",
