@@ -1139,7 +1139,8 @@ async function startServer() {
       const [type, name] = id.split(':');
       
       const ext = path.extname(name);
-      const baseName = name.slice(0, name.length - ext.length);
+      const strippedIdent = name.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+      const baseName = strippedIdent.slice(0, strippedIdent.length - ext.length);
       
       let finalName = name;
       if (keepBoth) {
@@ -1943,7 +1944,8 @@ async function startServer() {
                 if (!(resolution === 'skip' && fs.existsSync(path.join(dstFolder, file)))) {
                    let targetFile = file;
                    const ext = path.extname(file);
-                   const baseName = file.slice(0, file.length - ext.length);
+                   const strippedFile = file.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+                   const baseName = strippedFile.slice(0, strippedFile.length - ext.length);
 
                    if (resolution === 'keep_both') {
                        if (!keepBothSuffixes[file]) {
@@ -1962,7 +1964,11 @@ async function startServer() {
                                if (fs.existsSync(faceDir)) {
                                    const existingFiles = fs.readdirSync(faceDir);
                                    existingFiles.forEach(existingFile => {
-                                       if (existingFile === file || (existingFile.startsWith(baseName + '_') && existingFile.endsWith(ext))) {
+                                       const extExist = path.extname(existingFile);
+                                       const strippedExist = existingFile.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+                                       const baseExist = strippedExist.slice(0, strippedExist.length - extExist.length);
+                                       
+                                       if (baseExist === baseName) {
                                            if (face === 'front') { 
                                                previousQuantity++;
                                            }

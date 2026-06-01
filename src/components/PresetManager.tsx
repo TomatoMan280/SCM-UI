@@ -10,7 +10,7 @@ interface Preset {
 }
 
 interface PresetManagerProps {
-  category: 'pdf' | 'offset';
+  category: 'pdf' | 'offset' | 'plugin';
   currentData: any;
   onLoad: (data: any) => void;
   isOpen: boolean;

@@ -1078,12 +1078,7 @@ export default function App() {
     assets.forEach(f => {
       const ext = f.match(/\.[^.]+$/)?.[0] || '';
       const baseWithoutExt = f.slice(0, f.length - ext.length);
-      const match = baseWithoutExt.match(/^(\d+)(.*)$/);
-      
-      let coreName = baseWithoutExt;
-      if (match) {
-          coreName = match[2];
-      }
+      const coreName = baseWithoutExt.replace(/^\d+|\d+$/g, '');
       const displayName = coreName + ext;
       
       if (!groups.has(displayName)) {
@@ -1611,7 +1606,7 @@ export default function App() {
       // 2. Name collision check
       if (conflictResolution === 'check') {
          if (targetObj) {
-            const matchBaseName = (name: string) => name.replace(/^\d+/, '');
+            const matchBaseName = (name: string) => name.replace(/^\d+|\d+(?=\.\w+$)/g, '');
             const collisions = finalItems.filter(item => {
                 const [type, name] = item.split(':');
                 const stripped = matchBaseName(name);
@@ -1642,7 +1637,7 @@ export default function App() {
          }
       } else if (conflictResolution === 'keep') {
          if (targetObj) {
-            const matchBaseName = (name: string) => name.replace(/^\d+/, '');
+            const matchBaseName = (name: string) => name.replace(/^\d+|\d+(?=\.\w+$)/g, '');
             finalItems = finalItems.filter(item => {
                 const [type, name] = item.split(':');
                 const stripped = matchBaseName(name);
@@ -3179,7 +3174,7 @@ export default function App() {
                                   const collisions = [];
                                   const { fronts, backs, double_sided } = result.fetchedFiles;
                                   
-                                  const matchBaseName = (name: string) => name.replace(/^\d+/, '');
+                                  const matchBaseName = (name: string) => name.replace(/^\d+|\d+(?=\.\w+$)/g, '');
                                   const targetFronts = status?.plugins?.fronts || [];
                                   const targetBacks = status?.plugins?.backs || [];
                                   const targetDob = status?.plugins?.double_sided || [];
