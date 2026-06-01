@@ -1251,6 +1251,80 @@ async function startServer() {
     }).catch(() => res.json({ fronts: [], backs: [], double_sided: [] }));
   });
 
+  app.get("/api/presets/:category", (req, res) => {
+    try {
+      const category = req.params.category; // 'pdf' or 'offset'
+      const presetsDir = path.join(scmPath, 'game', 'presets', category);
+      if (!fs.existsSync(presetsDir)) {
+        return res.json({ presets: [] });
+      }
+      const files = fs.readdirSync(presetsDir).filter((f: string) => f.endsWith('.json'));
+      const presets = files.map((f: string) => {
+        try {
+          const content = fs.readFileSync(path.join(presetsDir, f), 'utf-8');
+          return { name: f.replace('.json', ''), file: f, data: JSON.parse(content) };
+        } catch(e) { return null; }
+      }).filter((p: any) => p !== null);
+      
+      res.json({ presets });
+    } catch(e) { res.status(500).json({ error: String(e) }); }
+  });
+
+  app.post("/api/presets/:category", (req, res) => {
+    try {
+      const category = req.params.category;
+      const { name, data } = req.body;
+      if (!name || !data) return res.status(400).json({ error: "Name and data required" });
+      const presetsDir = path.join(scmPath, 'game', 'presets', category);
+      if (!fs.existsSync(presetsDir)) fs.mkdirSync(presetsDir, { recursive: true });
+      
+      const filename = name.replace(/[^a-z0-9_-]/gi, '') + '.json';
+      fs.writeFileSync(path.join(presetsDir, filename), JSON.stringify(data, null, 2), 'utf-8');
+      
+      res.json({ success: true, file: filename });
+    } catch(e: any) { res.status(500).json({ error: e.message || String(e) }); }
+  });
+
+  app.delete("/api/presets/:category/:filename", (req, res) => {
+    try {
+      const category = req.params.category;
+      let filename = req.params.filename;
+      filename = path.basename(decodeURIComponent(filename));
+      const filepath = path.join(scmPath, 'game', 'presets', category, filename);
+      if (fs.existsSync(filepath)) {
+        fs.unlinkSync(filepath);
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Preset not found" });
+      }
+    } catch(e: any) { res.status(500).json({ error: e.message || String(e) }); }
+  });
+
+  app.get("/api/presets/export/:category/:filename", (req, res) => {
+    try {
+      let filename = req.params.filename;
+      filename = path.basename(decodeURIComponent(filename));
+      const filepath = path.join(scmPath, 'game', 'presets', req.params.category, filename);
+      if (fs.existsSync(filepath)) {
+        res.download(filepath, filename);
+      } else {
+        res.status(404).send("File not found");
+      }
+    } catch(e) { res.status(500).send("Server Error"); }
+  });
+
+  app.post("/api/presets/import/:category", upload.single('file'), (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const data = JSON.parse(fs.readFileSync(req.file.path, 'utf-8'));
+      const presetsDir = path.join(scmPath, 'game', 'presets', req.params.category);
+      if (!fs.existsSync(presetsDir)) fs.mkdirSync(presetsDir, { recursive: true });
+      fs.writeFileSync(path.join(presetsDir, req.file.originalname), JSON.stringify(data, null, 2), 'utf-8');
+      fs.unlinkSync(req.file.path);
+      res.json({ success: true, name: req.file.originalname.replace('.json', ''), data });
+    } catch(e: any) { res.status(500).json({ error: "Invalid JSON or server error" }); }
+  });
+
   app.post("/api/run-command-stream", (req, res) => {
     const { command, args, pythonPath } = req.body;
     

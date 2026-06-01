@@ -1,0 +1,231 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Download, Upload, Trash2, Check, RefreshCw, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '../lib/utils';
+
+interface Preset {
+  name: string;
+  file: string;
+  data: any;
+}
+
+interface PresetManagerProps {
+  category: 'pdf' | 'offset';
+  currentData: any;
+  onLoad: (data: any) => void;
+  isOpen: boolean;
+  onClose: () => void;
+  setGlobalTaskProgress?: (progress: any) => void;
+}
+
+export default function PresetManager({ category, currentData, onLoad, isOpen, onClose, setGlobalTaskProgress }: PresetManagerProps) {
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [saveName, setSaveName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchPresets = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/presets/${category}`);
+      const json = await res.json();
+      setPresets(json.presets || []);
+    } catch (e) {
+      console.error("Failed to fetch presets", e);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchPresets();
+      setIsSaving(false);
+      setSaveName("");
+    }
+  }, [isOpen, category]);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!saveName.trim()) return;
+    
+    const targetFilename = saveName.replace(/[^a-z0-9_-]/gi, '') + '.json';
+    const exists = presets.some(p => p.file === targetFilename);
+    if (exists) {
+      if (!window.confirm("A preset with this name already exists. Do you want to overwrite it?")) {
+        return;
+      }
+    }
+    
+    try {
+      await fetch(`/api/presets/${category}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: saveName, data: currentData })
+      });
+      setIsSaving(false);
+      setSaveName("");
+      fetchPresets();
+    } catch(e) { console.error("Save error", e); }
+  };
+
+  const handleDelete = async (filename: string) => {
+    if (!confirm(`Are you sure you want to delete ${filename}?`)) return;
+    try {
+      await fetch(`/api/presets/${category}/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+      fetchPresets();
+    } catch(e) { console.error("Delete error", e); }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    if (setGlobalTaskProgress) {
+        setGlobalTaskProgress({ current: 0, total: 1, message: 'Importing preset...' });
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      await fetch(`/api/presets/import/${category}`, {
+        method: 'POST',
+        body: formData
+      });
+      fetchPresets();
+      e.target.value = ""; // reset input
+    } catch(e) {
+      console.error("Import error", e);
+    }
+    
+    if (setGlobalTaskProgress) {
+        setGlobalTaskProgress(null);
+    }
+  };
+
+  const filteredPresets = presets.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[1002] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
+      
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="relative bg-[#0f0f13] border border-white/10 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden overflow-y-auto"
+      >
+        <div className="flex items-center justify-between p-6 border-b border-white/5">
+          <h2 className="text-xl font-bold text-white capitalize">{category === 'pdf' ? 'PDF Settings Presets' : 'Offset Presets'}</h2>
+          <button onClick={onClose} className="p-2 text-white/40 hover:text-white transition-colors bg-white/5 rounded-full hover:bg-white/10">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6 flex-1 overflow-y-auto min-h-0">
+          <div className="flex flex-col gap-4">
+            <div className="flex justify-between items-center bg-[#1a1a24] p-4 rounded-xl border border-white/5">
+               {isSaving ? (
+                 <form onSubmit={handleSave} className="flex flex-1 gap-2">
+                   <input
+                     autoFocus
+                     className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                     placeholder="Preset Name (e.g. My Printer Matte)"
+                     value={saveName}
+                     onChange={e => setSaveName(e.target.value)}
+                   />
+                   <button type="submit" className="bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-primary-400 flex items-center gap-2">
+                     <Check size={16} /> Save
+                   </button>
+                   <button type="button" onClick={() => setIsSaving(false)} className="bg-white/5 text-white/70 px-4 py-2 rounded-lg text-sm font-bold hover:bg-white/10">
+                     Cancel
+                   </button>
+                 </form>
+               ) : (
+                 <div className="flex flex-col sm:flex-row justify-between w-full gap-3">
+                   <div className="text-sm text-white/50">
+                     Save your current working configuration as a new preset.
+                   </div>
+                   <div className="flex gap-2 relative">
+                     <button 
+                       onClick={() => setIsSaving(true)}
+                       className="bg-primary-500/20 text-primary-400 border border-primary-500/30 px-4 py-2 flex items-center gap-2 rounded-lg text-sm font-bold hover:bg-primary-500/30 transition-colors whitespace-nowrap"
+                     >
+                       <Check size={16} /> Save Current
+                     </button>
+                     <button
+                       onClick={() => fileInputRef.current?.click()}
+                       className="bg-white/5 text-white/80 border border-white/10 px-4 py-2 flex items-center gap-2 rounded-lg text-sm font-bold hover:bg-white/10 transition-colors whitespace-nowrap"
+                     >
+                       <Upload size={16} /> Import JSON
+                     </button>
+                     <input type="file" accept=".json" className="hidden" ref={fileInputRef} onChange={handleImport} />
+                   </div>
+                 </div>
+               )}
+            </div>
+
+            <div className="space-y-4">
+               <input
+                 className="w-full bg-[#1a1a24] border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:outline-none focus:border-primary-500 placeholder-white/30"
+                 placeholder="Search presets..."
+                 value={search}
+                 onChange={e => setSearch(e.target.value)}
+               />
+
+               {loading ? (
+                 <div className="flex justify-center p-8">
+                   <RefreshCw className="animate-spin text-white/20" size={24} />
+                 </div>
+               ) : (
+                 <div className="grid gap-2">
+                   {filteredPresets.length === 0 ? (
+                     <div className="text-center p-8 text-white/40 text-sm border border-white/5 bg-[#1a1a24] rounded-xl border-dashed">
+                       {search ? "No presets matched your search." : "No presets saved yet."}
+                     </div>
+                   ) : (
+                     filteredPresets.map(p => (
+                       <div key={p.file} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-[#1a1a24] border border-white/5 rounded-xl hover:border-white/10 transition-colors gap-4">
+                         <div className="flex items-center gap-3">
+                           <div className="font-bold text-white text-sm">{p.name}</div>
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <button 
+                             onClick={() => {
+                               onLoad(p.data);
+                               onClose();
+                             }}
+                             className="text-xs bg-primary-500 text-white font-bold px-3 py-1.5 rounded-lg hover:bg-primary-400 transition-colors"
+                           >
+                             Load
+                           </button>
+                           <a 
+                             href={`/api/presets/export/${category}/${encodeURIComponent(p.file)}`}
+                             download={p.file}
+                             className="text-xs bg-white/10 text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-white/20 transition-colors"
+                           >
+                             <Download size={14} /> Export
+                           </a>
+                           <button 
+                             onClick={() => handleDelete(p.file)}
+                             className="p-1.5 text-rose-500/60 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"
+                           >
+                             <Trash2 size={16} />
+                           </button>
+                         </div>
+                       </div>
+                     ))
+                   )}
+                 </div>
+               )}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}

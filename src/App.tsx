@@ -33,11 +33,13 @@ import {
   AlertCircle,
   Sliders,
   LayoutGrid,
-  Upload
+  Upload,
+  Settings2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { Theme, setTheme, getTheme } from './lib/theme';
+import PresetManager from './components/PresetManager';
 
 // Types
 type Tab = 'dashboard' | 'console' | 'assets' | 'builder' | 'plugins';
@@ -346,6 +348,8 @@ export default function App() {
   const [assetViewMode, setAssetViewMode] = useState<'project' | 'library' | 'plugins'>('project');
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [logs, setLogs] = useState<string[]>(["[System] Initializing Silhouette Master Virtual Bridge..."]);
+  const [isPdfPresetsOpen, setIsPdfPresetsOpen] = useState(false);
+  const [isOffsetPresetsOpen, setIsOffsetPresetsOpen] = useState(false);
 
   const [appIcon, setAppIcon] = useState<string | null>(null);
 
@@ -610,6 +614,7 @@ export default function App() {
   }, [collapsedSections]);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
   const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check'|'keep'|'replace'} | null>(null);
   const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'|'keep_both'} | null>(null);
@@ -870,6 +875,16 @@ export default function App() {
     localStorage.setItem('scm_advanced_collapsed', String(isAdvancedCollapsed));
   }, [isAdvancedCollapsed]);
 
+  const [isPdfSettingsOpen, setIsPdfSettingsOpen] = useState(() => {
+    return localStorage.getItem('scm_pdf_settings_open') === 'true';
+  });
+
+  const [commandCopied, setCommandCopied] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('scm_pdf_settings_open', String(isPdfSettingsOpen));
+  }, [isPdfSettingsOpen]);
+
   const CALIBRATION_SHEETS = [
     { label: 'Letter', value: 'letter-calibration.pdf' },
     { label: 'A3', value: 'a3-calibration.pdf' },
@@ -1002,6 +1017,7 @@ export default function App() {
   }, [pythonPath]);
 
   const fetchStatus = async () => {
+    setIsRefreshing(true);
     try {
       const res = await fetch('/api/status?_=' + new Date().getTime());
       const data = await res.json();
@@ -1029,6 +1045,8 @@ export default function App() {
     } catch (err) {
       console.error("Failed to fetch status:", err);
       return null;
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -2169,13 +2187,35 @@ export default function App() {
               >
                 <div className="col-span-1 lg:col-span-3 space-y-8">
                   <div className="space-y-4">
-                    <h2 className="text-3xl font-bold tracking-tight">PDF Generator</h2>
-                    <p className="text-white/40 leading-relaxed">Configure the layout engine with precise CLI arguments. Every change here updates the underlying command string.</p>
+                    <div 
+                      className="flex justify-between items-start cursor-pointer select-none group"
+                      onClick={() => setIsPdfSettingsOpen(!isPdfSettingsOpen)}
+                    >
+                      <div>
+                        <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+                          PDF Generator
+                          <ChevronDown size={24} className={cn("text-white/40 group-hover:text-white/60 transition-all duration-300", !isPdfSettingsOpen && "rotate-180")} />
+                        </h2>
+                        <p className="text-white/40 leading-relaxed mt-2">Configure the layout engine with precise CLI arguments. Every change here updates the underlying command string.</p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); setIsPdfPresetsOpen(true); }} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0">
+                         <Settings2 size={16} /> Presets
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* General Settings */}
-                    <div className="space-y-4">
+                  <AnimatePresence>
+                    {isPdfSettingsOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                      >
+                       <div className="space-y-8 pt-4">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* General Settings */}
+                        <div className="space-y-4">
                       <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400">General Settings</h4>
                       <SelectGroup 
                         label="Card Size" 
@@ -2301,7 +2341,7 @@ export default function App() {
 
                   <div className={cn("bg-[#0f0f13] border border-white/5 rounded-2xl p-6 transition-all duration-300", isCalibrationCollapsed ? "space-y-0" : "space-y-6")}>
                     <div 
-                      className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-2 cursor-pointer select-none"
+                      className="flex justify-between items-start pb-2 cursor-pointer select-none"
                       onClick={() => setIsCalibrationCollapsed(!isCalibrationCollapsed)}
                     >
                       <div className="space-y-1">
@@ -2319,23 +2359,12 @@ export default function App() {
                           Adjust for printer misalignment
                         </a>
                       </div>
-                      <div className="flex items-center gap-4">
-                        {!isCalibrationCollapsed && (
-                          <div className="w-full md:w-32 space-y-1.5" onClick={(e) => e.stopPropagation()}>
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Paper Size</label>
-                            <div className="relative group">
-                              <select 
-                                value={calibration.sheet}
-                                onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
-                                className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/5 shadow-inner"
-                              >
-                                {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
-                              </select>
-                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-amber-400/50 transition-colors" />
-                            </div>
-                          </div>
-                        )}
+                      <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => setIsOffsetPresetsOpen(true)} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 whitespace-nowrap">
+                           <Settings2 size={16} /> Presets
+                        </button>
                         <button 
+                          onClick={() => setIsCalibrationCollapsed(!isCalibrationCollapsed)}
                           className="p-2 hover:bg-white/5 rounded-xl text-white/40 hover:text-white transition-all transform shrink-0"
                         >
                           <ChevronDown size={18} className={cn("transition-transform duration-300", !isCalibrationCollapsed && "rotate-180")} />
@@ -2353,6 +2382,19 @@ export default function App() {
                             <h5 className="text-xs font-bold text-white/60">Initial Print</h5>
                           </div>
                           <p className="text-[10px] text-white/30 leading-relaxed min-h-[32px]">Print the blank calibration grid to determine physical shifts.</p>
+                          <div className="space-y-1.5 w-full">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Paper Size</label>
+                            <div className="relative group">
+                              <select 
+                                value={calibration.sheet}
+                                onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
+                                className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/5 shadow-inner"
+                              >
+                                {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-amber-400/50 transition-colors" />
+                            </div>
+                          </div>
                           <button 
                             onClick={() => {
                               addLog(`[System] Opening calibration sheet: ${calibration.sheet}`);
@@ -2446,15 +2488,19 @@ export default function App() {
                       </div>
                     )}
                   </div>
+                     </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 <div className="col-span-1 lg:col-span-2 space-y-6">
                   <div className="p-6 rounded-2xl bg-[#0f0f13] border border-white/5 sticky top-8">
-                    <h3 className="font-bold mb-6 flex items-center gap-2">
-                      <Terminal size={18} className="text-primary-400" />
+                    <h3 className="font-bold mb-6 flex items-center gap-2 text-primary-400">
+                      <Terminal size={18} />
                       Live Command Build
                     </h3>
-                    <div className="p-4 bg-black/40 rounded-xl font-mono text-[11px] text-emerald-400 leading-relaxed border border-white/5 mb-8">
+                    <div className="p-4 bg-primary-950/20 rounded-xl font-mono text-[11px] text-primary-300 leading-relaxed border border-primary-500/10 mb-4">
                        python create_pdf.py <br />
                        --card_size {cmdOptions.card_size} <br />
                        --paper_size {cmdOptions.paper_size} <br />
@@ -2466,10 +2512,35 @@ export default function App() {
                        {cmdOptions.show_outline && "--show_outline"} <br />
                        {cmdOptions.crop && `--crop ${cmdOptions.crop}`} <br />
                        {cmdOptions.crop_backs && `--crop_backs ${cmdOptions.crop_backs}`} <br />
-                       {cmdOptions.label && `--label ${cmdOptions.label}`} <br />
+                       {cmdOptions.label && `--label "${cmdOptions.label}"`} <br />
                        {cmdOptions.skip && `--skip ${cmdOptions.skip}`} <br />
                        {cmdOptions.extend_corners > 0 && `--extend_corners ${cmdOptions.extend_corners}`} <br />
                        {cmdOptions.output_images && "--output_images"}
+                    </div>
+
+                    <div className="mb-8 relative">
+                       <div className="flex justify-between items-center mb-2">
+                         <label className="text-[10px] font-bold uppercase tracking-widest text-primary-400/80">Raw Command</label>
+                         <button 
+                           onClick={() => {
+                             const rawCmd = `python create_pdf.py --card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}`;
+                             navigator.clipboard.writeText(rawCmd);
+                             setCommandCopied(true);
+                             setTimeout(() => setCommandCopied(false), 2000);
+                           }}
+                           className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider text-primary-400/60 hover:text-primary-300 transition-colors"
+                         >
+                           {commandCopied ? <CheckCircle size={12} className="text-green-400" /> : <Copy size={12} />}
+                           {commandCopied ? <span className="text-green-400">Copied!</span> : <span>Copy</span>}
+                         </button>
+                       </div>
+                       <textarea 
+                         readOnly
+                         value={`python create_pdf.py --card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}`}
+                         className="w-full bg-primary-950/10 border border-primary-500/20 rounded-xl px-3 py-2 text-[10px] text-primary-300/80 font-mono resize-none focus:outline-none focus:border-primary-500/50 transition-colors selection:bg-primary-500/30"
+                         rows={4}
+                         onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                       />
                     </div>
 
                     <div className="space-y-4 mb-8">
@@ -2765,7 +2836,7 @@ export default function App() {
                         className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all shadow-inner shrink-0"
                         title="Refresh Assets"
                       >
-                        <RefreshCw size={16} className={cn(isProcessing && "animate-spin")} />
+                        <RefreshCw size={16} className={cn(isRefreshing && "animate-spin")} />
                       </button>
 
                       <div className="flex items-center bg-black/40 border border-white/5 rounded-xl p-1 shrink-0">
@@ -4554,6 +4625,23 @@ export default function App() {
           <span className="text-[9px] font-medium font-sans">Console</span>
         </button>
       </nav>
+      
+      <PresetManager
+        category="pdf"
+        currentData={cmdOptions}
+        isOpen={isPdfPresetsOpen}
+        onClose={() => setIsPdfPresetsOpen(false)}
+        onLoad={(d) => setCmdOptions(prev => ({ ...prev, ...d }))}
+        setGlobalTaskProgress={setTaskProgress}
+      />
+      <PresetManager
+        category="offset"
+        currentData={calibration}
+        isOpen={isOffsetPresetsOpen}
+        onClose={() => setIsOffsetPresetsOpen(false)}
+        onLoad={(d) => setCalibration(prev => ({ ...prev, ...d }))}
+        setGlobalTaskProgress={setTaskProgress}
+      />
      </div>
   );
 }
