@@ -40,6 +40,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { Theme, setTheme, getTheme } from './lib/theme';
 import PresetManager from './components/PresetManager';
+import ProjectManager from './components/ProjectManager';
 
 // Types
 type Tab = 'dashboard' | 'console' | 'assets' | 'builder' | 'plugins';
@@ -350,6 +351,8 @@ export default function App() {
   const [logs, setLogs] = useState<string[]>(["[System] Initializing Silhouette Master Virtual Bridge..."]);
   const [isPdfPresetsOpen, setIsPdfPresetsOpen] = useState(false);
   const [isOffsetPresetsOpen, setIsOffsetPresetsOpen] = useState(false);
+  const [isPluginPresetsOpen, setIsPluginPresetsOpen] = useState(false);
+  const [isProjectPresetsOpen, setIsProjectPresetsOpen] = useState(false);
 
   const [appIcon, setAppIcon] = useState<string | null>(null);
 
@@ -669,7 +672,7 @@ export default function App() {
       }
       if (match('saveProject') && activeTab === 'assets' && assetViewMode === 'project') {
         e.preventDefault();
-        setShowSaveModal(true);
+        setIsProjectPresetsOpen(true);
         return;
       }
     }
@@ -875,15 +878,7 @@ export default function App() {
     localStorage.setItem('scm_advanced_collapsed', String(isAdvancedCollapsed));
   }, [isAdvancedCollapsed]);
 
-  const [isPdfSettingsOpen, setIsPdfSettingsOpen] = useState(() => {
-    return localStorage.getItem('scm_pdf_settings_open') === 'true';
-  });
-
   const [commandCopied, setCommandCopied] = useState(false);
-
-  useEffect(() => {
-    localStorage.setItem('scm_pdf_settings_open', String(isPdfSettingsOpen));
-  }, [isPdfSettingsOpen]);
 
   const CALIBRATION_SHEETS = [
     { label: 'Letter', value: 'letter-calibration.pdf' },
@@ -1718,8 +1713,8 @@ export default function App() {
     }
   };
 
-  const deleteProject = async (e: React.MouseEvent, name: string) => {
-    e.stopPropagation();
+  const deleteProject = async (e: any | null, name: string) => {
+    if (e) e.stopPropagation();
     try {
       const res = await fetch('/api/project/delete', {
         method: 'POST',
@@ -1732,6 +1727,24 @@ export default function App() {
       }
     } catch(err) {
       addLog(`[Error] Failed to delete project: ${err}`);
+    }
+  };
+
+  const renameProject = async (oldName: string, newName: string) => {
+    try {
+      const res = await fetch('/api/project/rename', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName })
+      });
+      if (res.ok) {
+        addLog(`[Project] Renamed project from '${oldName}' to '${newName}'.`);
+        await fetchStatus();
+      } else {
+        addLog(`[Error] Failed to rename project.`);
+      }
+    } catch(err) {
+      addLog(`[Error] Failed to rename project: ${err}`);
     }
   };
 
@@ -2065,27 +2078,6 @@ export default function App() {
             )}
           </div>
           <div className="flex items-center gap-2 md:gap-4 ml-auto">
-            {activeTab === 'assets' && assetViewMode === 'library' && (
-              <div className="hidden sm:flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/5">
-                <button 
-                  onClick={handleUndo}
-                  disabled={fileUndoStack.length === 0}
-                  className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
-                  title="Undo (Ctrl+Z)"
-                >
-                  <RotateCcw size={16} />
-                </button>
-                <button 
-                  onClick={handleRedo}
-                  disabled={true}
-                  className="p-1.5 hover:bg-white/10 rounded-md transition-all text-white/40 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent"
-                  title="Redo (Ctrl+Y)"
-                >
-                  <RotateCcw size={16} className="transform -scale-x-100" />
-                </button>
-              </div>
-            )}
-            
             {pdfReady && (
               <div className="flex items-center gap-1.5 md:gap-2">
                 <a 
@@ -2187,14 +2179,10 @@ export default function App() {
               >
                 <div className="col-span-1 lg:col-span-3 space-y-8">
                   <div className="space-y-4">
-                    <div 
-                      className="flex justify-between items-start cursor-pointer select-none group"
-                      onClick={() => setIsPdfSettingsOpen(!isPdfSettingsOpen)}
-                    >
+                    <div className="flex justify-between items-start select-none">
                       <div>
                         <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
                           PDF Generator
-                          <ChevronDown size={24} className={cn("text-white/40 group-hover:text-white/60 transition-all duration-300", !isPdfSettingsOpen && "rotate-180")} />
                         </h2>
                         <p className="text-white/40 leading-relaxed mt-2">Configure the layout engine with precise CLI arguments. Every change here updates the underlying command string.</p>
                       </div>
@@ -2204,14 +2192,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <AnimatePresence>
-                    {isPdfSettingsOpen && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="overflow-hidden"
-                      >
+
                        <div className="space-y-8 pt-4">
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         {/* General Settings */}
@@ -2381,29 +2362,31 @@ export default function App() {
                             <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">1</div>
                             <h5 className="text-xs font-bold text-white/60">Initial Print</h5>
                           </div>
-                          <p className="text-[10px] text-white/30 leading-relaxed min-h-[32px]">Print the blank calibration grid to determine physical shifts.</p>
                           <div className="space-y-1.5 w-full">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Paper Size</label>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Paper Size</label>
                             <div className="relative group">
                               <select 
                                 value={calibration.sheet}
                                 onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
-                                className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/5 shadow-inner"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 h-[34px] text-xs focus:outline-none focus:border-primary-500 transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/10"
                               >
-                                {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#0f0f13]">{opt.label}</option>)}
+                                {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#1a1a20]">{opt.label}</option>)}
                               </select>
-                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-amber-400/50 transition-colors" />
+                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-primary-400 transition-colors" />
                             </div>
                           </div>
-                          <button 
-                            onClick={() => {
-                              addLog(`[System] Opening calibration sheet: ${calibration.sheet}`);
-                              window.open(`/api/project/export?file=calibration/${calibration.sheet}`, '_blank');
-                            }}
-                            className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
-                          >
-                            Print Calibration Sheet
-                          </button>
+                          <div className="space-y-1.5 w-full">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
+                            <button 
+                              onClick={() => {
+                                addLog(`[System] Opening calibration sheet: ${calibration.sheet}`);
+                                window.open(`/api/project/export?file=calibration/${calibration.sheet}`, '_blank');
+                              }}
+                              className="w-full h-[34px] py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
+                            >
+                              Print Calibration Sheet
+                            </button>
+                          </div>
                         </div>
 
                         {/* Step 2 */}
@@ -2412,34 +2395,36 @@ export default function App() {
                             <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">2</div>
                             <h5 className="text-xs font-bold text-white/60">Adjust Offsets</h5>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                              <label className="text-[9px] uppercase font-bold text-white/30">X (mm)</label>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1.5 w-full">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">X (MM)</label>
                               <input 
                                 type="number" 
                                 value={calibration.x} 
                                 onChange={(e) => setCalibration(p => ({ ...p, x: e.target.value }))}
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
+                                className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
                               />
                             </div>
-                            <div className="space-y-1">
-                              <label className="text-[9px] uppercase font-bold text-white/30">Y (mm)</label>
+                            <div className="space-y-1.5 w-full">
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Y (MM)</label>
                               <input 
                                 type="number" 
                                 value={calibration.y} 
                                 onChange={(e) => setCalibration(p => ({ ...p, y: e.target.value }))}
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
+                                className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
                               />
                             </div>
                           </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-white/30">Angle (Deg)</label>
+                          
+                          <div className="space-y-1.5 w-full">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Angle (Deg)</label>
                             <input 
                               type="number" 
                               step="0.1"
                               value={calibration.angle} 
                               onChange={(e) => setCalibration(p => ({ ...p, angle: e.target.value }))}
-                              className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/70 font-mono" 
+                              className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
                             />
                           </div>
                         </div>
@@ -2450,7 +2435,9 @@ export default function App() {
                             <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">3</div>
                             <h5 className="text-xs font-bold text-white/60">Verify & Save</h5>
                           </div>
-                          <div className="space-y-2">
+
+                          <div className="space-y-1.5 w-full">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
                             <button 
                                onClick={() => runCommand('offset_pdf.py', [
                                  '--x_offset', calibration.x.toString(),
@@ -2458,10 +2445,14 @@ export default function App() {
                                  '--angle', calibration.angle.toString(),
                                  '--save'
                                ], { startMessage: 'Saving offset...' })}
-                               className="w-full py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-[10px] font-bold transition-all text-emerald-400"
+                               className="w-full h-[34px] flex items-center justify-center bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all text-emerald-400"
                             >
                               Save Offset
                             </button>
+                          </div>
+
+                          <div className="space-y-1.5 w-full">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
                             <button 
                               onClick={() => runCommand('offset_pdf.py', [
                                 '--pdf_path', `calibration/${calibration.sheet}`,
@@ -2469,16 +2460,20 @@ export default function App() {
                                 '--y_offset', calibration.y.toString(),
                                 '--angle', calibration.angle.toString()
                               ], { startMessage: 'Generating offset sheet...' })}
-                              className="w-full py-2 bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-[10px] font-bold transition-all text-primary-400"
+                              className="w-full h-[34px] flex items-center justify-center bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-xs font-bold transition-all text-primary-400"
                             >
                               Generate Offset Sheet
                             </button>
+                          </div>
+
+                          <div className="space-y-1.5 w-full">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
                             <button 
                                onClick={() => {
                                  addLog(`[System] Opening verification PDF: ${calibration.sheet.replace('.pdf', '_offset.pdf')}`);
                                  window.open(`/api/project/export?file=calibration/${calibration.sheet.replace('.pdf', '_offset.pdf')}`, '_blank');
                                }}
-                               className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold transition-all"
+                               className="w-full h-[34px] flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
                             >
                               Print Offset Sheet
                             </button>
@@ -2489,9 +2484,6 @@ export default function App() {
                     )}
                   </div>
                      </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
                 </div>
 
                 <div className="col-span-1 lg:col-span-2 space-y-6">
@@ -2661,20 +2653,11 @@ export default function App() {
                     {assetViewMode === 'project' && (
                       <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
                         <button 
-                          onClick={() => setShowSaveModal(true)}
-                          className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold transition-all text-white/60 hover:text-white active:scale-95"
-                          title="Save Project State"
+                          onClick={() => setIsProjectPresetsOpen(true)}
+                          className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 text-white/70"
+                          title="Project Presets"
                         >
-                          <Copy size={14} />
-                          Save
-                        </button>
-                        <button 
-                          onClick={() => setShowLoadModal(true)}
-                          className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold transition-all text-white/60 hover:text-white active:scale-95"
-                          title="Load Project State"
-                        >
-                          <FolderOpen size={14} />
-                          Load
+                          <Settings2 size={14} /> Presets
                         </button>
                         <input 
                            type="file" 
@@ -2683,22 +2666,6 @@ export default function App() {
                            ref={importProjectRef} 
                            onChange={handleImportProject} 
                         />
-                        <button 
-                          onClick={() => importProjectRef.current?.click()}
-                          className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold transition-all text-white/60 hover:text-white active:scale-95"
-                          title="Import Project JSON"
-                        >
-                          <PlusCircle size={14} />
-                          Import
-                        </button>
-                        <button 
-                          onClick={exportProject}
-                          className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs font-bold transition-all text-white/60 hover:text-white active:scale-95"
-                          title="Export Project JSON"
-                        >
-                          <Download size={14} />
-                          Export
-                        </button>
                         {(status?.assets?.fronts?.length > 0 || status?.assets?.backs?.length > 0) && (
                           <button 
                             onClick={clearProject}
@@ -3011,11 +2978,9 @@ export default function App() {
                          <div className="flex items-center justify-between mb-4">
                             <label className="text-xs font-semibold text-white/40">Decklist Content</label>
                             <div className="flex items-center gap-2">
-                              <div className="flex gap-1" style={{ zoom: 0.85 }}>
-                                <button onClick={() => setShowPluginSaveModal(true)} className="px-2 py-0.5 text-xs font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Save</button>
-                                <button onClick={() => setShowPluginLoadModal(true)} className="px-2 py-0.5 text-xs font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Load</button>
-                                <button onClick={exportPluginConfig} className="px-2 py-0.5 text-xs font-bold text-white/50 hover:text-white hover:bg-white/10 rounded-md transition-all">Export</button>
-                              </div>
+                              <button onClick={(e) => { e.stopPropagation(); setIsPluginPresetsOpen(true); }} className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 text-white/70">
+                                <Settings2 size={14} /> Presets
+                              </button>
                             </div>
                           </div>
                           <div 
@@ -3783,169 +3748,14 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {showSaveModal && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-md bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6"
-            >
-              <div className="space-y-1">
-                <h3 className="text-xl font-bold text-white">Save Project</h3>
-                <p className="text-sm text-white/40">Enter a name to save the current asset configuration.</p>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-white/40">Project Name</label>
-                  <input 
-                    autoFocus
-                    type="text" 
-                    value={saveName}
-                    onChange={(e) => setSaveName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && saveProject()}
-                    placeholder="My Awesome Deck..."
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-primary-500 transition-all font-mono"
-                  />
-                </div>
-
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => {
-                      setShowSaveModal(false);
-                      setSaveName("");
-                    }}
-                    className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold border border-white/10 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={saveProject}
-                    disabled={!saveName}
-                    className="flex-1 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-2xl font-bold shadow-lg shadow-primary-600/20 transition-all disabled:opacity-50"
-                  >
-                    Save Project
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
       </AnimatePresence>
 
       <AnimatePresence>
       </AnimatePresence>
 
-      <AnimatePresence>
-        {showPluginSaveModal && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-md bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6"
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-primary-600/10 rounded-2xl text-primary-400">
-                  <Copy size={24} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-white">Save Plugin Config</h3>
-                  <p className="text-sm text-white/40">Persist your decklist and options.</p>
-                </div>
-              </div>
 
-              <div className="space-y-4">
-                <input 
-                  type="text" 
-                  autoFocus
-                  placeholder="Configuration name..."
-                  value={pluginSaveName}
-                  onChange={(e) => setPluginSaveName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && savePluginConfig()}
-                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary-500 transition-all font-mono"
-                />
-              </div>
 
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setShowPluginSaveModal(false)}
-                  className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold border border-white/10 transition-all active:scale-95"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={savePluginConfig}
-                  className="flex-1 py-4 bg-primary-600 hover:bg-primary-500 text-white rounded-2xl font-bold shadow-lg shadow-primary-600/20 transition-all active:scale-95"
-                >
-                  Save Global
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
-      <AnimatePresence>
-        {showPluginLoadModal && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-md bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6"
-            >
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-primary-600/10 rounded-2xl text-primary-400">
-                  <FolderOpen size={24} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-white">Load Plugin Config</h3>
-                  <p className="text-sm text-white/40">Select a previously saved configuration.</p>
-                </div>
-              </div>
-
-              <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                {Object.keys(pluginConfigs).length > 0 ? (
-                  Object.keys(pluginConfigs).map((name, idx) => (
-                    <div
-                      key={`${name}-${idx}`}
-                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all group gap-2"
-                    >
-                      <button
-                        onClick={() => loadPluginConfig(name)}
-                        className="flex-1 text-left flex items-center justify-between outline-none"
-                      >
-                        <span className="font-semibold text-white/80 group-hover:text-white break-all pr-4">{name}</span>
-                        <ChevronRight size={14} className="text-white/20 group-hover:text-white/60 translate-x-0 group-hover:translate-x-1 transition-all" />
-                      </button>
-                      <button 
-                        onClick={(e) => deletePluginConfig(e, name)}
-                        className="p-2 text-white/20 hover:text-red-400 hover:bg-white/5 rounded-lg transition-colors"
-                        title="Delete Configuration"
-                      >
-                         <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-white/20 text-xs font-bold uppercase tracking-widest">
-                    No configurations found
-                  </div>
-                )}
-              </div>
-
-              <button 
-                onClick={() => setShowPluginLoadModal(false)}
-                className="w-full py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold border border-white/10 transition-all active:scale-95"
-              >
-                Close
-              </button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       <AnimatePresence>
         {isReplaceBackDialogOpen && (
@@ -4227,6 +4037,27 @@ export default function App() {
                        />
                     </div>
                   ))}
+                  <div className="pt-4 flex justify-center">
+                    <button 
+                      onClick={() => setShortcuts({
+                        toggleConsole: 'Ctrl+`',
+                        saveProject: 'Ctrl+S',
+                        deleteSelected: 'Delete',
+                        selectAll: 'Ctrl+A',
+                        tabDashboard: 'Alt+1',
+                        tabWorkspace: 'Alt+2',
+                        tabLibrary: 'Alt+3',
+                        tabPlugins: 'Alt+4',
+                        copySelected: 'Ctrl+C',
+                        pasteSelected: 'Ctrl+V',
+                        undo: 'Ctrl+Z',
+                        redo: 'Ctrl+Y'
+                      })}
+                      className="px-4 py-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-xs font-bold rounded-lg transition-colors flex items-center gap-2"
+                    >
+                      <RotateCcw size={14} /> Reset to Defaults
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -4300,58 +4131,6 @@ export default function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {showLoadModal && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-md bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl space-y-6"
-            >
-              <div className="space-y-1">
-                <h3 className="text-xl font-bold text-white">Load Project</h3>
-                <p className="text-sm text-white/40">Select a saved configuration to restore.</p>
-              </div>
-
-              <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                {(status?.savedProjects && status.savedProjects.length > 0) ? (
-                  status.savedProjects.map((name, idx) => (
-                    <div
-                      key={`${name}-${idx}`}
-                      className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl transition-all group gap-2"
-                    >
-                      <button
-                        onClick={() => loadProject(name)}
-                        className="flex-1 text-left flex items-center justify-between outline-none"
-                      >
-                        <span className="font-bold text-white/80 group-hover:text-white break-all pr-4">{name}</span>
-                        <ChevronRight size={16} className="text-white/20 group-hover:text-primary-400 group-hover:translate-x-1 transition-all" />
-                      </button>
-                      <button 
-                        onClick={(e) => deleteProject(e, name)}
-                        className="p-2 text-white/20 hover:text-red-400 hover:bg-white/5 rounded-lg transition-colors"
-                        title="Delete Project"
-                      >
-                         <Trash2 size={16} />
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="py-8 text-center text-white/20 border-2 border-dashed border-white/5 rounded-2xl">
-                    No saved projects found.
-                  </div>
-                )}
-              </div>
-
-              <button 
-                onClick={() => setShowLoadModal(false)}
-                className="w-full py-4 text-white/40 hover:text-white transition-all font-bold"
-              >
-                Close
-              </button>
-            </motion.div>
-          </div>
-        )}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -4641,6 +4420,63 @@ export default function App() {
         onClose={() => setIsOffsetPresetsOpen(false)}
         onLoad={(d) => setCalibration(prev => ({ ...prev, ...d }))}
         setGlobalTaskProgress={setTaskProgress}
+      />
+      <PresetManager
+        category="plugin"
+        currentData={{ decklist: pluginState.decklist, format: pluginState.format, options: pluginState.options, selectedPluginId: pluginState.selectedPlugin.id }}
+        isOpen={isPluginPresetsOpen}
+        onClose={() => setIsPluginPresetsOpen(false)}
+        onLoad={(d) => {
+          let selectedPlugin = pluginState.selectedPlugin;
+          if (d.selectedPluginId) {
+            const found = PLUGINS.find(p => p.id === d.selectedPluginId);
+            if (found) selectedPlugin = found;
+          }
+          setPluginState(prev => ({ ...prev, ...d, selectedPlugin }));
+        }}
+        setGlobalTaskProgress={setTaskProgress}
+      />
+      <ProjectManager
+        isOpen={isProjectPresetsOpen}
+        onClose={() => setIsProjectPresetsOpen(false)}
+        status={status}
+        saveProject={async (name) => {
+          try {
+            const res = await fetch('/api/project/save', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+            if (data.success) {
+               addLog(`[Project] Success: ${data.message}`);
+               setLoadedProject(name);
+               await fetchStatus();
+            }
+          } catch (err) {
+            addLog(`[Error] Save failed: ${err}`);
+          }
+        }}
+        loadProject={async (name) => {
+          try {
+            const res = await fetch('/api/project/load', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+            if (data.success) {
+               addLog(`[Project] Success: Loaded '${name}'`);
+               setLoadedProject(name);
+               await fetchStatus();
+            }
+          } catch (err) {
+            addLog(`[Error] Load failed: ${err}`);
+          }
+        }}
+        deleteProject={deleteProject}
+        renameProject={renameProject}
+        triggerImport={() => importProjectRef.current?.click()}
       />
      </div>
   );

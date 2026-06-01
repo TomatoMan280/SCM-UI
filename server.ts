@@ -696,6 +696,17 @@ async function startServer() {
     res.json({ success: true, message: `Project '${name}' deleted.` });
   });
 
+  app.put("/api/project/rename", (req, res) => {
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName) return res.status(400).json({ error: "Names are required" });
+    const sourceDir = path.join(projectsDir, oldName);
+    const targetDir = path.join(projectsDir, newName);
+    if (!fs.existsSync(sourceDir)) return res.status(404).json({ error: "Project not found" });
+    if (fs.existsSync(targetDir)) return res.status(400).json({ error: "Project already exists" });
+    fs.renameSync(sourceDir, targetDir);
+    res.json({ success: true, message: `Project renamed.` });
+  });
+
   app.post("/api/project/load", (req, res) => {
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required" });
@@ -763,6 +774,22 @@ async function startServer() {
       }
     }
     
+    // If saving a specific predefined project:
+    let targetFronts = path.join(scmPath, 'game', 'front');
+    let targetBacks = path.join(scmPath, 'game', 'back');
+    let targetDouble = path.join(scmPath, 'game', 'double_sided');
+    let targetDecklist = null; // projects can contain decklists too
+    
+    if (req.query.project) {
+        const projectDir = path.join(projectsDir, req.query.project as string);
+        if (!fs.existsSync(projectDir)) {
+             return res.status(404).send('Project not found');
+        }
+        targetFronts = path.join(projectDir, 'front');
+        targetBacks = path.join(projectDir, 'back');
+        targetDouble = path.join(projectDir, 'double_sided');
+    }
+    
     const getFiles = (dir: string) => {
       try {
         if (fs.existsSync(dir)) {
@@ -773,13 +800,13 @@ async function startServer() {
     };
     
     const exportData = {
-      fronts: getFiles(path.join(scmPath, 'game', 'front')),
-      backs: getFiles(path.join(scmPath, 'game', 'back')),
-      double_sided: getFiles(path.join(scmPath, 'game', 'double_sided'))
+      fronts: getFiles(targetFronts),
+      backs: getFiles(targetBacks),
+      double_sided: getFiles(targetDouble)
     };
 
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', 'attachment; filename=project_export.json');
+    res.setHeader('Content-Disposition', `attachment; filename=${req.query.project ? `${req.query.project as string}_export.json` : 'workspace_export.json'}`);
     res.send(JSON.stringify(exportData, null, 2));
   });
 
@@ -1278,7 +1305,7 @@ async function startServer() {
       const presetsDir = path.join(scmPath, 'game', 'presets', category);
       if (!fs.existsSync(presetsDir)) fs.mkdirSync(presetsDir, { recursive: true });
       
-      const filename = name.replace(/[^a-z0-9_-]/gi, '') + '.json';
+      const filename = name.replace(/[^a-z0-9_ -]/gi, '') + '.json';
       fs.writeFileSync(path.join(presetsDir, filename), JSON.stringify(data, null, 2), 'utf-8');
       
       res.json({ success: true, file: filename });
