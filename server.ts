@@ -15,10 +15,10 @@ async function startServer() {
   app.use(express.json());
 
   const isProd = process.env.NODE_ENV === 'production';
-  const isElectron = !!process.env.USER_DATA_PATH;
+  const isElectron = isProd && !!process.env.USER_DATA_PATH;
   
   const baseDataPath = isElectron ? process.env.USER_DATA_PATH! : process.cwd();
-  const baseAppPath = isElectron ? (process.env.APP_PATH || process.cwd()) : process.cwd();
+  const baseAppPath = isElectron ? process.env.APP_PATH! : process.cwd();
 
   console.log(`[System] Data Path: ${baseDataPath}`);
   console.log(`[System] App Path: ${baseAppPath}`);
@@ -36,20 +36,7 @@ async function startServer() {
         copyRecursive(path.join(src, childItemName), path.join(dest, childItemName));
       });
     } else {
-      if (src.endsWith('fetch.py')) {
-        let content = fs.readFileSync(src, 'utf8');
-        if (!content.includes('urllib.request.install_opener')) {
-            content = content.replace('import urllib.request', 'import urllib.request\nopener = urllib.request.build_opener()\nopener.addheaders = [("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0.0.0")]\nurllib.request.install_opener(opener)');
-        }
-        if (!content.includes('import os\nfrom os import path')) {
-            content = content.replace('from os import path', 'import os\nfrom os import path');
-        }
-        content = content.replace(/path\.join\(REPO_ROOT, 'game', '([a-z_]+)'\)/g, "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), '$1')");
-        content = content.replace(/os\.path\.join\(REPO_ROOT, 'game', '([a-z_]+)'\)/g, "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), '$1')");
-        fs.writeFileSync(dest, content);
-      } else {
-        fs.copyFileSync(src, dest);
-      }
+      fs.copyFileSync(src, dest);
     }
   };
   const pluginsPath = path.join(libraryPath, 'Plugins');
@@ -98,27 +85,6 @@ async function startServer() {
      scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
   }
   
-  // Ensure existing fetch.py scripts are patched with User-Agent
-  const mtgFetchPath = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
-  if (fs.existsSync(mtgFetchPath)) {
-    let content = fs.readFileSync(mtgFetchPath, 'utf8');
-    let modified = false;
-    if (!content.includes('urllib.request.install_opener')) {
-        content = content.replace('import urllib.request', 'import urllib.request\nopener = urllib.request.build_opener()\nopener.addheaders = [("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0.0.0")]\nurllib.request.install_opener(opener)');
-        modified = true;
-    }
-    if (!content.includes('import os\nfrom os import path')) {
-        content = content.replace('from os import path', 'import os\nfrom os import path');
-        modified = true;
-    }
-    if (content.includes('path.join(REPO_ROOT, \'game\', \'front\')')) {
-        content = content.replace(/path\.join\(REPO_ROOT, 'game', '([a-z_]+)'\)/g, "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), '$1')");
-        content = content.replace(/os\.path\.join\(REPO_ROOT, 'game', '([a-z_]+)'\)/g, "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), '$1')");
-        modified = true;
-    }
-    if (modified) fs.writeFileSync(mtgFetchPath, content);
-  }
-
   // If in Electron production, we should check if our python scripts exist in the writable location
   // and if not, copy them from the unpacked resources folder (ASAR Bypass)
   if (isElectron) {
@@ -201,13 +167,6 @@ async function startServer() {
   app.use('/game', express.static(path.join(scmPath, 'game')));
   app.use('/plugins_staging', express.static(path.join(baseDataPath, 'src', 'Library', 'Plugins')));
   app.use('/uploads', express.static(path.join(baseDataPath, 'uploads')));
-  
-  // Serve entire absolute workspace directory explicitly for Electron local access via HTTP
-  app.use('/local-assets', express.static(scmPath));
-  // Additional absolute bindings if needed:
-  app.use('/local-assets-library', express.static(libraryPath));
-  app.use('/local-assets-plugins', express.static(path.join(libraryPath, 'Plugins')));
-
 
   const upload = multer({ dest: path.join(baseDataPath, 'temp-uploads') });
 
@@ -235,7 +194,7 @@ async function startServer() {
     fs.copyFileSync(req.file.path, targetPath);
     try { fs.unlinkSync(req.file.path); } catch (e) {}
 
-    res.json({ success: true, message: `Uploaded ${req.file.originalname}`, file: req.file.originalname, targetPath: targetPath.replace(/\\/g, '/') });
+    res.json({ success: true, message: `Uploaded ${req.file.originalname}`, file: req.file.originalname, targetPath });
   });
 
   app.post("/api/project/save-decklist", (req, res) => {
@@ -339,7 +298,7 @@ async function startServer() {
     console.log(`[Proxy] Local fetch request triggered for Moxfield deck ID: ${deckId}`);
     
     const headers = {
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Accept": "application/json, text/plain, */*",
       "Accept-Language": "en-US,en;q=0.9",
       "Referer": "https://www.moxfield.com/",
@@ -648,22 +607,18 @@ async function startServer() {
           }
         }
 
-        const posixRootDir = rootDir.replace(/\\/g, '/');
-        const posixLibraryPath = libraryPath.replace(/\\/g, '/');
-        const posixUserDataPath = baseDataPath.replace(/\\/g, '/');
-
         res.json({
           installed: toolInstalled,
           version: toolVersion,
-          rootDir: posixRootDir,
+          rootDir: rootDir,
           pythonFound: pythonHasBeenFound,
           dependenciesOk: toolInstalled,
           assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
           library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
           integrityOk: integrityOk,
           isElectron: isElectron,
-          libraryPath: posixLibraryPath,
-          userDataPath: posixUserDataPath,
+          libraryPath: libraryPath,
+          userDataPath: baseDataPath,
           plugins: {
             fronts: actualPluginsFronts,
             backs: actualPluginsBacks,
@@ -672,20 +627,16 @@ async function startServer() {
           savedProjects: getProjects()
         });
       }).catch(() => {
-         const posixRootDir = rootDir.replace(/\\/g, '/');
-         const posixLibraryPath = libraryPath.replace(/\\/g, '/');
-         const posixUserDataPath = baseDataPath.replace(/\\/g, '/');
-
          res.json({
             installed: toolInstalled,
             version: toolVersion,
-            rootDir: posixRootDir,
+            rootDir: rootDir,
             pythonFound: true,
             dependenciesOk: toolInstalled,
             assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
             library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
-            libraryPath: posixLibraryPath,
-            userDataPath: posixUserDataPath,
+            libraryPath: libraryPath,
+            userDataPath: baseDataPath,
             plugins: { fronts: [], backs: [], double_sided: [] },
             savedProjects: getProjects()
          });
@@ -693,20 +644,16 @@ async function startServer() {
       return;
 
     } catch(e) {
-      const posixRootDir = rootDir.replace(/\\/g, '/');
-      const posixLibraryPath = libraryPath.replace(/\\/g, '/');
-      const posixUserDataPath = baseDataPath.replace(/\\/g, '/');
-      
       res.json({
         installed: toolInstalled,
         version: toolVersion,
-        rootDir: posixRootDir,
+        rootDir: rootDir,
         pythonFound: true,
         dependenciesOk: toolInstalled,
         assets: { fronts: [], backs: [], double_sided: [] },
         library: { fronts: [], backs: [], double_sided: [] },
-        libraryPath: posixLibraryPath,
-        userDataPath: posixUserDataPath,
+        libraryPath: libraryPath,
+        userDataPath: baseDataPath,
         plugins: { fronts: [], backs: [], double_sided: [] },
         savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
       });
@@ -1139,8 +1086,7 @@ async function startServer() {
       const [type, name] = id.split(':');
       
       const ext = path.extname(name);
-      const strippedIdent = name.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
-      const baseName = strippedIdent.slice(0, strippedIdent.length - ext.length);
+      const baseName = name.slice(0, name.length - ext.length);
       
       let finalName = name;
       if (keepBoth) {
@@ -1164,7 +1110,7 @@ async function startServer() {
         }
         if (fs.existsSync(sourcePath)) {
             fs.copyFileSync(sourcePath, targetPath);
-            results.push({ name: finalName, from: sourcePath.replace(/\\/g, '/'), to: targetPath.replace(/\\/g, '/') });
+            results.push({ name: finalName, from: sourcePath, to: targetPath });
         }
 
         if (type === 'front') {
@@ -1531,18 +1477,17 @@ async function startServer() {
       }
 
       if (req.body.tempDirId) {
-        customEnv.SCM_TEMP_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
-        customEnv.SCM_GAME_DIR = path.join(customEnv.SCM_TEMP_DIR, 'game');
+        customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
         
         const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
-        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'decklist');
+        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
         if (fs.existsSync(sourceDecklistDir)) {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
         
-        spawnCwd = customEnv.SCM_TEMP_DIR;
+        spawnCwd = customEnv.SCM_GAME_DIR;
         spawnCommand = path.join(scmPath, command);
       } else if (command.startsWith('plugins/')) {
         customEnv.SCM_GAME_DIR = pluginsPath;
@@ -1582,10 +1527,7 @@ async function startServer() {
       }, 5000);
 
       req.on('close', () => {
-          try {
-              // Standard SIGTERM is often ignored or blocked. Use SIGKILL to force terminate the python download loop.
-              child.kill('SIGKILL');
-          } catch(e) {}
+          child.kill();
       });
 
       child.stdout.on('data', (data) => {
@@ -1643,7 +1585,7 @@ async function startServer() {
           if (req.body.tempDirId) {
              const getFiles = (dir: string) => {
                try {
-                 return fs.readdirSync(path.join(customEnv.SCM_GAME_DIR, dir)).filter(f => !f.startsWith('.'));
+                 return fs.readdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', dir)).filter(f => !f.startsWith('.'));
                } catch(e) { return []; }
              };
              const fetchedFiles = {
@@ -1779,18 +1721,17 @@ async function startServer() {
       }).join(" ");
 
       if (req.body.tempDirId) {
-        let tempDir = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
-        customEnv.SCM_GAME_DIR = path.join(tempDir, 'game');
+        customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
         
         const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
-        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'decklist');
+        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
         if (fs.existsSync(sourceDecklistDir)) {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
         
-        execCwd = tempDir;
+        execCwd = customEnv.SCM_GAME_DIR;
       } else if (command.startsWith('plugins/')) {
         customEnv.SCM_GAME_DIR = pluginsPath;
         execCwd = customEnv.SCM_GAME_DIR;
@@ -1880,9 +1821,9 @@ async function startServer() {
              } catch (e) { }
              return [];
            };
-           fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'front'));
-           fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'back'));
-           fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'double_sided'));
+           fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'front'));
+           fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'back'));
+           fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'double_sided'));
         } else if (command.startsWith('plugins/')) {
            ['front', 'back', 'double_sided'].forEach(df => {
               const srcDir = path.join(pluginsPath, 'game', df);
@@ -1944,8 +1885,7 @@ async function startServer() {
                 if (!(resolution === 'skip' && fs.existsSync(path.join(dstFolder, file)))) {
                    let targetFile = file;
                    const ext = path.extname(file);
-                   const strippedFile = file.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
-                   const baseName = strippedFile.slice(0, strippedFile.length - ext.length);
+                   const baseName = file.slice(0, file.length - ext.length);
 
                    if (resolution === 'keep_both') {
                        if (!keepBothSuffixes[file]) {
@@ -1964,11 +1904,7 @@ async function startServer() {
                                if (fs.existsSync(faceDir)) {
                                    const existingFiles = fs.readdirSync(faceDir);
                                    existingFiles.forEach(existingFile => {
-                                       const extExist = path.extname(existingFile);
-                                       const strippedExist = existingFile.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
-                                       const baseExist = strippedExist.slice(0, strippedExist.length - extExist.length);
-                                       
-                                       if (baseExist === baseName) {
+                                       if (existingFile === file || (existingFile.startsWith(baseName + '_') && existingFile.endsWith(ext))) {
                                            if (face === 'front') { 
                                                previousQuantity++;
                                            }

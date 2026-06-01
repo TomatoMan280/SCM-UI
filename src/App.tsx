@@ -621,10 +621,7 @@ export default function App() {
   const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
   const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check'|'keep'|'replace'} | null>(null);
   const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'|'keep_both'} | null>(null);
-  const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip' | 'keep_both'>} | null>(null);
-  const [isManualReviewMode, setIsManualReviewMode] = useState(false);
-  const [reviewIndex, setReviewIndex] = useState(0);
-  const [individualDecisions, setIndividualDecisions] = useState<Record<string, 'replace' | 'skip' | 'keep_both'>>({});
+  const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'>} | null>(null);
 
   useEffect(() => {
     setCurrentTheme(getTheme());
@@ -1073,6 +1070,7 @@ export default function App() {
     
     return [...serverAssets, ...local];
   };
+
 
   const addLog = (newLogs: string | string[]) => {
     const logArray = (Array.isArray(newLogs) ? newLogs : [newLogs])
@@ -1564,7 +1562,7 @@ export default function App() {
     }
   };
 
-  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library' | 'plugins', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' | 'keep_both' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
+  const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' | 'keep_both' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
       let finalItems = [...items];
       const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
       
@@ -1596,15 +1594,7 @@ export default function App() {
                 return false;
             });
             if (collisions.length > 0) {
-               // Get ALL colliding files from target so they can see existing variants
-               const allCollisions: string[] = [];
-               finalItems.forEach(item => {
-                   const [type, name] = item.split(':');
-                   if (type === 'front' && targetObj.fronts.includes(name) && !allCollisions.includes(`front:${name}`)) allCollisions.push(`front:${name}`);
-                   if (type === 'back' && targetObj.backs.includes(name) && !allCollisions.includes(`back:${name}`)) allCollisions.push(`back:${name}`);
-                   if (type === 'double_sided' && targetObj.double_sided?.includes(name) && !allCollisions.includes(`double_sided:${name}`)) allCollisions.push(`double_sided:${name}`);
-               });
-               setImportConflictData({ items: finalItems, destination, source, collisions: allCollisions, backResolution });
+               setImportConflictData({ items: finalItems, destination, source, collisions, backResolution });
                return; // pause for user name collision check
             }
          }
@@ -3142,28 +3132,16 @@ export default function App() {
                               });
                               
                               if (result && result.fetchedFiles) {
-                                  const collisions: string[] = [];
+                                  const collisions = [];
                                   const { fronts, backs, double_sided } = result.fetchedFiles;
                                   
                                   const targetFronts = status?.plugins?.fronts || [];
                                   const targetBacks = status?.plugins?.backs || [];
                                   const targetDob = status?.plugins?.double_sided || [];
                                   
-                                  fronts.forEach(f => {
-                                      if (targetFronts.includes(f) && !collisions.includes(`front:${f}`)) {
-                                          collisions.push(`front:${f}`);
-                                      }
-                                  });
-                                  backs.forEach(f => {
-                                      if (targetBacks.includes(f) && !collisions.includes(`back:${f}`)) {
-                                          collisions.push(`back:${f}`);
-                                      }
-                                  });
-                                  double_sided.forEach(f => {
-                                      if (targetDob.includes(f) && !collisions.includes(`double_sided:${f}`)) {
-                                          collisions.push(`double_sided:${f}`);
-                                      }
-                                  });
+                                  fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
+                                  backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
+                                  double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
                                   
                                   if (collisions.length > 0) {
                                       setTaskProgress(null);
@@ -3246,17 +3224,17 @@ export default function App() {
                                 }} 
                               />
                             {getAllAssets('back')
-                              .filter(item => item.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((item, i: number) => (
+                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((img: string, i: number) => (
                                 <AssetItem 
-                                  key={`b-${item}-${i}`} 
-                                  cacheBustToken={cacheBusts[item]}
-                                  name={item} 
+                                  key={`b-${img}-${i}`} 
+                                  cacheBustToken={cacheBusts[img]}
+                                  name={img} 
                                   type="back" 
                                   allAssets={getCurrentAssets()} 
-                                  selected={selectedAssets.has(`back:${item}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item, type: 'back' })}
-                                  onSelect={(e) => handleAssetSelect(`back:${item}`, e)}
+                                  selected={selectedAssets.has(`back:${img}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'back' })}
+                                  onSelect={(e) => handleAssetSelect(`back:${img}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
@@ -3321,20 +3299,20 @@ export default function App() {
                               />
                             )}
                             {getAllAssets('front')
-                              .filter(item => item.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((item, i: number) => (
+                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((img: string, i: number) => (
                                 <AssetItem 
-                                  key={`f-${item}-${i}`} 
-                                  cacheBustToken={cacheBusts[item]}
-                                  name={item} 
+                                  key={`f-${img}-${i}`} 
+                                  cacheBustToken={cacheBusts[img]}
+                                  name={img} 
                                   type="front" 
                                   allAssets={getCurrentAssets()}
-                                  selected={selectedAssets.has(`front:${item}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item, type: 'front' })}
-                                  onSelect={(e) => handleAssetSelect(`front:${item}`, e)}
+                                  selected={selectedAssets.has(`front:${img}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'front' })}
+                                  onSelect={(e) => handleAssetSelect(`front:${img}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
-                                  isFlipped={flippedAssets.has(`front:${item}`)}
-                                  onToggleFlip={(e) => handleToggleFlip(`front:${item}`, e)}
+                                  isFlipped={flippedAssets.has(`front:${img}`)}
+                                  onToggleFlip={(e) => handleToggleFlip(`front:${img}`, e)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
                                   cardDimming={cardDimming}
@@ -3398,20 +3376,20 @@ export default function App() {
                               />
                             )}
                             {getAllAssets('double_sided')
-                              .filter(item => item.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((item, i: number) => (
+                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((img: string, i: number) => (
                                 <AssetItem 
-                                  key={`d-${item}-${i}`} 
-                                  cacheBustToken={cacheBusts[item]}
-                                  name={item} 
+                                  key={`d-${img}-${i}`} 
+                                  cacheBustToken={cacheBusts[img]}
+                                  name={img} 
                                   type="double_sided" 
                                   allAssets={getCurrentAssets()}
-                                  selected={selectedAssets.has(`double_sided:${item}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item, type: 'double_sided' })}
-                                  onSelect={(e) => handleAssetSelect(`double_sided:${item}`, e)}
+                                  selected={selectedAssets.has(`double_sided:${img}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'double_sided' })}
+                                  onSelect={(e) => handleAssetSelect(`double_sided:${img}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
-                                  isFlipped={flippedAssets.has(`double_sided:${item}`)}
-                                  onToggleFlip={(e) => handleToggleFlip(`double_sided:${item}`, e)}
+                                  isFlipped={flippedAssets.has(`double_sided:${img}`)}
+                                  onToggleFlip={(e) => handleToggleFlip(`double_sided:${img}`, e)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
                                   cardDimming={cardDimming}
@@ -3590,273 +3568,134 @@ export default function App() {
               </div>
               
               <div className="p-6 space-y-6">
-                {!isManualReviewMode ? (
-                  <>
-                    <div className="bg-black/40 border border-white/5 rounded-xl p-4 max-h-[50vh] overflow-y-auto space-y-8">
-                      {fetchConflictData.collisions.map((c, i) => {
-                        const type = c.split(':')[0];
-                        const name = c.split(':')[1];
+                <div className="bg-black/40 border border-white/5 rounded-xl p-4 max-h-[50vh] overflow-y-auto space-y-8">
+                  {fetchConflictData.collisions.map((c, i) => {
+                    const type = c.split(':')[0];
+                    const name = c.split(':')[1];
+                    const ext = name.substring(name.lastIndexOf('.'));
+                    const baseName = name.substring(0, name.lastIndexOf('.'));
+                    
+                    const existingList = type === 'back' 
+                      ? status?.plugins?.backs 
+                      : (type === 'double_sided' ? status?.plugins?.double_sided : status?.plugins?.fronts);
+                      
+                    const variants = (existingList || []).filter(f => f === name || (f.startsWith(`${baseName}_`) && f.endsWith(ext)));
+
+                    return (
+                      <div key={`${c}-${i}`} className="space-y-4 border-b border-white/10 pb-6 last:border-0 last:pb-0">
+                        <div className="text-white font-bold truncate text-sm px-2 text-center md:text-left">{name}</div>
                         
-                        return (
-                          <div key={`${c}-${i}`} className="space-y-4 border-b border-white/10 pb-6 last:border-0 last:pb-0">
-                            <div className="text-white font-bold truncate text-sm px-2 text-center md:text-left">{name}</div>
-                            
-                            <div className="flex flex-col md:flex-row gap-6">
-                              <div className="w-full md:w-1/3 flex flex-col gap-3">
-                                <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
-                                <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
-                                    <img src={`http://127.0.0.1:3000/local-assets-library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
-                                </div>
-                              </div>
+                        <div className="flex flex-col md:flex-row gap-6">
+                           <div className="w-full md:w-1/3 flex flex-col gap-3">
+                             <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
+                             <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
+                                <img src={`/library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
+                             </div>
+                           </div>
 
-                              <div className="w-full md:w-2/3 flex flex-col gap-3">
-                                <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Card to Replace</div>
-                                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
-                                      <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
-                                          <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(name)}?t=${cacheBusts[name] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
-                                      </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex flex-col gap-3">
-                      <div className="flex flex-col md:flex-row gap-3">
-                        <button 
-                          onClick={async () => {
-                            const { tempDirId, collisions } = fetchConflictData;
-                            setFetchConflictData(null);
-                            setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                            
-                            const resolutions: Record<string, 'skip'> = {};
-                            collisions.forEach(c => resolutions[c] = 'skip');
-                            
-                            await fetch('/api/plugin/fetch-commit', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ tempDirId, resolutions })
-                            });
-                            await fetchStatus();
-                            setTaskProgress(null);
-                          }}
-                          className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
-                        >
-                          Keep All Existing (Skip Duplicates)
-                        </button>
-
-                        <button 
-                          onClick={() => {
-                            setIsManualReviewMode(true);
-                            setReviewIndex(0);
-                            setIndividualDecisions({});
-                          }}
-                          className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all border border-white/20"
-                        >
-                          Let Me Decide
-                        </button>
-
-                        <button 
-                          onClick={async () => {
-                            const { tempDirId, collisions } = fetchConflictData;
-                            setFetchConflictData(null);
-                            setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                            
-                            const resolutions: Record<string, 'keep_both'> = {};
-                            collisions.forEach(c => resolutions[c] = 'keep_both');
-                            
-                            await fetch('/api/plugin/fetch-commit', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ tempDirId, resolutions })
-                            });
-                            
-                            await fetchStatus();
-                            setTaskProgress(null);
-                          }}
-                          className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
-                        >
-                          Keep Both for All
-                        </button>
-
-                        <button 
-                          onClick={async () => {
-                            const { tempDirId, collisions } = fetchConflictData;
-                            setFetchConflictData(null);
-                            setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                            await fetch('/api/plugin/fetch-commit', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ tempDirId, resolutions: {} })
-                            });
-                            
-                            const newBusts = { ...cacheBusts };
-                            collisions.forEach(c => {
-                                const name = c.split(':')[1];
-                                newBusts[name] = Date.now();
-                            });
-                            setCacheBusts(newBusts);
-                            
-                            await fetchStatus();
-                            setTaskProgress(null);
-                          }}
-                          className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
-                        >
-                          Replace All Existing
-                        </button>
+                           <div className="w-full md:w-2/3 flex flex-col gap-3">
+                             <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
+                             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
+                                {variants.map(v => (
+                                   <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
+                                      <img src={`/plugins_staging/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                   </div>
+                                ))}
+                             </div>
+                           </div>
+                        </div>
                       </div>
+                    );
+                  })}
+                </div>
 
-                      <button 
-                        onClick={async () => {
-                          const { tempDirId } = fetchConflictData;
-                          setFetchConflictData(null);
-                          await fetch('/api/plugin/fetch-commit', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ tempDirId, abort: true })
-                          });
-                        }}
-                        className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
-                      >
-                        Cancel Fetch Entirely
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="flex justify-between items-center px-2">
-                       <h3 className="font-bold text-white text-lg">Reviewing Conflict {reviewIndex + 1} of {fetchConflictData.collisions.length}</h3>
-                       <button onClick={() => setIsManualReviewMode(false)} className="text-sm text-white/40 hover:text-white transition-colors">Cancel Review</button>
-                    </div>
-                    
-                    <div className="bg-black/40 border border-white/5 rounded-xl p-6">
-                      {(() => {
-                        const c = fetchConflictData.collisions[reviewIndex];
-                        if (!c) return null;
-                        const type = c.split(':')[0];
-                        const name = c.split(':')[1];
-                        
-                        return (
-                          <div className="space-y-4">
-                            <div className="text-white font-bold truncate text-lg px-2 text-center md:text-left">{name}</div>
-                            
-                            <div className="flex flex-col md:flex-row gap-6">
-                              <div className="w-full md:w-1/3 flex flex-col gap-3">
-                                <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
-                                <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full flex-shrink-0">
-                                    <img src={`http://127.0.0.1:3000/local-assets-library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
-                                </div>
-                              </div>
+                <div className="flex flex-col md:flex-row gap-3">
+                  <button 
+                    onClick={async () => {
+                      const { tempDirId, collisions } = fetchConflictData;
+                      setFetchConflictData(null);
+                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      
+                      const resolutions: Record<string, 'skip'> = {};
+                      collisions.forEach(c => resolutions[c] = 'skip');
+                      
+                      await fetch('/api/plugin/fetch-commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tempDirId, resolutions })
+                      });
+                      await fetchStatus();
+                      setTaskProgress(null);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
+                  >
+                    Keep All Existing (Skip Duplicates)
+                  </button>
 
-                              <div className="w-full md:w-2/3 flex flex-col gap-3">
-                                <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Card to Replace</div>
-                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 p-1">
-                                      <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
-                                          <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(name)}?t=${cacheBusts[name] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
-                                      </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    
-                    <div className="flex flex-col md:flex-row gap-3 pt-4">
-                      <button 
-                        onClick={async () => {
-                           const c = fetchConflictData.collisions[reviewIndex];
-                           const newDecisions = { ...individualDecisions, [c]: 'skip' as const };
-                           if (reviewIndex + 1 < fetchConflictData.collisions.length) {
-                               setIndividualDecisions(newDecisions);
-                               setReviewIndex(reviewIndex + 1);
-                           } else {
-                               setIsManualReviewMode(false);
-                               const { tempDirId } = fetchConflictData;
-                               setFetchConflictData(null);
-                               setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                               
-                               await fetch('/api/plugin/fetch-commit', {
-                                 method: 'POST',
-                                 headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({ tempDirId, resolutions: newDecisions })
-                               });
-                               await fetchStatus();
-                               setTaskProgress(null);
-                           }
-                        }}
-                        className="w-full py-4 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
-                      >
-                        Keep Existing (Skip)
-                      </button>
+                  <button 
+                    onClick={async () => {
+                      const { tempDirId, collisions } = fetchConflictData;
+                      setFetchConflictData(null);
+                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      await fetch('/api/plugin/fetch-commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tempDirId, resolutions: {} })
+                      });
+                      
+                      const newBusts = { ...cacheBusts };
+                      collisions.forEach(c => {
+                          const name = c.split(':')[1];
+                          newBusts[name] = Date.now();
+                      });
+                      setCacheBusts(newBusts);
+                      
+                      await fetchStatus();
+                      setTaskProgress(null);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
+                  >
+                    Replace All Existing
+                  </button>
 
-                      <button 
-                        onClick={async () => {
-                           const c = fetchConflictData.collisions[reviewIndex];
-                           const newDecisions = { ...individualDecisions, [c]: 'keep_both' as const };
-                           if (reviewIndex + 1 < fetchConflictData.collisions.length) {
-                               setIndividualDecisions(newDecisions);
-                               setReviewIndex(reviewIndex + 1);
-                           } else {
-                               setIsManualReviewMode(false);
-                               const { tempDirId } = fetchConflictData;
-                               setFetchConflictData(null);
-                               setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                               
-                               await fetch('/api/plugin/fetch-commit', {
-                                 method: 'POST',
-                                 headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({ tempDirId, resolutions: newDecisions })
-                               });
-                               await fetchStatus();
-                               setTaskProgress(null);
-                           }
-                        }}
-                        className="w-full py-4 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
-                      >
-                        Keep Both
-                      </button>
+                  <button 
+                    onClick={async () => {
+                      const { tempDirId, collisions } = fetchConflictData;
+                      setFetchConflictData(null);
+                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      
+                      const resolutions: Record<string, 'keep_both'> = {};
+                      collisions.forEach(c => resolutions[c] = 'keep_both');
+                      
+                      await fetch('/api/plugin/fetch-commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tempDirId, resolutions })
+                      });
+                      
+                      await fetchStatus();
+                      setTaskProgress(null);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
+                  >
+                    Keep Both for All
+                  </button>
 
-                      <button 
-                        onClick={async () => {
-                           const c = fetchConflictData.collisions[reviewIndex];
-                           const newDecisions = { ...individualDecisions, [c]: 'replace' as const };
-                           if (reviewIndex + 1 < fetchConflictData.collisions.length) {
-                               setIndividualDecisions(newDecisions);
-                               setReviewIndex(reviewIndex + 1);
-                           } else {
-                               setIsManualReviewMode(false);
-                               const { tempDirId } = fetchConflictData;
-                               setFetchConflictData(null);
-                               setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                               
-                               await fetch('/api/plugin/fetch-commit', {
-                                 method: 'POST',
-                                 headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({ tempDirId, resolutions: newDecisions })
-                               });
-                               
-                               const newBusts = { ...cacheBusts };
-                               Object.entries(newDecisions).forEach(([k, v]) => {
-                                  if (v === 'replace') {
-                                     newBusts[k.split(':')[1]] = Date.now();
-                                  }
-                               });
-                               setCacheBusts(newBusts);
-                               
-                               await fetchStatus();
-                               setTaskProgress(null);
-                           }
-                        }}
-                        className="w-full py-4 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
-                      >
-                        Replace Existing
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  <button 
+                    onClick={async () => {
+                      const { tempDirId } = fetchConflictData;
+                      setFetchConflictData(null);
+                      await fetch('/api/plugin/fetch-commit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tempDirId, abort: true })
+                      });
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
+                  >
+                    Cancel Fetch Entirely
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -4873,11 +4712,9 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
 
   
   const getBaseUrl = () => {
-    // Serve explicitly through 127.0.0.1:3000 to bypass Electron file:// protocol webSecurity blocks
-    const origin = 'http://127.0.0.1:3000';
-    if (assetViewMode === 'library') return `${origin}/local-assets-library`;
-    if (assetViewMode === 'plugins') return `${origin}/local-assets-plugins`;
-    return `${origin}/local-assets/game`;
+    if (assetViewMode === 'library') return '/library';
+    if (assetViewMode === 'plugins') return '/plugins_staging';
+    return '/game';
   };
 
   const getImgSrc = () => {
@@ -4897,7 +4734,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
 
     // 2. Determine base path based on type/double-sided status
     if (type === 'back') {
-      return appendBust(`${baseUrl}/back/${encodeURIComponent(name)}`);
+      return appendBust(`${baseUrl}/back/${name}`);
     }
     
     // 3. For front faces & double-sided faces, verify where the front face image is
@@ -4905,14 +4742,14 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     if (isDoubleSided) {
       const exactFront = allAssets?.fronts?.find(f => f.toLowerCase() === name.toLowerCase());
       if (exactFront) {
-        return appendBust(`${baseUrl}/front/${encodeURIComponent(exactFront)}`);
+        return appendBust(`${baseUrl}/front/${exactFront}`);
       } else {
-        return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
+        return appendBust(`${baseUrl}/front/${name}`);
       }
     }
     
     // 4. Default to front
-    return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
+    return appendBust(`${baseUrl}/front/${name}`);
   };
 
   const imgSrc = getImgSrc();
@@ -4970,7 +4807,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
             const backFaceFolder = getBackFace()?.folder;
             
             const enlargeSrc = isFlipped && getBackFace() 
-              ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${encodeURIComponent(getBackFace()!.name)}`) 
+              ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${getBackFace()!.name}`) 
               : imgSrc;
             onEnlarge?.(enlargeSrc);
           }
@@ -4983,7 +4820,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 onToggleFlip(e);
               }
             }}
-            className={cn("absolute top-2 right-2 z-30 w-7 h-7 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center transition-all shadow-md active:scale-95 hover:bg-primary-600 hover:border-primary-400 group/flip opacity-0 group-hover:opacity-100")}
+            className="absolute top-2 right-2 z-30 w-7 h-7 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center transition-all shadow-md active:scale-95 hover:bg-primary-600 hover:border-primary-400 group/flip opacity-0 group-hover:opacity-100"
             title="Flip Card"
           >
             <RotateCcw size={14} className="group-hover/flip:-rotate-180 transition-transform duration-500" />
@@ -5042,7 +4879,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 {backFace ? (
                   <>
                     <img 
-                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}`)}
+                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${backFace.name}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${backFace.name}`)}
                       alt={backFace.name}
                       loading="lazy"
                       className={cn(
@@ -5094,7 +4931,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
         </button>
       </div>
       <div className="px-1">
-        <p className="text-xs font-medium text-white/60 truncate">{displayName || name}</p>
+        <p className="text-xs font-medium text-white/60 truncate">{name}</p>
         <p className="text-[10px] text-white/20 font-mono">
           {(type === 'front' || type === 'double_sided') ? (isFlipped ? (backFace?.folder === 'double_sided' ? 'Double-Sided' : 'Standard Back') : 'Front Face') : 'Back Pattern'}
         </p>
