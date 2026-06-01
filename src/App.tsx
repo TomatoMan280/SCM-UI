@@ -621,7 +621,10 @@ export default function App() {
   const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
   const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check'|'keep'|'replace'} | null>(null);
   const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'|'keep_both'} | null>(null);
-  const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'>} | null>(null);
+  const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip' | 'keep_both'>} | null>(null);
+  const [isManualReviewMode, setIsManualReviewMode] = useState(false);
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [individualDecisions, setIndividualDecisions] = useState<Record<string, 'replace' | 'skip' | 'keep_both'>>({});
 
   useEffect(() => {
     setCurrentTheme(getTheme());
@@ -1078,7 +1081,7 @@ export default function App() {
     assets.forEach(f => {
       const ext = f.match(/\.[^.]+$/)?.[0] || '';
       const baseWithoutExt = f.slice(0, f.length - ext.length);
-      const coreName = baseWithoutExt.replace(/^\d+|\d+$/g, '');
+      const coreName = baseWithoutExt.replace(/^\d+|[-_()\s]*\d+$/g, '');
       const displayName = coreName + ext;
       
       if (!groups.has(displayName)) {
@@ -1606,7 +1609,7 @@ export default function App() {
       // 2. Name collision check
       if (conflictResolution === 'check') {
          if (targetObj) {
-            const matchBaseName = (name: string) => name.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+            const matchBaseName = (name: string) => name.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
             const collisions = finalItems.filter(item => {
                 const [type, name] = item.split(':');
                 const stripped = matchBaseName(name);
@@ -1637,7 +1640,7 @@ export default function App() {
          }
       } else if (conflictResolution === 'keep') {
          if (targetObj) {
-            const matchBaseName = (name: string) => name.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+            const matchBaseName = (name: string) => name.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
             finalItems = finalItems.filter(item => {
                 const [type, name] = item.split(':');
                 const stripped = matchBaseName(name);
@@ -3174,7 +3177,7 @@ export default function App() {
                                   const collisions = [];
                                   const { fronts, backs, double_sided } = result.fetchedFiles;
                                   
-                                  const matchBaseName = (name: string) => name.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+                                  const matchBaseName = (name: string) => name.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
                                   const targetFronts = status?.plugins?.fronts || [];
                                   const targetBacks = status?.plugins?.backs || [];
                                   const targetDob = status?.plugins?.double_sided || [];
@@ -3635,134 +3638,293 @@ export default function App() {
               </div>
               
               <div className="p-6 space-y-6">
-                <div className="bg-black/40 border border-white/5 rounded-xl p-4 max-h-[50vh] overflow-y-auto space-y-8">
-                  {fetchConflictData.collisions.map((c, i) => {
-                    const type = c.split(':')[0];
-                    const name = c.split(':')[1];
-                    const ext = name.substring(name.lastIndexOf('.'));
-                    const baseName = name.substring(0, name.lastIndexOf('.'));
-                    
-                    const existingList = type === 'back' 
-                      ? status?.plugins?.backs 
-                      : (type === 'double_sided' ? status?.plugins?.double_sided : status?.plugins?.fronts);
-                      
-                    const variants = (existingList || []).filter(f => f === name || (f.startsWith(`${baseName}_`) && f.endsWith(ext)));
-
-                    return (
-                      <div key={`${c}-${i}`} className="space-y-4 border-b border-white/10 pb-6 last:border-0 last:pb-0">
-                        <div className="text-white font-bold truncate text-sm px-2 text-center md:text-left">{name}</div>
+                {!isManualReviewMode ? (
+                  <>
+                    <div className="bg-black/40 border border-white/5 rounded-xl p-4 max-h-[50vh] overflow-y-auto space-y-8">
+                      {fetchConflictData.collisions.map((c, i) => {
+                        const type = c.split(':')[0];
+                        const name = c.split(':')[1];
+                        const ext = name.substring(name.lastIndexOf('.'));
+                        const baseName = name.substring(0, name.lastIndexOf('.'));
                         
-                        <div className="flex flex-col md:flex-row gap-6">
-                           <div className="w-full md:w-1/3 flex flex-col gap-3">
-                             <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
-                             <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
-                                <img src={`http://127.0.0.1:3000/local-assets-library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
-                             </div>
-                           </div>
+                        const existingList = type === 'back' 
+                          ? status?.plugins?.backs 
+                          : (type === 'double_sided' ? status?.plugins?.double_sided : status?.plugins?.fronts);
+                          
+                        const variants = (existingList || []).filter(f => f === name || (f.startsWith(`${baseName}_`) && f.endsWith(ext)));
 
-                           <div className="w-full md:w-2/3 flex flex-col gap-3">
-                             <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
-                             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
-                                {variants.map(v => (
-                                   <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
-                                      <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
-                                   </div>
-                                ))}
-                             </div>
-                           </div>
-                        </div>
+                        return (
+                          <div key={`${c}-${i}`} className="space-y-4 border-b border-white/10 pb-6 last:border-0 last:pb-0">
+                            <div className="text-white font-bold truncate text-sm px-2 text-center md:text-left">{name}</div>
+                            
+                            <div className="flex flex-col md:flex-row gap-6">
+                              <div className="w-full md:w-1/3 flex flex-col gap-3">
+                                <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
+                                <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
+                                    <img src={`http://127.0.0.1:3000/local-assets-library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
+                                </div>
+                              </div>
+
+                              <div className="w-full md:w-2/3 flex flex-col gap-3">
+                                <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
+                                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
+                                    {variants.map(v => (
+                                      <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
+                                          <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                      </div>
+                                    ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      <div className="flex flex-col md:flex-row gap-3">
+                        <button 
+                          onClick={async () => {
+                            const { tempDirId, collisions } = fetchConflictData;
+                            setFetchConflictData(null);
+                            setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                            
+                            const resolutions: Record<string, 'skip'> = {};
+                            collisions.forEach(c => resolutions[c] = 'skip');
+                            
+                            await fetch('/api/plugin/fetch-commit', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ tempDirId, resolutions })
+                            });
+                            await fetchStatus();
+                            setTaskProgress(null);
+                          }}
+                          className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
+                        >
+                          Keep All Existing (Skip Duplicates)
+                        </button>
+
+                        <button 
+                          onClick={() => {
+                            setIsManualReviewMode(true);
+                            setReviewIndex(0);
+                            setIndividualDecisions({});
+                          }}
+                          className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all border border-white/20"
+                        >
+                          Let Me Decide
+                        </button>
+
+                        <button 
+                          onClick={async () => {
+                            const { tempDirId, collisions } = fetchConflictData;
+                            setFetchConflictData(null);
+                            setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                            
+                            const resolutions: Record<string, 'keep_both'> = {};
+                            collisions.forEach(c => resolutions[c] = 'keep_both');
+                            
+                            await fetch('/api/plugin/fetch-commit', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ tempDirId, resolutions })
+                            });
+                            
+                            await fetchStatus();
+                            setTaskProgress(null);
+                          }}
+                          className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
+                        >
+                          Keep Both for All
+                        </button>
+
+                        <button 
+                          onClick={async () => {
+                            const { tempDirId, collisions } = fetchConflictData;
+                            setFetchConflictData(null);
+                            setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                            await fetch('/api/plugin/fetch-commit', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ tempDirId, resolutions: {} })
+                            });
+                            
+                            const newBusts = { ...cacheBusts };
+                            collisions.forEach(c => {
+                                const name = c.split(':')[1];
+                                newBusts[name] = Date.now();
+                            });
+                            setCacheBusts(newBusts);
+                            
+                            await fetchStatus();
+                            setTaskProgress(null);
+                          }}
+                          className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
+                        >
+                          Replace All Existing
+                        </button>
                       </div>
-                    );
-                  })}
-                </div>
 
-                <div className="flex flex-col md:flex-row gap-3">
-                  <button 
-                    onClick={async () => {
-                      const { tempDirId, collisions } = fetchConflictData;
-                      setFetchConflictData(null);
-                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                      
-                      const resolutions: Record<string, 'skip'> = {};
-                      collisions.forEach(c => resolutions[c] = 'skip');
-                      
-                      await fetch('/api/plugin/fetch-commit', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ tempDirId, resolutions })
-                      });
-                      await fetchStatus();
-                      setTaskProgress(null);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
-                  >
-                    Keep All Existing (Skip Duplicates)
-                  </button>
+                      <button 
+                        onClick={async () => {
+                          const { tempDirId } = fetchConflictData;
+                          setFetchConflictData(null);
+                          await fetch('/api/plugin/fetch-commit', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ tempDirId, abort: true })
+                          });
+                        }}
+                        className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
+                      >
+                        Cancel Fetch Entirely
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center px-2">
+                       <h3 className="font-bold text-white text-lg">Reviewing Conflict {reviewIndex + 1} of {fetchConflictData.collisions.length}</h3>
+                       <button onClick={() => setIsManualReviewMode(false)} className="text-sm text-white/40 hover:text-white transition-colors">Cancel Review</button>
+                    </div>
+                    
+                    <div className="bg-black/40 border border-white/5 rounded-xl p-6">
+                      {(() => {
+                        const c = fetchConflictData.collisions[reviewIndex];
+                        if (!c) return null;
+                        const type = c.split(':')[0];
+                        const name = c.split(':')[1];
+                        const ext = name.substring(name.lastIndexOf('.'));
+                        const baseName = name.substring(0, name.lastIndexOf('.'));
+                        
+                        const existingList = type === 'back' 
+                          ? status?.plugins?.backs 
+                          : (type === 'double_sided' ? status?.plugins?.double_sided : status?.plugins?.fronts);
+                          
+                        const variants = (existingList || []).filter(f => f === name || (f.startsWith(`${baseName}_`) && f.endsWith(ext)));
 
-                  <button 
-                    onClick={async () => {
-                      const { tempDirId, collisions } = fetchConflictData;
-                      setFetchConflictData(null);
-                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                      await fetch('/api/plugin/fetch-commit', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ tempDirId, resolutions: {} })
-                      });
-                      
-                      const newBusts = { ...cacheBusts };
-                      collisions.forEach(c => {
-                          const name = c.split(':')[1];
-                          newBusts[name] = Date.now();
-                      });
-                      setCacheBusts(newBusts);
-                      
-                      await fetchStatus();
-                      setTaskProgress(null);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
-                  >
-                    Replace All Existing
-                  </button>
+                        return (
+                          <div className="space-y-4">
+                            <div className="text-white font-bold truncate text-lg px-2 text-center md:text-left">{name}</div>
+                            
+                            <div className="flex flex-col md:flex-row gap-6">
+                              <div className="w-full md:w-1/3 flex flex-col gap-3">
+                                <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
+                                <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full flex-shrink-0">
+                                    <img src={`http://127.0.0.1:3000/local-assets-library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
+                                </div>
+                              </div>
 
-                  <button 
-                    onClick={async () => {
-                      const { tempDirId, collisions } = fetchConflictData;
-                      setFetchConflictData(null);
-                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                      
-                      const resolutions: Record<string, 'keep_both'> = {};
-                      collisions.forEach(c => resolutions[c] = 'keep_both');
-                      
-                      await fetch('/api/plugin/fetch-commit', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ tempDirId, resolutions })
-                      });
-                      
-                      await fetchStatus();
-                      setTaskProgress(null);
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
-                  >
-                    Keep Both for All
-                  </button>
+                              <div className="w-full md:w-2/3 flex flex-col gap-3">
+                                <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
+                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 p-1">
+                                    {variants.map(v => (
+                                      <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
+                                          <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                      </div>
+                                    ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    
+                    <div className="flex flex-col md:flex-row gap-3 pt-4">
+                      <button 
+                        onClick={async () => {
+                           const c = fetchConflictData.collisions[reviewIndex];
+                           const newDecisions = { ...individualDecisions, [c]: 'skip' as const };
+                           if (reviewIndex + 1 < fetchConflictData.collisions.length) {
+                               setIndividualDecisions(newDecisions);
+                               setReviewIndex(reviewIndex + 1);
+                           } else {
+                               setIsManualReviewMode(false);
+                               const { tempDirId } = fetchConflictData;
+                               setFetchConflictData(null);
+                               setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                               
+                               await fetch('/api/plugin/fetch-commit', {
+                                 method: 'POST',
+                                 headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ tempDirId, resolutions: newDecisions })
+                               });
+                               await fetchStatus();
+                               setTaskProgress(null);
+                           }
+                        }}
+                        className="w-full py-4 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
+                      >
+                        Keep Existing (Skip)
+                      </button>
 
-                  <button 
-                    onClick={async () => {
-                      const { tempDirId } = fetchConflictData;
-                      setFetchConflictData(null);
-                      await fetch('/api/plugin/fetch-commit', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ tempDirId, abort: true })
-                      });
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
-                  >
-                    Cancel Fetch Entirely
-                  </button>
-                </div>
+                      <button 
+                        onClick={async () => {
+                           const c = fetchConflictData.collisions[reviewIndex];
+                           const newDecisions = { ...individualDecisions, [c]: 'keep_both' as const };
+                           if (reviewIndex + 1 < fetchConflictData.collisions.length) {
+                               setIndividualDecisions(newDecisions);
+                               setReviewIndex(reviewIndex + 1);
+                           } else {
+                               setIsManualReviewMode(false);
+                               const { tempDirId } = fetchConflictData;
+                               setFetchConflictData(null);
+                               setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                               
+                               await fetch('/api/plugin/fetch-commit', {
+                                 method: 'POST',
+                                 headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ tempDirId, resolutions: newDecisions })
+                               });
+                               await fetchStatus();
+                               setTaskProgress(null);
+                           }
+                        }}
+                        className="w-full py-4 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
+                      >
+                        Keep Both
+                      </button>
+
+                      <button 
+                        onClick={async () => {
+                           const c = fetchConflictData.collisions[reviewIndex];
+                           const newDecisions = { ...individualDecisions, [c]: 'replace' as const };
+                           if (reviewIndex + 1 < fetchConflictData.collisions.length) {
+                               setIndividualDecisions(newDecisions);
+                               setReviewIndex(reviewIndex + 1);
+                           } else {
+                               setIsManualReviewMode(false);
+                               const { tempDirId } = fetchConflictData;
+                               setFetchConflictData(null);
+                               setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                               
+                               await fetch('/api/plugin/fetch-commit', {
+                                 method: 'POST',
+                                 headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ tempDirId, resolutions: newDecisions })
+                               });
+                               
+                               const newBusts = { ...cacheBusts };
+                               Object.entries(newDecisions).forEach(([k, v]) => {
+                                  if (v === 'replace') {
+                                     newBusts[k.split(':')[1]] = Date.now();
+                                  }
+                               });
+                               setCacheBusts(newBusts);
+                               
+                               await fetchStatus();
+                               setTaskProgress(null);
+                           }
+                        }}
+                        className="w-full py-4 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
+                      >
+                        Replace Existing
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>

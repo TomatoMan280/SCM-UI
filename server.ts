@@ -1139,7 +1139,7 @@ async function startServer() {
       const [type, name] = id.split(':');
       
       const ext = path.extname(name);
-      const strippedIdent = name.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+      const strippedIdent = name.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
       const baseName = strippedIdent.slice(0, strippedIdent.length - ext.length);
       
       let finalName = name;
@@ -1944,7 +1944,7 @@ async function startServer() {
                 if (!(resolution === 'skip' && fs.existsSync(path.join(dstFolder, file)))) {
                    let targetFile = file;
                    const ext = path.extname(file);
-                   const strippedFile = file.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+                   const strippedFile = file.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
                    const baseName = strippedFile.slice(0, strippedFile.length - ext.length);
 
                    if (resolution === 'keep_both') {
@@ -1965,7 +1965,7 @@ async function startServer() {
                                    const existingFiles = fs.readdirSync(faceDir);
                                    existingFiles.forEach(existingFile => {
                                        const extExist = path.extname(existingFile);
-                                       const strippedExist = existingFile.replace(/^\d+|\d+(?=\.\w+$)/g, '');
+                                       const strippedExist = existingFile.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
                                        const baseExist = strippedExist.slice(0, strippedExist.length - extExist.length);
                                        
                                        if (baseExist === baseName) {
