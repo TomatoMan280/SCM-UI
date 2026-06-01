@@ -162,6 +162,23 @@ async function startServer() {
   // Persistent storage simulation
   let savedProjects: Record<string, typeof mockCards> = {};
 
+  // Middleware to redirect or resolve files within Temp_Fetch folders correctly
+  app.use('/library/Temp_Fetch_:tempDirId/game/:type/:name', (req: any, res: any, next: any) => {
+    const { tempDirId, type, name } = req.params;
+    const decodedName = decodeURIComponent(name);
+    // Try without "game"
+    const realPathDirect = path.join(libraryPath, `Temp_Fetch_${tempDirId}`, type, decodedName);
+    if (fs.existsSync(realPathDirect)) {
+      return res.sendFile(realPathDirect);
+    }
+    // Try with "game"
+    const realPathWithGame = path.join(libraryPath, `Temp_Fetch_${tempDirId}`, 'game', type, decodedName);
+    if (fs.existsSync(realPathWithGame)) {
+      return res.sendFile(realPathWithGame);
+    }
+    next();
+  });
+
   // Serve library static files
   app.use('/library', express.static(path.join(baseDataPath, 'src', 'Library')));
   app.use('/game', express.static(path.join(scmPath, 'game')));
@@ -1477,25 +1494,26 @@ async function startServer() {
       }
 
       if (req.body.tempDirId) {
-        customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
-        fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        const tempBase = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
+        customEnv.SCM_GAME_DIR = path.join(tempBase, 'game');
+        fs.mkdirSync(tempBase, { recursive: true });
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(tempBase, 'game', df), { recursive: true }));
         
         const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
-        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        const targetDecklistDir = path.join(tempBase, 'game', 'decklist');
         if (fs.existsSync(sourceDecklistDir)) {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
         
-        spawnCwd = customEnv.SCM_GAME_DIR;
+        spawnCwd = tempBase;
         spawnCommand = path.join(scmPath, command);
       } else if (command.startsWith('plugins/')) {
-        customEnv.SCM_GAME_DIR = pluginsPath;
-        spawnCwd = customEnv.SCM_GAME_DIR;
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        customEnv.SCM_GAME_DIR = path.join(pluginsPath, 'game');
+        spawnCwd = pluginsPath;
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(pluginsPath, 'game', df), { recursive: true }));
         
         const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
-        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        const targetDecklistDir = path.join(pluginsPath, 'game', 'decklist');
         if (fs.existsSync(sourceDecklistDir)) {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
@@ -1612,9 +1630,17 @@ async function startServer() {
           
           if (req.body.tempDirId) {
              const getFiles = (dir: string) => {
-               try {
-                 return fs.readdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', dir)).filter(f => !f.startsWith('.'));
-               } catch(e) { return []; }
+                try {
+                  const pathWithGame = path.join(customEnv.SCM_GAME_DIR, 'game', dir);
+                  const pathWithoutGame = path.join(customEnv.SCM_GAME_DIR, dir);
+                  if (fs.existsSync(pathWithGame)) {
+                    return fs.readdirSync(pathWithGame).filter(f => !f.startsWith('.'));
+                  }
+                  if (fs.existsSync(pathWithoutGame)) {
+                    return fs.readdirSync(pathWithoutGame).filter(f => !f.startsWith('.'));
+                  }
+                  return [];
+                } catch(e) { return []; }
              };
              const fetchedFiles = {
                fronts: getFiles('front'),
@@ -1749,24 +1775,25 @@ async function startServer() {
       }).join(" ");
 
       if (req.body.tempDirId) {
-        customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
-        fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        const tempBase = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
+        customEnv.SCM_GAME_DIR = path.join(tempBase, 'game');
+        fs.mkdirSync(tempBase, { recursive: true });
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(tempBase, 'game', df), { recursive: true }));
         
         const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
-        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        const targetDecklistDir = path.join(tempBase, 'game', 'decklist');
         if (fs.existsSync(sourceDecklistDir)) {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
         
-        execCwd = customEnv.SCM_GAME_DIR;
+        execCwd = tempBase;
       } else if (command.startsWith('plugins/')) {
-        customEnv.SCM_GAME_DIR = pluginsPath;
-        execCwd = customEnv.SCM_GAME_DIR;
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        customEnv.SCM_GAME_DIR = path.join(pluginsPath, 'game');
+        execCwd = pluginsPath;
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(pluginsPath, 'game', df), { recursive: true }));
         
         const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
-        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        const targetDecklistDir = path.join(pluginsPath, 'game', 'decklist');
         if (fs.existsSync(sourceDecklistDir)) {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
