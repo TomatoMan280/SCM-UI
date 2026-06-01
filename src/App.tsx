@@ -486,7 +486,7 @@ export default function App() {
   const [assetFilter, setAssetFilter] = useState<'all' | 'front' | 'back' | 'double_sided'>('all');
   const [pluginSearch, setPluginSearch] = useState("");
   const [verifyResult, setVerifyResult] = useState<{ missing: number, restored: number, check: string } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type?: string, files?: string[] } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type?: string } | null>(null);
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
   const [flippedAssets, setFlippedAssets] = useState<Set<string>>(new Set());
   const [uploadedImages, setUploadedImages] = useState<Record<string, string>>({});
@@ -1074,37 +1074,6 @@ export default function App() {
     return [...serverAssets, ...local];
   };
 
-  const getGroupedAssets = (type: 'front' | 'back' | 'double_sided') => {
-    const assets = getAllAssets(type);
-    const groups = new Map<string, { quantity: number, name: string, displayName: string, files: string[] }>();
-    
-    assets.forEach(f => {
-      let hash = f; // fallback to filename
-      
-      const inGame = type === 'front' ? status?.assets?.fronts?.includes(f) : 
-                     type === 'back' ? status?.assets?.backs?.includes(f) : 
-                     status?.assets?.double_sided?.includes(f);
-                     
-      if (inGame && status?.fileHashes?.[`game:${type}:${f}`]) {
-         hash = status.fileHashes[`game:${type}:${f}`];
-      } else if (assetViewMode === 'plugins' && status?.fileHashes?.[`plugins:${type}:${f}`]) {
-         hash = status.fileHashes[`plugins:${type}:${f}`];
-      } else if (assetViewMode === 'library' && status?.fileHashes?.[`library:${type}:${f}`]) {
-         hash = status.fileHashes[`library:${type}:${f}`];
-      }
-
-      if (!groups.has(hash)) {
-          groups.set(hash, { quantity: 0, name: f, displayName: f, files: [] });
-      }
-      const g = groups.get(hash)!;
-      g.quantity += 1;
-      g.files.push(f);
-    });
-    
-    return Array.from(groups.values()).sort((a, b) => a.displayName.localeCompare(b.displayName));
-  };
-
-
   const addLog = (newLogs: string | string[]) => {
     const logArray = (Array.isArray(newLogs) ? newLogs : [newLogs])
       .filter(l => l !== null && l !== undefined && typeof l === 'string')
@@ -1596,28 +1565,7 @@ export default function App() {
   };
 
   const performMoveOrCopy = async (items: string[], destination: 'project' | 'library' | 'plugins', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' | 'keep_both' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
-      const expandIdentitiesToFiles = (identities: string[]) => {
-          const expanded: string[] = [];
-          const groupedFronts = getGroupedAssets('front');
-          const groupedBacks = getGroupedAssets('back');
-          const groupedDobs = getGroupedAssets('double_sided');
-
-          identities.forEach(id => {
-             const parts = id.split(':');
-             const t = parts[0] as any;
-             const n = parts[1];
-             const pool = t === 'front' ? groupedFronts : t === 'back' ? groupedBacks : groupedDobs;
-             const found = pool.find(p => p.name === n);
-             if (found && found.files) {
-                found.files.forEach(f => expanded.push(`${t}:${f}`));
-             } else {
-                expanded.push(id);
-             }
-          });
-          return Array.from(new Set(expanded));
-      };
-      
-      let finalItems = expandIdentitiesToFiles(items);
+      let finalItems = [...items];
       const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
       
       // 1. Back image check (workspace only)
@@ -1640,13 +1588,11 @@ export default function App() {
       // 2. Name collision check
       if (conflictResolution === 'check') {
          if (targetObj) {
-            const matchBaseName = (name: string) => name.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
             const collisions = finalItems.filter(item => {
                 const [type, name] = item.split(':');
-                const stripped = matchBaseName(name);
-                if (type === 'front' && targetObj.fronts.some(tf => matchBaseName(tf) === stripped)) return true;
-                if (type === 'back' && targetObj.backs.some(tb => matchBaseName(tb) === stripped)) return true;
-                if (type === 'double_sided' && targetObj.double_sided?.some(td => matchBaseName(td) === stripped)) return true;
+                if (type === 'front' && targetObj.fronts.includes(name)) return true;
+                if (type === 'back' && targetObj.backs.includes(name)) return true;
+                if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return true;
                 return false;
             });
             if (collisions.length > 0) {
@@ -1654,16 +1600,9 @@ export default function App() {
                const allCollisions: string[] = [];
                finalItems.forEach(item => {
                    const [type, name] = item.split(':');
-                   const stripped = matchBaseName(name);
-                   if (type === 'front') {
-                       targetObj.fronts.forEach(tf => { if (matchBaseName(tf) === stripped && !allCollisions.includes(`front:${tf}`)) allCollisions.push(`front:${tf}`); });
-                   }
-                   if (type === 'back') {
-                       targetObj.backs.forEach(tb => { if (matchBaseName(tb) === stripped && !allCollisions.includes(`back:${tb}`)) allCollisions.push(`back:${tb}`); });
-                   }
-                   if (type === 'double_sided' && targetObj.double_sided) {
-                       targetObj.double_sided.forEach(td => { if (matchBaseName(td) === stripped && !allCollisions.includes(`double_sided:${td}`)) allCollisions.push(`double_sided:${td}`); });
-                   }
+                   if (type === 'front' && targetObj.fronts.includes(name) && !allCollisions.includes(`front:${name}`)) allCollisions.push(`front:${name}`);
+                   if (type === 'back' && targetObj.backs.includes(name) && !allCollisions.includes(`back:${name}`)) allCollisions.push(`back:${name}`);
+                   if (type === 'double_sided' && targetObj.double_sided?.includes(name) && !allCollisions.includes(`double_sided:${name}`)) allCollisions.push(`double_sided:${name}`);
                });
                setImportConflictData({ items: finalItems, destination, source, collisions: allCollisions, backResolution });
                return; // pause for user name collision check
@@ -1671,13 +1610,11 @@ export default function App() {
          }
       } else if (conflictResolution === 'keep') {
          if (targetObj) {
-            const matchBaseName = (name: string) => name.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
             finalItems = finalItems.filter(item => {
                 const [type, name] = item.split(':');
-                const stripped = matchBaseName(name);
-                if (type === 'front' && targetObj.fronts.some(tf => matchBaseName(tf) === stripped)) return false;
-                if (type === 'back' && targetObj.backs.some(tb => matchBaseName(tb) === stripped)) return false;
-                if (type === 'double_sided' && targetObj.double_sided?.some(td => matchBaseName(td) === stripped)) return false;
+                if (type === 'front' && targetObj.fronts.includes(name)) return false;
+                if (type === 'back' && targetObj.backs.includes(name)) return false;
+                if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return false;
                 return true;
             });
          }
@@ -3205,37 +3142,27 @@ export default function App() {
                               });
                               
                               if (result && result.fetchedFiles) {
-                                  const collisions = [];
+                                  const collisions: string[] = [];
                                   const { fronts, backs, double_sided } = result.fetchedFiles;
                                   
-                                  const matchBaseName = (name: string) => name.replace(/^\d+|[-_()\s]*\d+(?=\.\w+$)/g, '');
                                   const targetFronts = status?.plugins?.fronts || [];
                                   const targetBacks = status?.plugins?.backs || [];
                                   const targetDob = status?.plugins?.double_sided || [];
                                   
                                   fronts.forEach(f => {
-                                      const stripped = matchBaseName(f);
-                                      targetFronts.forEach(tf => {
-                                          if (matchBaseName(tf) === stripped && !collisions.includes(`front:${tf}`)) {
-                                              collisions.push(`front:${tf}`);
-                                          }
-                                      });
+                                      if (targetFronts.includes(f) && !collisions.includes(`front:${f}`)) {
+                                          collisions.push(`front:${f}`);
+                                      }
                                   });
                                   backs.forEach(f => {
-                                      const stripped = matchBaseName(f);
-                                      targetBacks.forEach(tb => {
-                                          if (matchBaseName(tb) === stripped && !collisions.includes(`back:${tb}`)) {
-                                              collisions.push(`back:${tb}`);
-                                          }
-                                      });
+                                      if (targetBacks.includes(f) && !collisions.includes(`back:${f}`)) {
+                                          collisions.push(`back:${f}`);
+                                      }
                                   });
                                   double_sided.forEach(f => {
-                                      const stripped = matchBaseName(f);
-                                      targetDob.forEach(td => {
-                                          if (matchBaseName(td) === stripped && !collisions.includes(`double_sided:${td}`)) {
-                                              collisions.push(`double_sided:${td}`);
-                                          }
-                                      });
+                                      if (targetDob.includes(f) && !collisions.includes(`double_sided:${f}`)) {
+                                          collisions.push(`double_sided:${f}`);
+                                      }
                                   });
                                   
                                   if (collisions.length > 0) {
@@ -3318,20 +3245,18 @@ export default function App() {
                                   setTimeout(() => setTaskProgress(null), 1500);
                                 }} 
                               />
-                            {getGroupedAssets('back')
-                              .filter(item => item.name.toLowerCase().includes(assetSearch.toLowerCase()) || item.displayName.toLowerCase().includes(assetSearch.toLowerCase()))
+                            {getAllAssets('back')
+                              .filter(item => item.toLowerCase().includes(assetSearch.toLowerCase()))
                               .map((item, i: number) => (
                                 <AssetItem 
-                                  key={`b-${item.name}-${i}`} 
-                                  cacheBustToken={cacheBusts[item.name]}
-                                  name={item.name} 
-                                  displayName={item.displayName}
-                                  quantity={item.quantity}
+                                  key={`b-${item}-${i}`} 
+                                  cacheBustToken={cacheBusts[item]}
+                                  name={item} 
                                   type="back" 
                                   allAssets={getCurrentAssets()} 
-                                  selected={selectedAssets.has(`back:${item.name}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'back', files: item.files })}
-                                  onSelect={(e) => handleAssetSelect(`back:${item.name}`, e)}
+                                  selected={selectedAssets.has(`back:${item}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item, type: 'back' })}
+                                  onSelect={(e) => handleAssetSelect(`back:${item}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
@@ -3395,23 +3320,21 @@ export default function App() {
                                 }} 
                               />
                             )}
-                            {getGroupedAssets('front')
-                              .filter(item => item.name.toLowerCase().includes(assetSearch.toLowerCase()) || item.displayName.toLowerCase().includes(assetSearch.toLowerCase()))
+                            {getAllAssets('front')
+                              .filter(item => item.toLowerCase().includes(assetSearch.toLowerCase()))
                               .map((item, i: number) => (
                                 <AssetItem 
-                                  key={`f-${item.name}-${i}`} 
-                                  cacheBustToken={cacheBusts[item.name]}
-                                  name={item.name} 
-                                  displayName={item.displayName}
-                                  quantity={item.quantity}
+                                  key={`f-${item}-${i}`} 
+                                  cacheBustToken={cacheBusts[item]}
+                                  name={item} 
                                   type="front" 
                                   allAssets={getCurrentAssets()}
-                                  selected={selectedAssets.has(`front:${item.name}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'front', files: item.files })}
-                                  onSelect={(e) => handleAssetSelect(`front:${item.name}`, e)}
+                                  selected={selectedAssets.has(`front:${item}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item, type: 'front' })}
+                                  onSelect={(e) => handleAssetSelect(`front:${item}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
-                                  isFlipped={flippedAssets.has(`front:${item.name}`)}
-                                  onToggleFlip={(e) => handleToggleFlip(`front:${item.name}`, e)}
+                                  isFlipped={flippedAssets.has(`front:${item}`)}
+                                  onToggleFlip={(e) => handleToggleFlip(`front:${item}`, e)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
                                   cardDimming={cardDimming}
@@ -3474,23 +3397,21 @@ export default function App() {
                                 }} 
                               />
                             )}
-                            {getGroupedAssets('double_sided')
-                              .filter(item => item.name.toLowerCase().includes(assetSearch.toLowerCase()) || item.displayName.toLowerCase().includes(assetSearch.toLowerCase()))
+                            {getAllAssets('double_sided')
+                              .filter(item => item.toLowerCase().includes(assetSearch.toLowerCase()))
                               .map((item, i: number) => (
                                 <AssetItem 
-                                  key={`d-${item.name}-${i}`} 
-                                  cacheBustToken={cacheBusts[item.name]}
-                                  name={item.name} 
-                                  displayName={item.displayName}
-                                  quantity={item.quantity}
+                                  key={`d-${item}-${i}`} 
+                                  cacheBustToken={cacheBusts[item]}
+                                  name={item} 
                                   type="double_sided" 
                                   allAssets={getCurrentAssets()}
-                                  selected={selectedAssets.has(`double_sided:${item.name}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'double_sided', files: item.files })}
-                                  onSelect={(e) => handleAssetSelect(`double_sided:${item.name}`, e)}
+                                  selected={selectedAssets.has(`double_sided:${item}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item, type: 'double_sided' })}
+                                  onSelect={(e) => handleAssetSelect(`double_sided:${item}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
-                                  isFlipped={flippedAssets.has(`double_sided:${item.name}`)}
-                                  onToggleFlip={(e) => handleToggleFlip(`double_sided:${item.name}`, e)}
+                                  isFlipped={flippedAssets.has(`double_sided:${item}`)}
+                                  onToggleFlip={(e) => handleToggleFlip(`double_sided:${item}`, e)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
                                   cardDimming={cardDimming}
@@ -3675,15 +3596,7 @@ export default function App() {
                       {fetchConflictData.collisions.map((c, i) => {
                         const type = c.split(':')[0];
                         const name = c.split(':')[1];
-                        const ext = name.substring(name.lastIndexOf('.'));
-                        const baseName = name.substring(0, name.lastIndexOf('.'));
                         
-                        const existingList = type === 'back' 
-                          ? status?.plugins?.backs 
-                          : (type === 'double_sided' ? status?.plugins?.double_sided : status?.plugins?.fronts);
-                          
-                        const variants = (existingList || []).filter(f => f === name || (f.startsWith(`${baseName}_`) && f.endsWith(ext)));
-
                         return (
                           <div key={`${c}-${i}`} className="space-y-4 border-b border-white/10 pb-6 last:border-0 last:pb-0">
                             <div className="text-white font-bold truncate text-sm px-2 text-center md:text-left">{name}</div>
@@ -3697,13 +3610,11 @@ export default function App() {
                               </div>
 
                               <div className="w-full md:w-2/3 flex flex-col gap-3">
-                                <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
+                                <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Card to Replace</div>
                                 <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
-                                    {variants.map(v => (
-                                      <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
-                                          <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                      <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
+                                          <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(name)}?t=${cacheBusts[name] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
                                       </div>
-                                    ))}
                                 </div>
                               </div>
                             </div>
@@ -3826,15 +3737,7 @@ export default function App() {
                         if (!c) return null;
                         const type = c.split(':')[0];
                         const name = c.split(':')[1];
-                        const ext = name.substring(name.lastIndexOf('.'));
-                        const baseName = name.substring(0, name.lastIndexOf('.'));
                         
-                        const existingList = type === 'back' 
-                          ? status?.plugins?.backs 
-                          : (type === 'double_sided' ? status?.plugins?.double_sided : status?.plugins?.fronts);
-                          
-                        const variants = (existingList || []).filter(f => f === name || (f.startsWith(`${baseName}_`) && f.endsWith(ext)));
-
                         return (
                           <div className="space-y-4">
                             <div className="text-white font-bold truncate text-lg px-2 text-center md:text-left">{name}</div>
@@ -3848,13 +3751,11 @@ export default function App() {
                               </div>
 
                               <div className="w-full md:w-2/3 flex flex-col gap-3">
-                                <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
+                                <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Card to Replace</div>
                                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 p-1">
-                                    {variants.map(v => (
-                                      <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
-                                          <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                      <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
+                                          <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(name)}?t=${cacheBusts[name] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
                                       </div>
-                                    ))}
                                 </div>
                               </div>
                             </div>
@@ -4966,11 +4867,9 @@ interface AssetItemProps {
   assetViewMode: 'library' | 'project' | 'plugins';
   cardDimming?: 'none' | 'tint' | 'dark';
   cacheBustToken?: number;
-  quantity?: number;
-  displayName?: string;
 }
 
-const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken, quantity, displayName }) => {
+const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken }) => {
 
   
   const getBaseUrl = () => {
@@ -5077,11 +4976,6 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
           }
         }}
       >
-        {quantity && quantity > 1 && (
-          <div className="absolute bottom-2 right-2 z-40 min-w-[28px] h-7 px-1.5 rounded-full bg-primary-600/90 backdrop-blur border border-primary-400 text-white font-bold text-xs flex items-center justify-center shadow-lg shadow-black/40">
-            x{quantity}
-          </div>
-        )}
         {(type === 'front' || type === 'double_sided') && backFace && (
           <button 
             onClick={(e) => {
