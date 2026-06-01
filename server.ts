@@ -15,7 +15,7 @@ async function startServer() {
   app.use(express.json());
 
   const isProd = process.env.NODE_ENV === 'production';
-  const isElectron = isProd && !!process.env.USER_DATA_PATH;
+  const isElectron = !!process.env.USER_DATA_PATH;
   
   const baseDataPath = isElectron ? process.env.USER_DATA_PATH! : process.cwd();
   const baseAppPath = isElectron ? process.env.APP_PATH! : process.cwd();
@@ -298,7 +298,7 @@ async function startServer() {
     console.log(`[Proxy] Local fetch request triggered for Moxfield deck ID: ${deckId}`);
     
     const headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       "Accept": "application/json, text/plain, */*",
       "Accept-Language": "en-US,en;q=0.9",
       "Referer": "https://www.moxfield.com/",
@@ -1519,6 +1519,34 @@ async function startServer() {
          );
       }
 
+      const patchPythonScript = (scriptPath: string) => {
+        if (fs.existsSync(scriptPath) && scriptPath.endsWith('.py')) {
+          try {
+            let pyCode = fs.readFileSync(scriptPath, 'utf8');
+            let changed = false;
+            // 1. MacOS SSL fix
+            if (!pyCode.includes('_create_unverified_context')) {
+                pyCode = `import ssl\ntry:\n    ssl._create_default_https_context = ssl._create_unverified_context\nexcept:\n    pass\n\n` + pyCode;
+                changed = true;
+            }
+            // 2. Scryfall User-Agent fix for urllib just in case
+            if (!pyCode.includes('urllib.request.build_opener')) {
+                pyCode = `import urllib.request\ntry:\n    _opener = urllib.request.build_opener()\n    _opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)')]\n    urllib.request.install_opener(_opener)\nexcept:\n    pass\n\n` + pyCode;
+                changed = true;
+            }
+            // 3. requests User-Agent fix just in case
+            if (!pyCode.includes('_patched_request')) {
+                pyCode = `try:\n    import requests\n    _orig_req = requests.Session.request\n    def _patched_request(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_req(self, *args, **kwargs)\n    requests.Session.request = _patched_request\n    \n    _orig_get = requests.get\n    def _patched_get(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_get(*args, **kwargs)\n    requests.get = _patched_get\n    \n    _orig_post = requests.post\n    def _patched_post(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_post(*args, **kwargs)\n    requests.post = _patched_post\nexcept:\n    pass\n\n` + pyCode;
+                changed = true;
+            }
+            if (changed) {
+                fs.writeFileSync(scriptPath, pyCode);
+            }
+          } catch(e) {}
+        }
+      };
+
+      patchPythonScript(spawnCommand);
       const child = spawn(pythonCmd, ['-u', spawnCommand, ...finalArgs], { cwd: spawnCwd, env: customEnv });
       let hasError = false;
       
@@ -1763,6 +1791,32 @@ async function startServer() {
         } catch(e) {}
         return res.json({ output: [`$ ${fullCommand}`, errorMsg] });
       }
+
+      const patchPythonScriptRunCmd = (scriptPath: string) => {
+        if (fs.existsSync(scriptPath) && scriptPath.endsWith('.py')) {
+          try {
+            let pyCode = fs.readFileSync(scriptPath, 'utf8');
+            let changed = false;
+            if (!pyCode.includes('_create_unverified_context')) {
+                pyCode = `import ssl\ntry:\n    ssl._create_default_https_context = ssl._create_unverified_context\nexcept:\n    pass\n\n` + pyCode;
+                changed = true;
+            }
+            if (!pyCode.includes('urllib.request.build_opener')) {
+                pyCode = `import urllib.request\ntry:\n    _opener = urllib.request.build_opener()\n    _opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)')]\n    urllib.request.install_opener(_opener)\nexcept:\n    pass\n\n` + pyCode;
+                changed = true;
+            }
+            if (!pyCode.includes('_patched_request')) {
+                pyCode = `try:\n    import requests\n    _orig_req = requests.Session.request\n    def _patched_request(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_req(self, *args, **kwargs)\n    requests.Session.request = _patched_request\n    _orig_get = requests.get\n    def _patched_get(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0'\n        return _orig_get(*args, **kwargs)\n    requests.get = _patched_get\nexcept:\n    pass\n\n` + pyCode;
+                changed = true;
+            }
+            if (changed) {
+                fs.writeFileSync(scriptPath, pyCode);
+            }
+          } catch(e) {}
+        }
+      };
+      
+      patchPythonScriptRunCmd(scriptAbsPath);
 
       exec(execCommand, { cwd: execCwd, env: customEnv, timeout: 900000, maxBuffer: 1024 * 1024 * 500 }, (error, stdout, stderr) => {
         if (stdout) {

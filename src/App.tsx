@@ -4734,7 +4734,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
 
     // 2. Determine base path based on type/double-sided status
     if (type === 'back') {
-      return appendBust(`${baseUrl}/back/${name}`);
+      return appendBust(`${baseUrl}/back/${encodeURIComponent(name)}`);
     }
     
     // 3. For front faces & double-sided faces, verify where the front face image is
@@ -4742,14 +4742,14 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     if (isDoubleSided) {
       const exactFront = allAssets?.fronts?.find(f => f.toLowerCase() === name.toLowerCase());
       if (exactFront) {
-        return appendBust(`${baseUrl}/front/${exactFront}`);
+        return appendBust(`${baseUrl}/front/${encodeURIComponent(exactFront)}`);
       } else {
-        return appendBust(`${baseUrl}/front/${name}`);
+        return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
       }
     }
     
     // 4. Default to front
-    return appendBust(`${baseUrl}/front/${name}`);
+    return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
   };
 
   const imgSrc = getImgSrc();
@@ -4807,7 +4807,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
             const backFaceFolder = getBackFace()?.folder;
             
             const enlargeSrc = isFlipped && getBackFace() 
-              ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${getBackFace()!.name}`) 
+              ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${encodeURIComponent(getBackFace()!.name)}`) 
               : imgSrc;
             onEnlarge?.(enlargeSrc);
           }
@@ -4879,7 +4879,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 {backFace ? (
                   <>
                     <img 
-                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${backFace.name}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${backFace.name}`)}
+                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}`)}
                       alt={backFace.name}
                       loading="lazy"
                       className={cn(
