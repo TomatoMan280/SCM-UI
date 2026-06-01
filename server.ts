@@ -36,7 +36,20 @@ async function startServer() {
         copyRecursive(path.join(src, childItemName), path.join(dest, childItemName));
       });
     } else {
-      fs.copyFileSync(src, dest);
+      if (src.endsWith('fetch.py')) {
+        let content = fs.readFileSync(src, 'utf8');
+        if (!content.includes('urllib.request.install_opener')) {
+            content = content.replace('import urllib.request', 'import urllib.request\nopener = urllib.request.build_opener()\nopener.addheaders = [("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0.0.0")]\nurllib.request.install_opener(opener)');
+        }
+        if (!content.includes('import os\nfrom os import path')) {
+            content = content.replace('from os import path', 'import os\nfrom os import path');
+        }
+        content = content.replace(/path\.join\(REPO_ROOT, 'game', '([a-z_]+)'\)/g, "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), '$1')");
+        content = content.replace(/os\.path\.join\(REPO_ROOT, 'game', '([a-z_]+)'\)/g, "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), '$1')");
+        fs.writeFileSync(dest, content);
+      } else {
+        fs.copyFileSync(src, dest);
+      }
     }
   };
   const pluginsPath = path.join(libraryPath, 'Plugins');
@@ -85,6 +98,27 @@ async function startServer() {
      scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
   }
   
+  // Ensure existing fetch.py scripts are patched with User-Agent
+  const mtgFetchPath = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
+  if (fs.existsSync(mtgFetchPath)) {
+    let content = fs.readFileSync(mtgFetchPath, 'utf8');
+    let modified = false;
+    if (!content.includes('urllib.request.install_opener')) {
+        content = content.replace('import urllib.request', 'import urllib.request\nopener = urllib.request.build_opener()\nopener.addheaders = [("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/120.0.0.0")]\nurllib.request.install_opener(opener)');
+        modified = true;
+    }
+    if (!content.includes('import os\nfrom os import path')) {
+        content = content.replace('from os import path', 'import os\nfrom os import path');
+        modified = true;
+    }
+    if (content.includes('path.join(REPO_ROOT, \'game\', \'front\')')) {
+        content = content.replace(/path\.join\(REPO_ROOT, 'game', '([a-z_]+)'\)/g, "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), '$1')");
+        content = content.replace(/os\.path\.join\(REPO_ROOT, 'game', '([a-z_]+)'\)/g, "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), '$1')");
+        modified = true;
+    }
+    if (modified) fs.writeFileSync(mtgFetchPath, content);
+  }
+
   // If in Electron production, we should check if our python scripts exist in the writable location
   // and if not, copy them from the unpacked resources folder (ASAR Bypass)
   if (isElectron) {
@@ -1496,17 +1530,18 @@ async function startServer() {
       }
 
       if (req.body.tempDirId) {
-        customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
+        customEnv.SCM_TEMP_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
+        customEnv.SCM_GAME_DIR = path.join(customEnv.SCM_TEMP_DIR, 'game');
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
         
         const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
-        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'decklist');
         if (fs.existsSync(sourceDecklistDir)) {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
         
-        spawnCwd = customEnv.SCM_GAME_DIR;
+        spawnCwd = customEnv.SCM_TEMP_DIR;
         spawnCommand = path.join(scmPath, command);
       } else if (command.startsWith('plugins/')) {
         customEnv.SCM_GAME_DIR = pluginsPath;
@@ -1546,7 +1581,10 @@ async function startServer() {
       }, 5000);
 
       req.on('close', () => {
-          child.kill();
+          try {
+              // Standard SIGTERM is often ignored or blocked. Use SIGKILL to force terminate the python download loop.
+              child.kill('SIGKILL');
+          } catch(e) {}
       });
 
       child.stdout.on('data', (data) => {
@@ -1604,7 +1642,7 @@ async function startServer() {
           if (req.body.tempDirId) {
              const getFiles = (dir: string) => {
                try {
-                 return fs.readdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', dir)).filter(f => !f.startsWith('.'));
+                 return fs.readdirSync(path.join(customEnv.SCM_GAME_DIR, dir)).filter(f => !f.startsWith('.'));
                } catch(e) { return []; }
              };
              const fetchedFiles = {
@@ -1740,17 +1778,18 @@ async function startServer() {
       }).join(" ");
 
       if (req.body.tempDirId) {
-        customEnv.SCM_GAME_DIR = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
+        let tempDir = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
+        customEnv.SCM_GAME_DIR = path.join(tempDir, 'game');
         fs.mkdirSync(customEnv.SCM_GAME_DIR, { recursive: true });
-        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, 'game', df), { recursive: true }));
+        ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(customEnv.SCM_GAME_DIR, df), { recursive: true }));
         
         const sourceDecklistDir = path.join(scmPath, 'game', 'decklist');
-        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'game', 'decklist');
+        const targetDecklistDir = path.join(customEnv.SCM_GAME_DIR, 'decklist');
         if (fs.existsSync(sourceDecklistDir)) {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
         
-        execCwd = customEnv.SCM_GAME_DIR;
+        execCwd = tempDir;
       } else if (command.startsWith('plugins/')) {
         customEnv.SCM_GAME_DIR = pluginsPath;
         execCwd = customEnv.SCM_GAME_DIR;
@@ -1840,9 +1879,9 @@ async function startServer() {
              } catch (e) { }
              return [];
            };
-           fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'front'));
-           fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'back'));
-           fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'double_sided'));
+           fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'front'));
+           fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'back'));
+           fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'double_sided'));
         } else if (command.startsWith('plugins/')) {
            ['front', 'back', 'double_sided'].forEach(df => {
               const srcDir = path.join(pluginsPath, 'game', df);
