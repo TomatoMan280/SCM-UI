@@ -3663,7 +3663,7 @@ export default function App() {
                            <div className="w-full md:w-1/3 flex flex-col gap-3">
                              <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
                              <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
-                                <img src={`/library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
+                                <img src={`http://127.0.0.1:3000/local-assets-library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
                              </div>
                            </div>
 
@@ -3672,7 +3672,7 @@ export default function App() {
                              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
                                 {variants.map(v => (
                                    <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
-                                      <img src={`/plugins_staging/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                      <img src={`http://127.0.0.1:3000/local-assets-plugins/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
                                    </div>
                                 ))}
                              </div>
@@ -4788,9 +4788,11 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
 
   
   const getBaseUrl = () => {
-    if (assetViewMode === 'library') return '/library';
-    if (assetViewMode === 'plugins') return '/plugins_staging';
-    return '/game';
+    // Serve explicitly through 127.0.0.1:3000 to bypass Electron file:// protocol webSecurity blocks
+    const origin = 'http://127.0.0.1:3000';
+    if (assetViewMode === 'library') return `${origin}/local-assets-library`;
+    if (assetViewMode === 'plugins') return `${origin}/local-assets-plugins`;
+    return `${origin}/local-assets/game`;
   };
 
   const getImgSrc = () => {
@@ -4810,7 +4812,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
 
     // 2. Determine base path based on type/double-sided status
     if (type === 'back') {
-      return appendBust(`${baseUrl}/back/${name}`);
+      return appendBust(`${baseUrl}/back/${encodeURIComponent(name)}`);
     }
     
     // 3. For front faces & double-sided faces, verify where the front face image is
@@ -4818,14 +4820,14 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     if (isDoubleSided) {
       const exactFront = allAssets?.fronts?.find(f => f.toLowerCase() === name.toLowerCase());
       if (exactFront) {
-        return appendBust(`${baseUrl}/front/${exactFront}`);
+        return appendBust(`${baseUrl}/front/${encodeURIComponent(exactFront)}`);
       } else {
-        return appendBust(`${baseUrl}/front/${name}`);
+        return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
       }
     }
     
     // 4. Default to front
-    return appendBust(`${baseUrl}/front/${name}`);
+    return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
   };
 
   const imgSrc = getImgSrc();
@@ -4883,7 +4885,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
             const backFaceFolder = getBackFace()?.folder;
             
             const enlargeSrc = isFlipped && getBackFace() 
-              ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${getBackFace()!.name}`) 
+              ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${encodeURIComponent(getBackFace()!.name)}`) 
               : imgSrc;
             onEnlarge?.(enlargeSrc);
           }
@@ -4960,7 +4962,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 {backFace ? (
                   <>
                     <img 
-                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${backFace.name}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${backFace.name}`)}
+                      src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}`)}
                       alt={backFace.name}
                       loading="lazy"
                       className={cn(

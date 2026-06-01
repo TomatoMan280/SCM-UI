@@ -167,6 +167,13 @@ async function startServer() {
   app.use('/game', express.static(path.join(scmPath, 'game')));
   app.use('/plugins_staging', express.static(path.join(baseDataPath, 'src', 'Library', 'Plugins')));
   app.use('/uploads', express.static(path.join(baseDataPath, 'uploads')));
+  
+  // Serve entire absolute workspace directory explicitly for Electron local access via HTTP
+  app.use('/local-assets', express.static(scmPath));
+  // Additional absolute bindings if needed:
+  app.use('/local-assets-library', express.static(libraryPath));
+  app.use('/local-assets-plugins', express.static(path.join(libraryPath, 'Plugins')));
+
 
   const upload = multer({ dest: path.join(baseDataPath, 'temp-uploads') });
 
