@@ -194,7 +194,7 @@ async function startServer() {
     fs.copyFileSync(req.file.path, targetPath);
     try { fs.unlinkSync(req.file.path); } catch (e) {}
 
-    res.json({ success: true, message: `Uploaded ${req.file.originalname}`, file: req.file.originalname, targetPath });
+    res.json({ success: true, message: `Uploaded ${req.file.originalname}`, file: req.file.originalname, targetPath: targetPath.replace(/\\/g, '/') });
   });
 
   app.post("/api/project/save-decklist", (req, res) => {
@@ -607,18 +607,22 @@ async function startServer() {
           }
         }
 
+        const posixRootDir = rootDir.replace(/\\/g, '/');
+        const posixLibraryPath = libraryPath.replace(/\\/g, '/');
+        const posixUserDataPath = baseDataPath.replace(/\\/g, '/');
+
         res.json({
           installed: toolInstalled,
           version: toolVersion,
-          rootDir: rootDir,
+          rootDir: posixRootDir,
           pythonFound: pythonHasBeenFound,
           dependenciesOk: toolInstalled,
           assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
           library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
           integrityOk: integrityOk,
           isElectron: isElectron,
-          libraryPath: libraryPath,
-          userDataPath: baseDataPath,
+          libraryPath: posixLibraryPath,
+          userDataPath: posixUserDataPath,
           plugins: {
             fronts: actualPluginsFronts,
             backs: actualPluginsBacks,
@@ -627,16 +631,20 @@ async function startServer() {
           savedProjects: getProjects()
         });
       }).catch(() => {
+         const posixRootDir = rootDir.replace(/\\/g, '/');
+         const posixLibraryPath = libraryPath.replace(/\\/g, '/');
+         const posixUserDataPath = baseDataPath.replace(/\\/g, '/');
+
          res.json({
             installed: toolInstalled,
             version: toolVersion,
-            rootDir: rootDir,
+            rootDir: posixRootDir,
             pythonFound: true,
             dependenciesOk: toolInstalled,
             assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
             library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
-            libraryPath: libraryPath,
-            userDataPath: baseDataPath,
+            libraryPath: posixLibraryPath,
+            userDataPath: posixUserDataPath,
             plugins: { fronts: [], backs: [], double_sided: [] },
             savedProjects: getProjects()
          });
@@ -644,16 +652,20 @@ async function startServer() {
       return;
 
     } catch(e) {
+      const posixRootDir = rootDir.replace(/\\/g, '/');
+      const posixLibraryPath = libraryPath.replace(/\\/g, '/');
+      const posixUserDataPath = baseDataPath.replace(/\\/g, '/');
+      
       res.json({
         installed: toolInstalled,
         version: toolVersion,
-        rootDir: rootDir,
+        rootDir: posixRootDir,
         pythonFound: true,
         dependenciesOk: toolInstalled,
         assets: { fronts: [], backs: [], double_sided: [] },
         library: { fronts: [], backs: [], double_sided: [] },
-        libraryPath: libraryPath,
-        userDataPath: baseDataPath,
+        libraryPath: posixLibraryPath,
+        userDataPath: posixUserDataPath,
         plugins: { fronts: [], backs: [], double_sided: [] },
         savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
       });
@@ -1110,7 +1122,7 @@ async function startServer() {
         }
         if (fs.existsSync(sourcePath)) {
             fs.copyFileSync(sourcePath, targetPath);
-            results.push({ name: finalName, from: sourcePath, to: targetPath });
+            results.push({ name: finalName, from: sourcePath.replace(/\\/g, '/'), to: targetPath.replace(/\\/g, '/') });
         }
 
         if (type === 'front') {

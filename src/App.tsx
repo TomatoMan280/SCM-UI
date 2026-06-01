@@ -1071,6 +1071,33 @@ export default function App() {
     return [...serverAssets, ...local];
   };
 
+  const getGroupedAssets = (type: 'front' | 'back' | 'double_sided') => {
+    const assets = getAllAssets(type);
+    const groups = new Map<string, { quantity: number, name: string, displayName: string }>();
+    
+    assets.forEach(f => {
+      const ext = f.match(/\.[^.]+$/)?.[0] || '';
+      const baseWithoutExt = f.slice(0, f.length - ext.length);
+      const match = baseWithoutExt.match(/^(\d+)(.*)$/);
+      
+      let qty = 1;
+      let coreName = baseWithoutExt;
+      if (match) {
+          qty = parseInt(match[1], 10);
+          coreName = match[2];
+      }
+      const displayName = coreName + ext;
+      
+      if (!groups.has(displayName)) {
+          groups.set(displayName, { quantity: 0, name: f, displayName: displayName });
+      }
+      const g = groups.get(displayName)!;
+      g.quantity += qty;
+    });
+    
+    return Array.from(groups.values());
+  };
+
 
   const addLog = (newLogs: string | string[]) => {
     const logArray = (Array.isArray(newLogs) ? newLogs : [newLogs])
@@ -1586,25 +1613,44 @@ export default function App() {
       // 2. Name collision check
       if (conflictResolution === 'check') {
          if (targetObj) {
+            const matchBaseName = (name: string) => name.replace(/^\d+/, '');
             const collisions = finalItems.filter(item => {
                 const [type, name] = item.split(':');
-                if (type === 'front' && targetObj.fronts.includes(name)) return true;
-                if (type === 'back' && targetObj.backs.includes(name)) return true;
-                if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return true;
+                const stripped = matchBaseName(name);
+                if (type === 'front' && targetObj.fronts.some(tf => matchBaseName(tf) === stripped)) return true;
+                if (type === 'back' && targetObj.backs.some(tb => matchBaseName(tb) === stripped)) return true;
+                if (type === 'double_sided' && targetObj.double_sided?.some(td => matchBaseName(td) === stripped)) return true;
                 return false;
             });
             if (collisions.length > 0) {
-               setImportConflictData({ items: finalItems, destination, source, collisions, backResolution });
+               // Get ALL colliding files from target so they can see existing variants
+               const allCollisions: string[] = [];
+               finalItems.forEach(item => {
+                   const [type, name] = item.split(':');
+                   const stripped = matchBaseName(name);
+                   if (type === 'front') {
+                       targetObj.fronts.forEach(tf => { if (matchBaseName(tf) === stripped && !allCollisions.includes(`front:${tf}`)) allCollisions.push(`front:${tf}`); });
+                   }
+                   if (type === 'back') {
+                       targetObj.backs.forEach(tb => { if (matchBaseName(tb) === stripped && !allCollisions.includes(`back:${tb}`)) allCollisions.push(`back:${tb}`); });
+                   }
+                   if (type === 'double_sided' && targetObj.double_sided) {
+                       targetObj.double_sided.forEach(td => { if (matchBaseName(td) === stripped && !allCollisions.includes(`double_sided:${td}`)) allCollisions.push(`double_sided:${td}`); });
+                   }
+               });
+               setImportConflictData({ items: finalItems, destination, source, collisions: allCollisions, backResolution });
                return; // pause for user name collision check
             }
          }
       } else if (conflictResolution === 'keep') {
          if (targetObj) {
+            const matchBaseName = (name: string) => name.replace(/^\d+/, '');
             finalItems = finalItems.filter(item => {
                 const [type, name] = item.split(':');
-                if (type === 'front' && targetObj.fronts.includes(name)) return false;
-                if (type === 'back' && targetObj.backs.includes(name)) return false;
-                if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return false;
+                const stripped = matchBaseName(name);
+                if (type === 'front' && targetObj.fronts.some(tf => matchBaseName(tf) === stripped)) return false;
+                if (type === 'back' && targetObj.backs.some(tb => matchBaseName(tb) === stripped)) return false;
+                if (type === 'double_sided' && targetObj.double_sided?.some(td => matchBaseName(td) === stripped)) return false;
                 return true;
             });
          }
@@ -3135,13 +3181,35 @@ export default function App() {
                                   const collisions = [];
                                   const { fronts, backs, double_sided } = result.fetchedFiles;
                                   
+                                  const matchBaseName = (name: string) => name.replace(/^\d+/, '');
                                   const targetFronts = status?.plugins?.fronts || [];
                                   const targetBacks = status?.plugins?.backs || [];
                                   const targetDob = status?.plugins?.double_sided || [];
                                   
-                                  fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
-                                  backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
-                                  double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
+                                  fronts.forEach(f => {
+                                      const stripped = matchBaseName(f);
+                                      targetFronts.forEach(tf => {
+                                          if (matchBaseName(tf) === stripped && !collisions.includes(`front:${tf}`)) {
+                                              collisions.push(`front:${tf}`);
+                                          }
+                                      });
+                                  });
+                                  backs.forEach(f => {
+                                      const stripped = matchBaseName(f);
+                                      targetBacks.forEach(tb => {
+                                          if (matchBaseName(tb) === stripped && !collisions.includes(`back:${tb}`)) {
+                                              collisions.push(`back:${tb}`);
+                                          }
+                                      });
+                                  });
+                                  double_sided.forEach(f => {
+                                      const stripped = matchBaseName(f);
+                                      targetDob.forEach(td => {
+                                          if (matchBaseName(td) === stripped && !collisions.includes(`double_sided:${td}`)) {
+                                              collisions.push(`double_sided:${td}`);
+                                          }
+                                      });
+                                  });
                                   
                                   if (collisions.length > 0) {
                                       setTaskProgress(null);
@@ -3223,18 +3291,20 @@ export default function App() {
                                   setTimeout(() => setTaskProgress(null), 1500);
                                 }} 
                               />
-                            {getAllAssets('back')
-                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((img: string, i: number) => (
+                            {getGroupedAssets('back')
+                              .filter(item => item.name.toLowerCase().includes(assetSearch.toLowerCase()) || item.displayName.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((item, i: number) => (
                                 <AssetItem 
-                                  key={`b-${img}-${i}`} 
-                                  cacheBustToken={cacheBusts[img]}
-                                  name={img} 
+                                  key={`b-${item.name}-${i}`} 
+                                  cacheBustToken={cacheBusts[item.name]}
+                                  name={item.name} 
+                                  displayName={item.displayName}
+                                  quantity={item.quantity}
                                   type="back" 
                                   allAssets={getCurrentAssets()} 
-                                  selected={selectedAssets.has(`back:${img}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'back' })}
-                                  onSelect={(e) => handleAssetSelect(`back:${img}`, e)}
+                                  selected={selectedAssets.has(`back:${item.name}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'back' })}
+                                  onSelect={(e) => handleAssetSelect(`back:${item.name}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
@@ -3298,21 +3368,23 @@ export default function App() {
                                 }} 
                               />
                             )}
-                            {getAllAssets('front')
-                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((img: string, i: number) => (
+                            {getGroupedAssets('front')
+                              .filter(item => item.name.toLowerCase().includes(assetSearch.toLowerCase()) || item.displayName.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((item, i: number) => (
                                 <AssetItem 
-                                  key={`f-${img}-${i}`} 
-                                  cacheBustToken={cacheBusts[img]}
-                                  name={img} 
+                                  key={`f-${item.name}-${i}`} 
+                                  cacheBustToken={cacheBusts[item.name]}
+                                  name={item.name} 
+                                  displayName={item.displayName}
+                                  quantity={item.quantity}
                                   type="front" 
                                   allAssets={getCurrentAssets()}
-                                  selected={selectedAssets.has(`front:${img}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'front' })}
-                                  onSelect={(e) => handleAssetSelect(`front:${img}`, e)}
+                                  selected={selectedAssets.has(`front:${item.name}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'front' })}
+                                  onSelect={(e) => handleAssetSelect(`front:${item.name}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
-                                  isFlipped={flippedAssets.has(`front:${img}`)}
-                                  onToggleFlip={(e) => handleToggleFlip(`front:${img}`, e)}
+                                  isFlipped={flippedAssets.has(`front:${item.name}`)}
+                                  onToggleFlip={(e) => handleToggleFlip(`front:${item.name}`, e)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
                                   cardDimming={cardDimming}
@@ -3375,21 +3447,23 @@ export default function App() {
                                 }} 
                               />
                             )}
-                            {getAllAssets('double_sided')
-                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((img: string, i: number) => (
+                            {getGroupedAssets('double_sided')
+                              .filter(item => item.name.toLowerCase().includes(assetSearch.toLowerCase()) || item.displayName.toLowerCase().includes(assetSearch.toLowerCase()))
+                              .map((item, i: number) => (
                                 <AssetItem 
-                                  key={`d-${img}-${i}`} 
-                                  cacheBustToken={cacheBusts[img]}
-                                  name={img} 
+                                  key={`d-${item.name}-${i}`} 
+                                  cacheBustToken={cacheBusts[item.name]}
+                                  name={item.name} 
+                                  displayName={item.displayName}
+                                  quantity={item.quantity}
                                   type="double_sided" 
                                   allAssets={getCurrentAssets()}
-                                  selected={selectedAssets.has(`double_sided:${img}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'double_sided' })}
-                                  onSelect={(e) => handleAssetSelect(`double_sided:${img}`, e)}
+                                  selected={selectedAssets.has(`double_sided:${item.name}`)}
+                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: item.name, type: 'double_sided' })}
+                                  onSelect={(e) => handleAssetSelect(`double_sided:${item.name}`, e)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
-                                  isFlipped={flippedAssets.has(`double_sided:${img}`)}
-                                  onToggleFlip={(e) => handleToggleFlip(`double_sided:${img}`, e)}
+                                  isFlipped={flippedAssets.has(`double_sided:${item.name}`)}
+                                  onToggleFlip={(e) => handleToggleFlip(`double_sided:${item.name}`, e)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
                                   cardDimming={cardDimming}
@@ -4706,9 +4780,11 @@ interface AssetItemProps {
   assetViewMode: 'library' | 'project' | 'plugins';
   cardDimming?: 'none' | 'tint' | 'dark';
   cacheBustToken?: number;
+  quantity?: number;
+  displayName?: string;
 }
 
-const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken }) => {
+const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken, quantity, displayName }) => {
 
   
   const getBaseUrl = () => {
@@ -4813,6 +4889,11 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
           }
         }}
       >
+        {quantity && quantity > 1 && (
+          <div className="absolute top-2 right-2 z-40 min-w-[28px] h-7 px-1.5 rounded-full bg-primary-600/90 backdrop-blur border border-primary-400 text-white font-bold text-xs flex items-center justify-center shadow-lg shadow-black/40">
+            x{quantity}
+          </div>
+        )}
         {(type === 'front' || type === 'double_sided') && backFace && (
           <button 
             onClick={(e) => {
@@ -4820,7 +4901,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 onToggleFlip(e);
               }
             }}
-            className="absolute top-2 right-2 z-30 w-7 h-7 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center transition-all shadow-md active:scale-95 hover:bg-primary-600 hover:border-primary-400 group/flip opacity-0 group-hover:opacity-100"
+            className={cn("absolute right-2 z-30 w-7 h-7 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center transition-all shadow-md active:scale-95 hover:bg-primary-600 hover:border-primary-400 group/flip opacity-0 group-hover:opacity-100", quantity && quantity > 1 ? "top-10" : "top-2")}
             title="Flip Card"
           >
             <RotateCcw size={14} className="group-hover/flip:-rotate-180 transition-transform duration-500" />
@@ -4931,7 +5012,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
         </button>
       </div>
       <div className="px-1">
-        <p className="text-xs font-medium text-white/60 truncate">{name}</p>
+        <p className="text-xs font-medium text-white/60 truncate">{displayName || name}</p>
         <p className="text-[10px] text-white/20 font-mono">
           {(type === 'front' || type === 'double_sided') ? (isFlipped ? (backFace?.folder === 'double_sided' ? 'Double-Sided' : 'Standard Back') : 'Front Face') : 'Back Pattern'}
         </p>
