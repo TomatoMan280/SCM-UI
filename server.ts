@@ -1285,6 +1285,32 @@ async function startServer() {
     } catch(e: any) { res.status(500).json({ error: e.message || String(e) }); }
   });
 
+  app.put("/api/presets/rename", (req, res) => {
+    try {
+      const { category, oldFilename, newFilename } = req.body;
+      if (!category || !oldFilename || !newFilename) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      
+      const safeOldName = path.basename(decodeURIComponent(oldFilename));
+      const safeNewName = path.basename(decodeURIComponent(newFilename));
+      
+      const oldPath = path.join(scmPath, 'game', 'presets', category, safeOldName);
+      const newPath = path.join(scmPath, 'game', 'presets', category, safeNewName);
+
+      if (!fs.existsSync(oldPath)) {
+        return res.status(404).json({ error: "Preset not found" });
+      }
+      
+      if (fs.existsSync(newPath)) {
+         return res.status(400).json({ error: "Destination preset already exists" });
+      }
+
+      fs.renameSync(oldPath, newPath);
+      res.json({ success: true });
+    } catch(e: any) { res.status(500).json({ error: e.message || String(e) }); }
+  });
+
   app.delete("/api/presets/:category/:filename", (req, res) => {
     try {
       const category = req.params.category;

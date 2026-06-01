@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, Upload, Trash2, Check, RefreshCw, X } from 'lucide-react';
+import { Download, Upload, Trash2, Check, RefreshCw, X, Edit2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -24,6 +24,14 @@ export default function PresetManager({ category, currentData, onLoad, isOpen, o
   const [search, setSearch] = useState("");
   const [saveName, setSaveName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [showOverwriteModal, setShowOverwriteModal] = useState(false);
+  const [overwriteTargetName, setOverwriteTargetName] = useState("");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{name: string, file: string} | null>(null);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{name: string, file: string} | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [renameError, setRenameError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchPresets = async () => {
@@ -46,6 +54,21 @@ export default function PresetManager({ category, currentData, onLoad, isOpen, o
     }
   }, [isOpen, category]);
 
+  const executeSave = async (nameToSave: string) => {
+    try {
+      await fetch(`/api/presets/${category}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nameToSave, data: currentData })
+      });
+      setIsSaving(false);
+      setSaveName("");
+      setShowOverwriteModal(false);
+      setOverwriteTargetName("");
+      fetchPresets();
+    } catch(e) { console.error("Save error", e); }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!saveName.trim()) return;
@@ -53,29 +76,58 @@ export default function PresetManager({ category, currentData, onLoad, isOpen, o
     const targetFilename = saveName.replace(/[^a-z0-9_-]/gi, '') + '.json';
     const exists = presets.some(p => p.file === targetFilename);
     if (exists) {
-      if (!window.confirm("A preset with this name already exists. Do you want to overwrite it?")) {
-        return;
-      }
+      setOverwriteTargetName(saveName);
+      setShowOverwriteModal(true);
+      return;
+    }
+    
+    await executeSave(saveName);
+  };
+
+  const executeDelete = async (filename: string) => {
+    try {
+      await fetch(`/api/presets/${category}/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+      setShowDeleteModal(false);
+      setDeleteTarget(null);
+      fetchPresets();
+    } catch(e) { console.error("Delete error", e); }
+  };
+
+  const handleDeleteClick = (filename: string, name: string) => {
+    setDeleteTarget({ file: filename, name });
+    setShowDeleteModal(true);
+  };
+
+  const handleRenameClick = (filename: string, name: string) => {
+    setRenameTarget({ file: filename, name });
+    setRenameInput(name);
+    setRenameError("");
+    setShowRenameModal(true);
+  };
+
+  const executeRename = async () => {
+    if (!renameTarget) return;
+    const newName = renameInput.trim();
+    if (!newName || newName === renameTarget.name) {
+      setShowRenameModal(false);
+      return;
+    }
+    
+    const targetFilename = newName.replace(/[^a-z0-9_-]/gi, '') + '.json';
+    if (presets.some(p => p.file === targetFilename)) {
+      setRenameError("A preset with this name already exists.");
+      return;
     }
     
     try {
-      await fetch(`/api/presets/${category}`, {
-        method: 'POST',
+      await fetch(`/api/presets/rename`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: saveName, data: currentData })
+        body: JSON.stringify({ category, oldFilename: renameTarget.file, newFilename: targetFilename })
       });
-      setIsSaving(false);
-      setSaveName("");
+      setShowRenameModal(false);
       fetchPresets();
-    } catch(e) { console.error("Save error", e); }
-  };
-
-  const handleDelete = async (filename: string) => {
-    if (!confirm(`Are you sure you want to delete ${filename}?`)) return;
-    try {
-      await fetch(`/api/presets/${category}/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-      fetchPresets();
-    } catch(e) { console.error("Delete error", e); }
+    } catch(e) { console.error("Rename error", e); }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -195,6 +247,12 @@ export default function PresetManager({ category, currentData, onLoad, isOpen, o
                          </div>
                          <div className="flex items-center gap-2">
                            <button 
+                             onClick={() => handleRenameClick(p.file, p.name)}
+                             className="text-xs bg-white/5 text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 hover:bg-white/10 transition-colors"
+                           >
+                             <Edit2 size={14} /> Rename
+                           </button>
+                           <button 
                              onClick={() => {
                                onLoad(p.data);
                                onClose();
@@ -211,7 +269,7 @@ export default function PresetManager({ category, currentData, onLoad, isOpen, o
                              <Download size={14} /> Export
                            </a>
                            <button 
-                             onClick={() => handleDelete(p.file)}
+                             onClick={() => handleDeleteClick(p.file, p.name)}
                              className="p-1.5 text-rose-500/60 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"
                            >
                              <Trash2 size={16} />
@@ -226,6 +284,120 @@ export default function PresetManager({ category, currentData, onLoad, isOpen, o
           </div>
         </div>
       </motion.div>
+
+      <AnimatePresence>
+        {showOverwriteModal && (
+          <div className="fixed inset-0 z-[1003] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowOverwriteModal(false)} />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-[#1a1a24] border border-rose-500/30 w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-6"
+            >
+              <h3 className="text-lg font-bold text-white">Overwrite Preset?</h3>
+              <p className="text-sm text-white/70 leading-relaxed">
+                A preset named <span className="text-white font-bold">"{overwriteTargetName}"</span> already exists. Are you sure you want to overwrite it?
+              </p>
+              <div className="flex justify-end gap-3 pt-2">
+                <button 
+                  onClick={() => setShowOverwriteModal(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white/70 bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => executeSave(overwriteTargetName)}
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-rose-500 hover:bg-rose-400 transition-colors"
+                >
+                  Overwrite
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showDeleteModal && deleteTarget && (
+          <div className="fixed inset-0 z-[1003] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowDeleteModal(false)} />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-[#1a1a24] border border-rose-500/30 w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-6"
+            >
+              <h3 className="text-lg font-bold text-white">Delete Preset?</h3>
+              <p className="text-sm text-white/70 leading-relaxed">
+                Are you sure you want to permanently delete the preset <span className="text-white font-bold">"{deleteTarget.name}"</span>?
+              </p>
+              <div className="flex justify-end gap-3 pt-2">
+                <button 
+                  onClick={() => setShowDeleteModal(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white/70 bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => executeDelete(deleteTarget.file)}
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-rose-500 hover:bg-rose-400 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showRenameModal && renameTarget && (
+          <div className="fixed inset-0 z-[1003] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowRenameModal(false)} />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-[#1a1a24] border border-white/10 w-full max-w-sm rounded-2xl shadow-2xl p-6 space-y-6"
+            >
+              <h3 className="text-lg font-bold text-white">
+                Rename preset <span className="text-primary-400">'{renameTarget.name}'</span>
+              </h3>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  autoFocus
+                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
+                  value={renameInput}
+                  onChange={e => {
+                    setRenameInput(e.target.value);
+                    setRenameError("");
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') executeRename();
+                  }}
+                />
+                {renameError && (
+                  <div className="text-xs text-rose-500">{renameError}</div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button 
+                  onClick={() => setShowRenameModal(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white/70 bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={executeRename}
+                  className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-primary-500 hover:bg-primary-400 transition-colors"
+                >
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
