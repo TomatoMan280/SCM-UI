@@ -791,44 +791,23 @@ async function startServer() {
     const { paper_size, card_size, format = "studio3" } = req.query;
     if (!paper_size || !card_size) return res.status(400).json({ error: "Missing parameters" });
     
-    const isDxf = format === 'dxf';
-    const searchDirs = [
-      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates'),
-      isDxf ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates'),
-      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
-      isDxf ? path.join(baseDataPath, 'src', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'cutting_templates'),
-      isDxf ? path.join(baseDataPath, rootDir, 'cutting_templates', 'dxf') : path.join(baseDataPath, rootDir, 'cutting_templates'),
-    ];
-
-    let foundPath: string | null = null;
-    let foundFilename = "";
+    const templatesDir = format === 'dxf' ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates');
+    if (!fs.existsSync(templatesDir)) return res.status(404).json({ error: "Templates directory not found" });
 
     const prefix = `${paper_size}-${card_size}-`;
     const ext = `.${format}`;
-
-    for (const dir of searchDirs) {
-      if (fs.existsSync(dir)) {
-        try {
-          const files = fs.readdirSync(dir).filter(f => f.startsWith(prefix) && f.endsWith(ext));
-          if (files.length > 0) {
-            foundPath = path.join(dir, files[0]);
-            foundFilename = files[0];
-            break;
-          }
-        } catch (dirErr) {}
-      }
-    }
-
-    if (!foundPath) {
-      return res.status(404).json({ error: "Template not found for specified sizes." });
-    }
-
+    
+    // Find the matching file with the highest version (if multiple)
+    const files = fs.readdirSync(templatesDir).filter(f => f.startsWith(prefix) && f.endsWith(ext));
+    if (files.length === 0) return res.status(404).json({ error: "Template not found for specified sizes." });
+    
+    const srcFile = path.join(templatesDir, files[0]);
     const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, foundFilename);
+    const tempFile = path.join(tempDir, files[0]);
     
     try {
-      fs.copyFileSync(foundPath, tempFile);
-      res.download(tempFile, foundFilename, (err) => {
+      fs.copyFileSync(srcFile, tempFile);
+      res.download(tempFile, files[0], (err) => {
         try {
           if (fs.existsSync(tempFile)) {
             fs.unlinkSync(tempFile);
@@ -837,75 +816,72 @@ async function startServer() {
       });
     } catch (e: any) {
       console.warn("[System] Temporary copy failed, falling back to direct stream:", e.message);
-      res.download(foundPath, foundFilename);
+      res.download(srcFile, files[0]);
     }
   });
 
   app.get("/api/download-template/:filename", (req, res) => {
-    const filename = req.params.filename;
-    if (!filename) return res.status(400).json({ error: "Filename is required" });
+    const { filename } = req.params;
+    if (!filename) {
+      return res.status(400).json({ error: "Filename parameter is required." });
+    }
 
-    const isDxf = filename.endsWith('.dxf');
-    const searchDirs = [
-      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates'),
-      isDxf ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates'),
-      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
-      isDxf ? path.join(baseDataPath, 'src', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'cutting_templates'),
-      isDxf ? path.join(baseDataPath, rootDir, 'cutting_templates', 'dxf') : path.join(baseDataPath, rootDir, 'cutting_templates'),
-    ];
+    const templatesBaseDir = path.join(scmPath, 'cutting_templates');
+    if (!fs.existsSync(templatesBaseDir)) {
+      return res.status(404).json({ error: "Templates directory not found" });
+    }
 
-    let foundPath: string | null = null;
-    let actualFilename = filename;
-
-    for (const dir of searchDirs) {
-      if (fs.existsSync(dir)) {
-        // Attempt exact match
-        const exactPath = path.join(dir, filename);
-        if (fs.existsSync(exactPath)) {
-          foundPath = exactPath;
-          break;
-        }
-
-        // Attempt resolving a version-prefixed or similar file (e.g. "letter-standard.studio3" -> "letter-standard-v1.4.studio3")
-        try {
-          const base = path.parse(filename).name;
-          const ext = path.parse(filename).ext;
-          const files = fs.readdirSync(dir);
-          
-          let matched = files.find(f => f.startsWith(base + '-') && f.endsWith(ext));
-          if (!matched) {
-            matched = files.find(f => f.startsWith(base) && f.endsWith(ext));
+    // Recursive helper to find all files in subdirectories
+    const getAllFiles = (dir: string): string[] => {
+      let results: string[] = [];
+      if (!fs.existsSync(dir)) return results;
+      try {
+        const list = fs.readdirSync(dir);
+        list.forEach((file) => {
+          const filePath = path.join(dir, file);
+          const stat = fs.statSync(filePath);
+          if (stat && stat.isDirectory()) {
+            results = results.concat(getAllFiles(filePath));
+          } else {
+            results.push(filePath);
           }
+        });
+      } catch (err) {
+        console.error(`Error reading directory ${dir}:`, err);
+      }
+      return results;
+    };
 
-          if (matched) {
-            foundPath = path.join(dir, matched);
-            actualFilename = matched;
-            break;
-          }
-        } catch (dirErr) {}
+    const allFiles = getAllFiles(templatesBaseDir);
+    const reqExt = path.extname(filename).toLowerCase();
+    const reqBase = path.basename(filename, reqExt);
+    const targetClean = reqBase.toLowerCase().replace(/[-_]v\d+$/i, "").trim();
+
+    let matchedFilePath: string | null = null;
+    for (const file of allFiles) {
+      const fileExt = path.extname(file).toLowerCase();
+      if (fileExt !== reqExt) continue;
+      const fileBase = path.basename(file, fileExt);
+      const fileClean = fileBase.toLowerCase().replace(/[-_]v\d+$/i, "").trim();
+      if (fileClean === targetClean) {
+        matchedFilePath = file;
+        break;
       }
     }
 
-    if (!foundPath) {
-      return res.status(404).json({ error: `Template file '${filename}' not found on server.` });
+    if (!matchedFilePath) {
+      return res.status(404).json({ error: `Cutting template for ${filename} not found.` });
     }
 
-    const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, actualFilename);
-
-    try {
-      fs.copyFileSync(foundPath, tempFile);
-      res.download(tempFile, actualFilename, (err) => {
-        try {
-          if (fs.existsSync(tempFile)) {
-            fs.unlinkSync(tempFile);
-          }
-        } catch (unlinkError) {}
-      });
-    } catch (e: any) {
-      console.warn("[System] Download copy fallback:", e.message);
-      res.download(foundPath, actualFilename);
-    }
+    console.log(`[System] Serving matched cutting template: ${matchedFilePath} for request: ${filename}`);
+    res.download(matchedFilePath, path.basename(matchedFilePath), (err) => {
+      if (err) {
+        console.error(`[System Error] Failed to download file ${matchedFilePath}:`, err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Failed to download template file." });
+        }
+      }
+    });
   });
 
   app.get("/api/project/export", (req, res) => {
