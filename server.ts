@@ -787,47 +787,33 @@ async function startServer() {
     }
   });
 
-  app.get("/api/cutting-template", (req, res) => {
-    const { paper_size, card_size, format = "studio3" } = req.query;
-    if (!paper_size || !card_size) return res.status(400).json({ error: "Missing parameters" });
-    
-    const templatesDir = format === 'dxf' ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates');
-    if (!fs.existsSync(templatesDir)) return res.status(404).json({ error: "Templates directory not found" });
-
-    const prefix = `${paper_size}-${card_size}-`;
-    const ext = `.${format}`;
-    
-    // Find the matching file with the highest version (if multiple)
-    const files = fs.readdirSync(templatesDir).filter(f => f.startsWith(prefix) && f.endsWith(ext));
-    if (files.length === 0) return res.status(404).json({ error: "Template not found for specified sizes." });
-    
-    const srcFile = path.join(templatesDir, files[0]);
-    const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, files[0]);
-    
-    try {
-      fs.copyFileSync(srcFile, tempFile);
-      res.download(tempFile, files[0], (err) => {
-        try {
-          if (fs.existsSync(tempFile)) {
-            fs.unlinkSync(tempFile);
-          }
-        } catch (unlinkError) {}
-      });
-    } catch (e: any) {
-      console.warn("[System] Temporary copy failed, falling back to direct stream:", e.message);
-      res.download(srcFile, files[0]);
-    }
-  });
-
   app.get("/api/download-template/:filename", (req, res) => {
     const { filename } = req.params;
     if (!filename) {
       return res.status(400).json({ error: "Filename parameter is required." });
     }
 
-    const templatesBaseDir = path.join(scmPath, 'cutting_templates');
-    if (!fs.existsSync(templatesBaseDir)) {
+    const possibleDirs = [
+      path.join(scmPath, 'cutting_templates'),
+      path.join(scmSourcePath, 'cutting_templates'),
+      path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-main', 'cutting_templates'),
+      path.join(resourcesPath, 'silhouette-card-maker-main', 'cutting_templates'),
+      path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
+      path.join(baseAppPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
+      // When inside app.asar (Mac), the unpacked directory is beside it
+      path.join(baseAppPath, '..', 'app.asar.unpacked', 'src', 'silhouette-card-maker-main', 'cutting_templates')
+    ];
+
+    let templatesBaseDir: string | null = null;
+    for (const dir of possibleDirs) {
+      if (fs.existsSync(dir)) {
+        templatesBaseDir = dir;
+        break;
+      }
+    }
+
+    if (!templatesBaseDir) {
+      console.error(`[System Error] Templates directory not found. Tested paths: ${possibleDirs.join(', ')}`);
       return res.status(404).json({ error: "Templates directory not found" });
     }
 
@@ -838,6 +824,9 @@ async function startServer() {
       try {
         const list = fs.readdirSync(dir);
         list.forEach((file) => {
+          // Ignore Mac metadata files and hidden files
+          if (file.startsWith('._') || file.startsWith('.DS_Store')) return;
+          
           const filePath = path.join(dir, file);
           const stat = fs.statSync(filePath);
           if (stat && stat.isDirectory()) {
@@ -870,6 +859,7 @@ async function startServer() {
     }
 
     if (!matchedFilePath) {
+      console.error(`[System Error] Cutting template for ${filename} not found in ${templatesBaseDir}.`);
       return res.status(404).json({ error: `Cutting template for ${filename} not found.` });
     }
 
