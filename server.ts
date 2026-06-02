@@ -1661,6 +1661,42 @@ async function startServer() {
       };
 
       patchPythonScript(spawnCommand);
+
+      let originalFileNames: { dir: string; original: string; renamed: string }[] = [];
+
+      const revertDisambiguation = () => {
+          for (const { dir, original, renamed } of originalFileNames) {
+              try {
+                  const currentPath = path.join(dir, renamed);
+                  if (fs.existsSync(currentPath)) {
+                      fs.renameSync(currentPath, path.join(dir, original));
+                  }
+              } catch (e) {
+                  // ignore
+              }
+          }
+          originalFileNames = [];
+      };
+
+      if (command === 'create_pdf.py') {
+          const applyDisambiguation = (dir: string) => {
+              if (!fs.existsSync(dir)) return;
+              const files = fs.readdirSync(dir);
+              for (const file of files) {
+                  const ext = path.extname(file);
+                  const baseName = path.basename(file, ext);
+                  if (ext) {
+                      // e.g. card.png -> card_png.png
+                      const renamed = `${baseName}_${ext.substring(1)}${ext}`;
+                      fs.renameSync(path.join(dir, file), path.join(dir, renamed));
+                      originalFileNames.push({ dir, original: file, renamed });
+                  }
+              }
+          };
+          applyDisambiguation(path.join(spawnCwd, 'game', 'front'));
+          applyDisambiguation(path.join(spawnCwd, 'game', 'double_sided'));
+      }
+
       const child = spawn(pythonCmd, ['-u', spawnCommand, ...finalArgs], { cwd: spawnCwd, env: customEnv });
       let hasError = false;
       
@@ -1670,6 +1706,7 @@ async function startServer() {
 
       req.on('close', () => {
           child.kill();
+          revertDisambiguation();
       });
 
       child.stdout.on('data', (data) => {
@@ -1693,6 +1730,7 @@ async function startServer() {
 
       child.on('close', (code) => {
           clearInterval(pingInterval);
+          revertDisambiguation();
           if (command === 'create_pdf.py') {
             const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
             const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');

@@ -42,6 +42,11 @@ import { Theme, setTheme, getTheme } from './lib/theme';
 import PresetManager from './components/PresetManager';
 import ProjectManager from './components/ProjectManager';
 
+const stripExt = (filename: string) => {
+  const lastDot = filename.lastIndexOf('.');
+  return lastDot === -1 ? filename : filename.substring(0, lastDot);
+};
+
 // Types
 type Tab = 'dashboard' | 'console' | 'assets' | 'builder' | 'plugins';
 
@@ -1051,7 +1056,7 @@ export default function App() {
     if (type === 'front') {
       const fronts = current?.fronts || [];
       const doubleSided = current?.double_sided || [];
-      serverAssets = fronts.filter(f => !doubleSided.includes(f));
+      serverAssets = fronts.filter(f => !doubleSided.some(d => stripExt(d).toLowerCase() === stripExt(f).toLowerCase()));
     } else if (type === 'back') {
       serverAssets = current?.backs || [];
     } else if (type === 'double_sided') {
@@ -1062,7 +1067,7 @@ export default function App() {
       if (a.view !== assetViewMode) return false;
       if (a.type !== type) return false;
       if (serverAssets.includes(a.name)) return false;
-      if (type === 'front' && localAssets.some(other => other.name === a.name && other.type === 'double_sided' && other.view === assetViewMode)) {
+      if (type === 'front' && localAssets.some(other => stripExt(other.name).toLowerCase() === stripExt(a.name).toLowerCase() && other.type === 'double_sided' && other.view === assetViewMode)) {
         return false;
       }
       return true;
@@ -4779,9 +4784,9 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     }
     
     // 3. For front faces & double-sided faces, verify where the front face image is
-    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.some(d => d.toLowerCase() === name.toLowerCase());
+    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.some(d => stripExt(d).toLowerCase() === stripExt(name).toLowerCase());
     if (isDoubleSided) {
-      const exactFront = allAssets?.fronts?.find(f => f.toLowerCase() === name.toLowerCase());
+      const exactFront = allAssets?.fronts?.find(f => stripExt(f).toLowerCase() === stripExt(name).toLowerCase());
       if (exactFront) {
         return appendBust(`${baseUrl}/front/${encodeURIComponent(exactFront)}`);
       } else {
@@ -4799,11 +4804,11 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     if (type === 'back') return null;
     
     // Check if double sided
-    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.some(d => d.toLowerCase() === name.toLowerCase());
+    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.some(d => stripExt(d).toLowerCase() === stripExt(name).toLowerCase());
     if (isDoubleSided) {
-      const exactDoubleSided = allAssets?.double_sided?.find(d => d.toLowerCase() === name.toLowerCase());
+      const exactDoubleSided = allAssets?.double_sided?.find(d => stripExt(d).toLowerCase() === stripExt(name).toLowerCase());
       const hasDoubleSidedOnDisk = !!exactDoubleSided || type === 'double_sided';
-      if (hasDoubleSidedOnDisk && (allAssets?.fronts?.some(f => f.toLowerCase() === name.toLowerCase()) || type === 'double_sided' || assetViewMode === 'library' || assetViewMode === 'plugins')) {
+      if (hasDoubleSidedOnDisk && (allAssets?.fronts?.some(f => stripExt(f).toLowerCase() === stripExt(name).toLowerCase()) || type === 'double_sided' || assetViewMode === 'library' || assetViewMode === 'plugins')) {
         return { name: exactDoubleSided || name, folder: 'double_sided' };
       }
       // If we only have double_sided on disk and no fronts of same name, we fallback to standard backs
