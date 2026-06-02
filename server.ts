@@ -1515,7 +1515,7 @@ async function startServer() {
         return finalArg.toString().includes(' ') ? `"${finalArg}"` : finalArg;
     }).join(" ");
     
-    import('child_process').then(({ spawn, spawnSync }) => {
+    import('child_process').then(async ({ spawn, spawnSync }) => {
       let pythonCmd = pythonPath || "python";
 
       if (!pythonPath) {
@@ -1661,97 +1661,122 @@ async function startServer() {
       };
 
       patchPythonScript(spawnCommand);
-
-      let originalFileNames: { dir: string; original: string; renamed: string }[] = [];
-
-      const revertDisambiguation = () => {
-          for (const { dir, original, renamed } of originalFileNames) {
-              try {
-                  const currentPath = path.join(dir, renamed);
-                  if (fs.existsSync(currentPath)) {
-                      fs.renameSync(currentPath, path.join(dir, original));
-                  }
-              } catch (e) {
-                  // ignore
-              }
-          }
-          originalFileNames = [];
-      };
-
-      if (command === 'create_pdf.py') {
-          const applyDisambiguation = (dir: string) => {
-              if (!fs.existsSync(dir)) return;
-              const files = fs.readdirSync(dir);
-              for (const file of files) {
-                  const ext = path.extname(file);
-                  const baseName = path.basename(file, ext);
-                  if (ext) {
-                      // e.g. card.png -> card_png.png
-                      const renamed = `${baseName}_${ext.substring(1)}${ext}`;
-                      fs.renameSync(path.join(dir, file), path.join(dir, renamed));
-                      originalFileNames.push({ dir, original: file, renamed });
-                  }
-              }
-          };
-          applyDisambiguation(path.join(spawnCwd, 'game', 'front'));
-          applyDisambiguation(path.join(spawnCwd, 'game', 'double_sided'));
-      }
-
-      const child = spawn(pythonCmd, ['-u', spawnCommand, ...finalArgs], { cwd: spawnCwd, env: customEnv });
-      let hasError = false;
       
-      const pingInterval = setInterval(() => {
-          sendEvent('ping', { time: Date.now() });
-      }, 5000);
+      const gameDir = customEnv.SCM_GAME_DIR || path.join(scmPath, 'game');
+      const dirsToRename = [path.join(gameDir, 'front'), path.join(gameDir, 'double_sided')];
+      const fileRenames: { original: string, temp: string }[] = [];
 
-      req.on('close', () => {
-          child.kill();
-          revertDisambiguation();
-      });
-
-      child.stdout.on('data', (data) => {
-          const lines = data.toString().split('\n').filter(Boolean);
-          lines.forEach((line: string) => sendEvent('stdout', line));
-      });
-
-      let dependencyError = false;
-      child.stderr.on('data', (data) => {
-          const lines = data.toString().split('\n').filter(Boolean);
-          lines.forEach((line: string) => {
-             if (line.includes('[Console Error]') || line.includes('Exception:')) {
-                 hasError = true;
-             }
-             if (line.includes('ModuleNotFoundError') || line.includes('No module named') || line.includes('click')) {
-                 dependencyError = true;
-             }
-             sendEvent('stderr', line);
-          });
-      });
-
-      child.on('close', (code) => {
-          clearInterval(pingInterval);
-          revertDisambiguation();
+      try {
           if (command === 'create_pdf.py') {
-            const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-            const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-            
-            if (code === 0 && !hasError && fs.existsSync(generatedPdf)) {
-              fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
-              fs.copyFileSync(generatedPdf, targetPdf);
-              sendEvent('stdout', "[System] PDF generated successfully.");
-            } else {
-              if (dependencyError) {
-                sendEvent('error', "[Error] Run 'pip install -r requirements.txt' or check Python version compatibility.");
+             dirsToRename.forEach(dir => {
+                 if (fs.existsSync(dir)) {
+                     const files = fs.readdirSync(dir);
+                     files.forEach(f => {
+                         const parsed = path.parse(f);
+                         if (parsed.ext) {
+                            const extLower = parsed.ext.replace('.', '').toLowerCase();
+                            // Idempotency check: don't rename if already renamed
+                            if (!parsed.name.endsWith(`_${extLower}`)) {
+                                const tempName = `${parsed.name}_${extLower}${parsed.ext}`;
+                                const origPath = path.join(dir, f);
+                                const tempPath = path.join(dir, tempName);
+                                try {
+                                    fs.renameSync(origPath, tempPath);
+                                    fileRenames.push({ original: origPath, temp: tempPath });
+                                } catch (e) {
+                                    console.error(`Failed to rename ${origPath} to ${tempPath}:`, e);
+                                }
+                            }
+                         }
+                     });
+                 }
+             });
+          }
+
+          let hasError = false;
+          let dependencyError = false;
+
+          const executeChild = () => {
+              return new Promise<number>((resolve, reject) => {
+                  const child = spawn(pythonCmd, ['-u', spawnCommand, ...finalArgs], { cwd: spawnCwd, env: customEnv });
+                  
+                  const pingInterval = setInterval(() => {
+                      sendEvent('ping', { time: Date.now() });
+                  }, 5000);
+
+                  req.on('close', () => {
+                      child.kill();
+                  });
+
+                  child.stdout.on('data', (data: any) => {
+                      const lines = data.toString().split('\n').filter(Boolean);
+                      lines.forEach((line: string) => sendEvent('stdout', line));
+                  });
+
+                  child.stderr.on('data', (data: any) => {
+                      const lines = data.toString().split('\n').filter(Boolean);
+                      lines.forEach((line: string) => {
+                         if (line.includes('[Console Error]') || line.includes('Exception:')) {
+                             hasError = true;
+                         }
+                         if (line.includes('ModuleNotFoundError') || line.includes('No module named') || line.includes('click')) {
+                             dependencyError = true;
+                         }
+                         sendEvent('stderr', line);
+                      });
+                  });
+
+                  child.on('close', (code: number) => {
+                      clearInterval(pingInterval);
+                      if (code === 0 && !hasError) {
+                          resolve(code);
+                      } else {
+                          reject(new Error(dependencyError ? 'dependencyError' : 'executionError'));
+                      }
+                  });
+              });
+          };
+
+          const code = await executeChild();
+          
+          if (command === 'create_pdf.py') {
+              const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+              const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+              
+              if (fs.existsSync(generatedPdf)) {
+                  fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
+                  fs.copyFileSync(generatedPdf, targetPdf);
+                  sendEvent('stdout', "[System] PDF generated successfully.");
               } else {
-                sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+                  sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+                  hasError = true;
               }
-              hasError = true;
-              if (fs.existsSync(targetPdf)) {
-                try { fs.unlinkSync(targetPdf); } catch (e) {}
-              }
-            }
           }
           sendEvent('close', { code, hasError });
+      } catch (err: any) {
+          let hasError = true;
+          if (command === 'create_pdf.py') {
+             if (err.message === 'dependencyError') {
+                 sendEvent('error', "[Error] Run 'pip install -r requirements.txt' or check Python version compatibility.");
+             } else {
+                 sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+             }
+             const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+             if (fs.existsSync(targetPdf)) {
+                try { fs.unlinkSync(targetPdf); } catch (e) {}
+             }
+          }
+          sendEvent('close', { code: 1, hasError: true });
+      } finally {
+          for (const { original, temp } of fileRenames) {
+              try {
+                  if (fs.existsSync(temp)) {
+                      fs.renameSync(temp, original);
+                  }
+              } catch (e) {
+                  console.error(`Failed to restore file ${temp} to ${original}:`, e);
+              }
+          }
           
           if (req.body.uploadedPluginFilePath) {
               try {
@@ -1799,7 +1824,7 @@ async function startServer() {
           }
           
           res.end();
-      });
+      }
     });
   });
 
@@ -1818,7 +1843,7 @@ async function startServer() {
     }).join(" ");
     
     // Check if python is available and run the child process based on it.
-    import('child_process').then(({ exec, spawnSync }) => {
+    import('child_process').then(async ({ exec, spawnSync }) => {
       // Find whether to use python3 or python or none
       let pythonCmd = pythonPath || "python";
 
@@ -1980,84 +2005,130 @@ async function startServer() {
       
       patchPythonScriptRunCmd(scriptAbsPath);
 
-      exec(execCommand, { cwd: execCwd, env: customEnv, timeout: 900000, maxBuffer: 1024 * 1024 * 500 }, (error, stdout, stderr) => {
-        if (stdout) {
-          console.log(`[SCM STDOUT] ${stdout}`);
-          output.push(...stdout.split('\n').filter(Boolean));
-        }
-        if (stderr) {
-          console.error(`[SCM STDERR] ${stderr}`);
-          output.push(...stderr.split('\n').map(line => `[Error] ${line}`).filter(line => line !== '[Error] '));
-        }
-        if (error) {
-          console.error(`[SCM EXEC ERROR] ${error.message}`);
-          output.push(`[System Error] ${error.message}`);
-        }
+      const gameDir = customEnv.SCM_GAME_DIR || path.join(scmPath, 'game');
+      const dirsToRename = [path.join(gameDir, 'front'), path.join(gameDir, 'double_sided')];
+      const fileRenames: { original: string, temp: string }[] = [];
 
-        // Post-command actions (Moving PDF omitted, kept in place)
-        if (command === 'create_pdf.py') {
-          const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-          const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-          
-          if (!error && fs.existsSync(generatedPdf)) {
-            fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
-            fs.copyFileSync(generatedPdf, targetPdf);
-            const successMsg = "[System] PDF generated successfully.";
-            console.log(successMsg);
-            output.push(successMsg);
-          } else {
-            console.warn(`[System] Warning: create_pdf.py finished with error or ${generatedPdf} was not found.`);
-            output.push("[Error] PDF file was not generated properly. Check output for detailed Python errors.");
-            if (fs.existsSync(targetPdf)) {
-              try {
-                fs.unlinkSync(targetPdf);
-                output.push("[System] Corrupted incomplete PDF was deleted.");
-              } catch (e) {}
+      try {
+          if (command === 'create_pdf.py') {
+             dirsToRename.forEach(dir => {
+                 if (fs.existsSync(dir)) {
+                     const files = fs.readdirSync(dir);
+                     files.forEach(f => {
+                         const parsed = path.parse(f);
+                         if (parsed.ext) {
+                            const extLower = parsed.ext.replace('.', '').toLowerCase();
+                            // Idempotency check: don't rename if already renamed
+                            if (!parsed.name.endsWith(`_${extLower}`)) {
+                                const tempName = `${parsed.name}_${extLower}${parsed.ext}`;
+                                const origPath = path.join(dir, f);
+                                const tempPath = path.join(dir, tempName);
+                                try {
+                                    fs.renameSync(origPath, tempPath);
+                                    fileRenames.push({ original: origPath, temp: tempPath });
+                                } catch (e) {
+                                    console.error(`Failed to rename ${origPath} to ${tempPath}:`, e);
+                                }
+                            }
+                         }
+                     });
+                 }
+             });
+          }
+
+          const { error, stdout, stderr } = await new Promise<{error: any, stdout: string, stderr: string}>((resolve) => {
+              exec(execCommand, { cwd: execCwd, env: customEnv, timeout: 900000, maxBuffer: 1024 * 1024 * 500 }, (error, stdout, stderr) => {
+                  resolve({ error, stdout, stderr });
+              });
+          });
+
+          if (stdout) {
+            console.log(`[SCM STDOUT] ${stdout}`);
+            output.push(...stdout.split('\n').filter(Boolean));
+          }
+          if (stderr) {
+            console.error(`[SCM STDERR] ${stderr}`);
+            output.push(...stderr.split('\n').map(line => `[Error] ${line}`).filter(line => line !== '[Error] '));
+          }
+          if (error) {
+            console.error(`[SCM EXEC ERROR] ${error.message}`);
+            output.push(`[System Error] ${error.message}`);
+          }
+
+          // Post-command actions
+          if (command === 'create_pdf.py') {
+            const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+            const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+            
+            if (!error && fs.existsSync(generatedPdf)) {
+              fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
+              fs.copyFileSync(generatedPdf, targetPdf);
+              const successMsg = "[System] PDF generated successfully.";
+              console.log(successMsg);
+              output.push(successMsg);
+            } else {
+              console.warn(`[System] Warning: create_pdf.py finished with error or ${generatedPdf} was not found.`);
+              output.push("[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+              if (fs.existsSync(targetPdf)) {
+                try {
+                  fs.unlinkSync(targetPdf);
+                  output.push("[System] Corrupted incomplete PDF was deleted.");
+                } catch (e) {}
+              }
             }
           }
-        }
-
-        let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
-        
-        if (req.body.uploadedPluginFilePath) {
-            try {
-                const toDelete = path.join(scmPath, req.body.uploadedPluginFilePath);
-                if (fs.existsSync(toDelete)) {
-                    fs.unlinkSync(toDelete);
-                }
-            } catch (e) {}
-        }
-        
-        if (req.body.tempDirId) {
-           const getFiles = (dir: string) => {
-             try {
-               if (fs.existsSync(dir)) {
-                 return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
-               }
-             } catch (e) { }
-             return [];
-           };
-           fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'front'));
-           fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'back'));
-           fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'double_sided'));
-        } else if (command.startsWith('plugins/')) {
-           ['front', 'back', 'double_sided'].forEach(df => {
-              const srcDir = path.join(pluginsPath, 'game', df);
-              const dstDir = path.join(pluginsPath, df);
-              if (fs.existsSync(srcDir)) {
-                  fs.mkdirSync(dstDir, { recursive: true });
-                  fs.readdirSync(srcDir).forEach(f => {
-                     if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
-                         fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
-                     }
-                  });
-                  fs.rmSync(srcDir, { recursive: true, force: true });
+      } finally {
+          for (const { original, temp } of fileRenames) {
+              try {
+                  if (fs.existsSync(temp)) {
+                      fs.renameSync(temp, original);
+                  }
+              } catch (e) {
+                  console.error(`Failed to restore file ${temp} to ${original}:`, e);
               }
-           });
-        }
+          }
+      }
 
-        res.json({ output, fetchedFiles });
-      });
+      let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
+      
+      if (req.body.uploadedPluginFilePath) {
+          try {
+              const toDelete = path.join(scmPath, req.body.uploadedPluginFilePath);
+              if (fs.existsSync(toDelete)) {
+                  fs.unlinkSync(toDelete);
+              }
+          } catch (e) {}
+      }
+      
+      if (req.body.tempDirId) {
+         const getFiles = (dir: string) => {
+           try {
+             if (fs.existsSync(dir)) {
+               return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+             }
+           } catch (e) { }
+           return [];
+         };
+         fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'front'));
+         fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'back'));
+         fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'double_sided'));
+      } else if (command.startsWith('plugins/')) {
+         ['front', 'back', 'double_sided'].forEach(df => {
+            const srcDir = path.join(pluginsPath, 'game', df);
+            const dstDir = path.join(pluginsPath, df);
+            if (fs.existsSync(srcDir)) {
+                fs.mkdirSync(dstDir, { recursive: true });
+                fs.readdirSync(srcDir).forEach(f => {
+                   if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
+                       fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
+                   }
+                });
+                fs.rmSync(srcDir, { recursive: true, force: true });
+            }
+         });
+      }
+
+      res.json({ output, fetchedFiles });
     }).catch(err => {
       res.json({ output: [`[System Error] Failed to load child_process: ${err}`] });
     });
