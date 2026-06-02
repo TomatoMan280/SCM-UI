@@ -791,23 +791,44 @@ async function startServer() {
     const { paper_size, card_size, format = "studio3" } = req.query;
     if (!paper_size || !card_size) return res.status(400).json({ error: "Missing parameters" });
     
-    const templatesDir = format === 'dxf' ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates');
-    if (!fs.existsSync(templatesDir)) return res.status(404).json({ error: "Templates directory not found" });
+    const isDxf = format === 'dxf';
+    const searchDirs = [
+      isDxf ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates'),
+      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates'),
+      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
+      isDxf ? path.join(baseDataPath, 'src', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'cutting_templates'),
+      isDxf ? path.join(baseDataPath, rootDir, 'cutting_templates', 'dxf') : path.join(baseDataPath, rootDir, 'cutting_templates'),
+    ];
+
+    let foundPath: string | null = null;
+    let foundFilename = "";
 
     const prefix = `${paper_size}-${card_size}-`;
     const ext = `.${format}`;
-    
-    // Find the matching file with the highest version (if multiple)
-    const files = fs.readdirSync(templatesDir).filter(f => f.startsWith(prefix) && f.endsWith(ext));
-    if (files.length === 0) return res.status(404).json({ error: "Template not found for specified sizes." });
-    
-    const srcFile = path.join(templatesDir, files[0]);
+
+    for (const dir of searchDirs) {
+      if (fs.existsSync(dir)) {
+        try {
+          const files = fs.readdirSync(dir).filter(f => f.startsWith(prefix) && f.endsWith(ext));
+          if (files.length > 0) {
+            foundPath = path.join(dir, files[0]);
+            foundFilename = files[0];
+            break;
+          }
+        } catch (dirErr) {}
+      }
+    }
+
+    if (!foundPath) {
+      return res.status(404).json({ error: "Template not found for specified sizes." });
+    }
+
     const tempDir = os.tmpdir();
-    const tempFile = path.join(tempDir, files[0]);
+    const tempFile = path.join(tempDir, foundFilename);
     
     try {
-      fs.copyFileSync(srcFile, tempFile);
-      res.download(tempFile, files[0], (err) => {
+      fs.copyFileSync(foundPath, tempFile);
+      res.download(tempFile, foundFilename, (err) => {
         try {
           if (fs.existsSync(tempFile)) {
             fs.unlinkSync(tempFile);
@@ -816,7 +837,74 @@ async function startServer() {
       });
     } catch (e: any) {
       console.warn("[System] Temporary copy failed, falling back to direct stream:", e.message);
-      res.download(srcFile, files[0]);
+      res.download(foundPath, foundFilename);
+    }
+  });
+
+  app.get("/api/download-template/:filename", (req, res) => {
+    const filename = req.params.filename;
+    if (!filename) return res.status(400).json({ error: "Filename is required" });
+
+    const isDxf = filename.endsWith('.dxf');
+    const searchDirs = [
+      isDxf ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates'),
+      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates'),
+      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
+      isDxf ? path.join(baseDataPath, 'src', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'cutting_templates'),
+      isDxf ? path.join(baseDataPath, rootDir, 'cutting_templates', 'dxf') : path.join(baseDataPath, rootDir, 'cutting_templates'),
+    ];
+
+    let foundPath: string | null = null;
+    let actualFilename = filename;
+
+    for (const dir of searchDirs) {
+      if (fs.existsSync(dir)) {
+        // Attempt exact match
+        const exactPath = path.join(dir, filename);
+        if (fs.existsSync(exactPath)) {
+          foundPath = exactPath;
+          break;
+        }
+
+        // Attempt resolving a version-prefixed or similar file (e.g. "letter-standard.studio3" -> "letter-standard-v1.4.studio3")
+        try {
+          const base = path.parse(filename).name;
+          const ext = path.parse(filename).ext;
+          const files = fs.readdirSync(dir);
+          
+          let matched = files.find(f => f.startsWith(base + '-') && f.endsWith(ext));
+          if (!matched) {
+            matched = files.find(f => f.startsWith(base) && f.endsWith(ext));
+          }
+
+          if (matched) {
+            foundPath = path.join(dir, matched);
+            actualFilename = matched;
+            break;
+          }
+        } catch (dirErr) {}
+      }
+    }
+
+    if (!foundPath) {
+      return res.status(404).json({ error: `Template file '${filename}' not found on server.` });
+    }
+
+    const tempDir = os.tmpdir();
+    const tempFile = path.join(tempDir, actualFilename);
+
+    try {
+      fs.copyFileSync(foundPath, tempFile);
+      res.download(tempFile, actualFilename, (err) => {
+        try {
+          if (fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile);
+          }
+        } catch (unlinkError) {}
+      });
+    } catch (e: any) {
+      console.warn("[System] Download copy fallback:", e.message);
+      res.download(foundPath, actualFilename);
     }
   });
 

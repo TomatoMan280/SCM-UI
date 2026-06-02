@@ -1767,13 +1767,23 @@ export default function App() {
 
   const handleDownloadTemplate = async (format: string) => {
     try {
-      addLog(`[System] Exporting template: ${cmdOptions.paper_size}-${cmdOptions.card_size}.${format}...`);
-      const response = await fetch(`/api/cutting-template?paper_size=${cmdOptions.paper_size}&card_size=${cmdOptions.card_size}&format=${format}`);
-      if (!response.ok) {
-        throw new Error(`Template file not found or server error (status ${response.status})`);
-      }
-      const blob = await response.blob();
       const filename = `${cmdOptions.paper_size}-${cmdOptions.card_size}.${format}`;
+      addLog(`[System] Exporting template: ${filename}...`);
+      
+      // Try the dedicated download-template endpoint first
+      let response = await fetch(`/api/download-template/${filename}`);
+      
+      // Fallback to cutting-template query endpoint if not found
+      if (!response.ok) {
+        addLog(`[System] Template file not matched by name directly. Querying template dynamically...`);
+        response = await fetch(`/api/cutting-template?paper_size=${cmdOptions.paper_size}&card_size=${cmdOptions.card_size}&format=${format}`);
+      }
+      
+      if (!response.ok) {
+        throw new Error(`Template file ${filename} not found or server error (status ${response.status})`);
+      }
+      
+      const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
