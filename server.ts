@@ -3,6 +3,7 @@ import express from "express";
 import path from "path";
 import multer from "multer";
 import fs from "fs";
+import os from "os";
 import { execSync, exec } from "child_process";
 
 console.log("[System] Modules imported successfully.");
@@ -40,6 +41,30 @@ async function startServer() {
     }
   };
   const pluginsPath = path.join(libraryPath, 'Plugins');
+  
+  const writeCalibrationData = (calibration: any) => {
+    if (calibration && (calibration.x !== undefined || calibration.y !== undefined || calibration.angle !== undefined)) {
+      try {
+        const dataDir = path.join(scmPath, 'data');
+        if (!fs.existsSync(dataDir)) {
+          fs.mkdirSync(dataDir, { recursive: true });
+        }
+        const dataPath = path.join(dataDir, 'offset_data.json');
+        const xVal = Math.round(parseFloat(calibration.x || 0));
+        const yVal = Math.round(parseFloat(calibration.y || 0));
+        const angleVal = parseFloat(calibration.angle || 0);
+        const jsonContent = JSON.stringify({
+          x_offset: xVal,
+          y_offset: yVal,
+          angle_offset: angleVal
+        }, null, 4);
+        fs.writeFileSync(dataPath, jsonContent, 'utf8');
+        console.log(`[System] Wrote calibration settings to ${dataPath}:`, jsonContent);
+      } catch (err: any) {
+        console.error(`[System Error] Failed to write calibration JSON:`, err.message);
+      }
+    }
+  };
   
   // Ensure all required directories exist (in writable location)
   const requiredPaths = [
@@ -776,7 +801,23 @@ async function startServer() {
     const files = fs.readdirSync(templatesDir).filter(f => f.startsWith(prefix) && f.endsWith(ext));
     if (files.length === 0) return res.status(404).json({ error: "Template not found for specified sizes." });
     
-    res.download(path.join(templatesDir, files[0]));
+    const srcFile = path.join(templatesDir, files[0]);
+    const tempDir = os.tmpdir();
+    const tempFile = path.join(tempDir, files[0]);
+    
+    try {
+      fs.copyFileSync(srcFile, tempFile);
+      res.download(tempFile, files[0], (err) => {
+        try {
+          if (fs.existsSync(tempFile)) {
+            fs.unlinkSync(tempFile);
+          }
+        } catch (unlinkError) {}
+      });
+    } catch (e: any) {
+      console.warn("[System] Temporary copy failed, falling back to direct stream:", e.message);
+      res.download(srcFile, files[0]);
+    }
   });
 
   app.get("/api/project/export", (req, res) => {
@@ -1396,7 +1437,8 @@ async function startServer() {
   });
 
   app.post("/api/run-command-stream", (req, res) => {
-    const { command, args, pythonPath } = req.body;
+    const { command, args, pythonPath, calibration } = req.body;
+    writeCalibrationData(calibration);
     
     // Set up SSE
     res.setHeader('Content-Type', 'text/event-stream');
@@ -1670,7 +1712,8 @@ async function startServer() {
   });
 
   app.post("/api/run-command", (req, res) => {
-    const { command, args, pythonPath } = req.body;
+    const { command, args, pythonPath, calibration } = req.body;
+    writeCalibrationData(calibration);
     
     // Construct CLI string from args array
     const argString = (args || []).map((arg: any) => {

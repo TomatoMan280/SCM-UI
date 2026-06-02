@@ -1161,7 +1161,7 @@ export default function App() {
     addLog("[Plugins] Exported configuration to JSON file.");
   };
 
-  const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string }) => {
+  const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string } }) => {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     const abortController = new AbortController();
@@ -1170,7 +1170,15 @@ export default function App() {
       const res = await fetch('/api/run-command-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, args, tempDirId: options?.tempDirId, uploadedPluginFilePath: options?.uploadedPluginFilePath, pythonPath, crop: options?.crop }),
+        body: JSON.stringify({ 
+          command, 
+          args, 
+          tempDirId: options?.tempDirId, 
+          uploadedPluginFilePath: options?.uploadedPluginFilePath, 
+          pythonPath, 
+          crop: options?.crop,
+          calibration: options?.calibration
+        }),
         signal: abortController.signal
       });
       if (!res.ok) {
@@ -1334,7 +1342,11 @@ export default function App() {
     if (cmdOptions.label) { args.push('--label'); args.push(cmdOptions.label); }
     if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
-    const result = await runCommand('create_pdf.py', args, { startMessage: 'Generating PDF...', crop: cmdOptions.crop });
+    const result = await runCommand('create_pdf.py', args, { 
+      startMessage: 'Generating PDF...', 
+      crop: cmdOptions.crop,
+      calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
+    });
     if (result?.success && result?.output && result.output.some((line: string) => line.includes('PDF generated successfully') || line.includes('PDF successfully moved') || line.includes('Generated PDF'))) {
       setPdfReady(true);
       setPdfReadyToastOpen(true);
@@ -1751,6 +1763,29 @@ export default function App() {
   const exportProject = () => {
     addLog("[Project] Exporting project to file...");
     window.open('/api/project/export', '_blank');
+  };
+
+  const handleDownloadTemplate = async (format: string) => {
+    try {
+      addLog(`[System] Exporting template: ${cmdOptions.paper_size}-${cmdOptions.card_size}.${format}...`);
+      const response = await fetch(`/api/cutting-template?paper_size=${cmdOptions.paper_size}&card_size=${cmdOptions.card_size}&format=${format}`);
+      if (!response.ok) {
+        throw new Error(`Template file not found or server error (status ${response.status})`);
+      }
+      const blob = await response.blob();
+      const filename = `${cmdOptions.paper_size}-${cmdOptions.card_size}.${format}`;
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      addLog(`[System] Template ${filename} downloaded successfully.`);
+    } catch (error: any) {
+      addLog(`[Error] Failed to download template: ${error.message}`);
+    }
   };
 
   const importProjectRef = useRef<HTMLInputElement>(null);
@@ -2436,7 +2471,7 @@ export default function App() {
                             <h5 className="text-xs font-bold text-white/60">Verify & Save</h5>
                           </div>
 
-                          <div className="space-y-1.5 w-full">
+                           <div className="space-y-1.5 w-full">
                             <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
                             <button 
                                onClick={() => runCommand('offset_pdf.py', [
@@ -2444,10 +2479,13 @@ export default function App() {
                                  '--y_offset', calibration.y.toString(),
                                  '--angle', calibration.angle.toString(),
                                  '--save'
-                               ], { startMessage: 'Saving offset...' })}
+                               ], { 
+                                 startMessage: 'Saving offset...',
+                                 calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
+                               })}
                                className="w-full h-[34px] flex items-center justify-center bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all text-emerald-400"
                             >
-                              Save Offset
+                               Save Offset
                             </button>
                           </div>
 
@@ -2459,7 +2497,10 @@ export default function App() {
                                 '--x_offset', calibration.x.toString(),
                                 '--y_offset', calibration.y.toString(),
                                 '--angle', calibration.angle.toString()
-                              ], { startMessage: 'Generating offset sheet...' })}
+                              ], { 
+                                startMessage: 'Generating offset sheet...',
+                                calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
+                              })}
                               className="w-full h-[34px] flex items-center justify-center bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-xs font-bold transition-all text-primary-400"
                             >
                               Generate Offset Sheet
@@ -2561,22 +2602,22 @@ export default function App() {
                       Generate PDF
                     </button>
 
-                    <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                     <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
                       <h4 className="text-sm font-bold text-white/80 mb-2">Cutting Templates</h4>
                       <p className="text-xs text-white/40 pb-2">Templates matching your selected paper and card size.</p>
                       <div className="flex gap-2">
-                         <a 
-                           href={`/api/cutting-template?paper_size=${cmdOptions.paper_size}&card_size=${cmdOptions.card_size}&format=studio3`}
-                           className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white"
+                         <button 
+                           onClick={() => handleDownloadTemplate('studio3')}
+                           className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white cursor-pointer"
                          >
                            Download .studio3
-                         </a>
-                         <a 
-                           href={`/api/cutting-template?paper_size=${cmdOptions.paper_size}&card_size=${cmdOptions.card_size}&format=dxf`}
-                           className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white"
+                         </button>
+                         <button 
+                           onClick={() => handleDownloadTemplate('dxf')}
+                           className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white cursor-pointer"
                          >
                            Download .dxf
-                         </a>
+                         </button>
                       </div>
                     </div>
                   </div>
