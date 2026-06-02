@@ -42,6 +42,7 @@ specialty_choices = get_all_specialty_layout_names(layout_config)
 
 @click.option("--label", help="Apply a custom label to each page.")
 @click.option("--show_outline", default=False, is_flag=True, help="Overlay a white outline of the cutting path on each page.")
+@click.option("--borderless", default=False, is_flag=True, help="Use tighter margins to fit more cards per page.")
 
 @click.version_option("2.2.0")
 
@@ -65,7 +66,8 @@ def cli(
     skip,
     load_offset,
     label,
-    show_outline
+    show_outline,
+    borderless
 ):
     generate_pdf(
         front_dir_path,
@@ -88,6 +90,7 @@ def cli(
         label,
         show_outline,
         specialty=specialty,
+        borderless=borderless,
     )
 
 if __name__ == '__main__':

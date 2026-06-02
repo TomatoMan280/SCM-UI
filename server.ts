@@ -794,7 +794,6 @@ async function startServer() {
     const isDxf = format === 'dxf';
     const searchDirs = [
       isDxf ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates'),
-      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates'),
       isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
       isDxf ? path.join(baseDataPath, 'src', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'cutting_templates'),
       isDxf ? path.join(baseDataPath, rootDir, 'cutting_templates', 'dxf') : path.join(baseDataPath, rootDir, 'cutting_templates'),
@@ -848,7 +847,6 @@ async function startServer() {
     const isDxf = filename.endsWith('.dxf');
     const searchDirs = [
       isDxf ? path.join(scmPath, 'cutting_templates', 'dxf') : path.join(scmPath, 'cutting_templates'),
-      isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-2.2.0', 'cutting_templates'),
       isDxf ? path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
       isDxf ? path.join(baseDataPath, 'src', 'cutting_templates', 'dxf') : path.join(baseDataPath, 'src', 'cutting_templates'),
       isDxf ? path.join(baseDataPath, rootDir, 'cutting_templates', 'dxf') : path.join(baseDataPath, rootDir, 'cutting_templates'),
