@@ -1325,14 +1325,12 @@ export default function App() {
     const hasDoubleSided = (currentAssets?.double_sided?.length || 0) > 0;
     
     if (!hasFronts && !hasDoubleSided) {
-        addLog("[Error] Cannot generate: No card fronts found in project.");
+        addLog("[Error] Cannot generate PDF: No card fronts found in project.");
         return;
     }
 
-    addLog("[System] Launching Generator...");
+    addLog("[System] Launching PDF Generator...");
     setPdfReady(false);
-    setTaskProgress({ current: 0, total: 1, message: 'Generating...' });
-    
     const args = [
       '--card_size', cmdOptions.card_size.toString(),
       '--paper_size', cmdOptions.paper_size.toString(),
@@ -1344,62 +1342,23 @@ export default function App() {
     if (cmdOptions.load_offset) args.push('--load_offset');
     if (cmdOptions.show_outline) args.push('--show_outline');
     if (cmdOptions.only_fronts) args.push('--only_fronts');
+    if (cmdOptions.output_images) args.push('--output_images');
     if (cmdOptions.crop_backs) { args.push('--crop_backs'); args.push(cmdOptions.crop_backs); }
     if (cmdOptions.label) { args.push('--label'); args.push(cmdOptions.label); }
     if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
-    
-    try {
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-           isOutputImages: cmdOptions.output_images,
-           args,
-           pythonPath,
-           crop: cmdOptions.crop,
-           calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
-        })
-      });
-
-      setTaskProgress(null);
-
-      if (!response.ok) {
-         let errorMsg = "Generation failed.";
-         try {
-           const errorData = await response.json();
-           errorMsg = errorData.message || errorData.error || errorMsg;
-         } catch(e) {}
-         addLog("[Error] " + errorMsg);
-         return;
-      }
-
+    const result = await runCommand('create_pdf.py', args, { 
+      startMessage: 'Generating PDF...', 
+      crop: cmdOptions.crop,
+      calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
+    });
+    if (result?.success && result?.output && result.output.some((line: string) => line.includes('PDF generated successfully') || line.includes('PDF successfully moved') || line.includes('Generated PDF') || line.includes('Generated images') || line.includes('Output images generated successfully'))) {
       setPdfReady(true);
       setPdfReadyToastOpen(true);
       playDing();
       setTimeout(() => setPdfReadyToastOpen(false), 5000);
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      const contentType = response.headers.get('Content-Type');
-      if (contentType && contentType.includes('zip')) {
-         link.setAttribute('download', 'output_images.zip');
-      } else {
-         link.setAttribute('download', 'game.pdf');
-      }
-      
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e: any) {
-      setTaskProgress(null);
-      addLog("[Error] Network error occurred during generation.");
+    } else {
+      addLog("[Error] PDF Generation failed. Check console for details.");
     }
   };
 
@@ -2161,47 +2120,15 @@ export default function App() {
           <div className="flex items-center gap-2 md:gap-4 ml-auto">
             {pdfReady && (
               <div className="flex items-center gap-1.5 md:gap-2">
-                {cmdOptions.output_images ? (
-                  <button 
-                    onClick={async () => {
-                      try {
-                        const response = await fetch('/api/download-output-images');
-                        if (!response.ok) {
-                            const errorData = await response.json();
-                            addLog("[Error] " + (errorData.message || errorData.error || "Failed to zip images. Is the output folder empty?"));
-                            return;
-                        }
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.setAttribute('download', 'output_images.zip');
-                        document.body.appendChild(link);
-                        link.click();
-                        link.remove();
-                        window.URL.revokeObjectURL(url);
-                      } catch (e: any) {
-                         console.error(e);
-                         addLog("[Error] Network error occurred during download.");
-                      }
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                    title="Download Images (ZIP)"
-                  >
-                    <Download size={14} />
-                    <span className="hidden md:inline">Download ZIP</span>
-                  </button>
-                ) : (
-                  <a 
-                    href="/api/project/download-pdf" 
-                    download="game.pdf"
-                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                    title="Download PDF"
-                  >
-                    <Download size={14} />
-                    <span className="hidden md:inline">Download PDF</span>
-                  </a>
-                )}
+                <a 
+                  href="/api/project/download-pdf" 
+                  download="game.pdf"
+                  className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                  title="Download PDF"
+                >
+                  <Download size={14} />
+                  <span className="hidden md:inline">Download PDF</span>
+                </a>
               </div>
             )}
             <button 
@@ -2209,7 +2136,7 @@ export default function App() {
               className="flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:shadow-none"
             >
               <Play size={14} className="fill-current" />
-              <span className="hidden sm:inline">Generate</span>
+              <span className="hidden sm:inline">Generate PDF</span>
             </button>
             <div className="h-4 w-px bg-white/10 mx-1 md:mx-2" />
             <button onClick={() => setShowThemeSettings(true)} className="text-white/40 hover:text-white transition-colors p-1">
@@ -2662,45 +2589,14 @@ export default function App() {
 
                     {pdfReady && (
                       <div className="flex gap-2 mb-4">
-                        {cmdOptions.output_images ? (
-                          <button 
-                            onClick={async () => {
-                              try {
-                                const response = await fetch('/api/download-output-images');
-                                if (!response.ok) {
-                                  const errorData = await response.json();
-                                  addLog("[Error] " + (errorData.message || errorData.error || "Failed to zip images. Is the output folder empty?"));
-                                  return;
-                                }
-                                const blob = await response.blob();
-                                const url = window.URL.createObjectURL(blob);
-                                const link = document.createElement('a');
-                                link.href = url;
-                                link.setAttribute('download', 'output_images.zip');
-                                document.body.appendChild(link);
-                                link.click();
-                                link.remove();
-                                window.URL.revokeObjectURL(url);
-                              } catch (e: any) {
-                                 console.error(e);
-                                 addLog("[Error] Network error occurred during download.");
-                              }
-                            }}
-                            className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
-                          >
-                            <Download size={20} />
-                            Download Images (ZIP)
-                          </button>
-                        ) : (
-                          <a 
-                            href="/api/project/download-pdf" 
-                            download="game.pdf"
-                            className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
-                          >
-                            <Download size={20} />
-                            Download PDF
-                          </a>
-                        )}
+                        <a 
+                          href="/api/project/download-pdf" 
+                          download="game.pdf"
+                          className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                        >
+                          <Download size={20} />
+                          Download PDF
+                        </a>
                       </div>
                     )}
                     <button 
@@ -2708,7 +2604,7 @@ export default function App() {
                       className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-md transition-all active:scale-95"
                     >
                       <Play size={20} fill="currentColor" />
-                      Generate
+                      Generate PDF
                     </button>
 
                      <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
