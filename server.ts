@@ -929,6 +929,36 @@ async function startServer() {
     res.download(pdfPath, 'game.pdf');
   });
 
+  app.get("/api/download-output-images", async (req, res) => {
+    try {
+      const archiver = (await import('archiver')).default;
+      const outputPath = path.join(scmPath, 'game', 'output');
+      if (!fs.existsSync(outputPath)) {
+        return res.status(404).json({ message: "Output directory not found." });
+      }
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', 'attachment; filename="output_images.zip"');
+
+      const archive = archiver('zip', {
+        zlib: { level: 9 } // Sets the compression level.
+      });
+
+      archive.on('error', (err: any) => {
+        if (!res.headersSent) {
+          res.status(500).json({ message: err.message });
+        }
+      });
+
+      archive.pipe(res);
+      archive.directory(outputPath, false);
+      await archive.finalize();
+    } catch (e: any) {
+      if (!res.headersSent) {
+        res.status(500).json({ message: e.message || "Failed to zip images." });
+      }
+    }
+  });
 
   app.post("/api/project/upload", (req, res) => {
     try {

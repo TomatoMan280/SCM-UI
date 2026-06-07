@@ -1456,8 +1456,8 @@ export default function App() {
       const backItems = itemsToUpload.filter(item => item.startsWith('back:'));
       if (backItems.length > 1) {
         addLog("[System] Error: Cannot stage multiple back cards at once.");
-        // prompt the user
-        alert("Only one back pattern card can be selected for staging at a time.");
+        // We cannot use alert, we are logging it. Wait, the rule says NO alert!
+        addLog("[System] Only one back pattern card can be selected for staging at a time.");
         return;
       }
       const hasBackSelected = backItems.length > 0;
@@ -1480,10 +1480,28 @@ export default function App() {
         return;
       }
   
-      addLog(`[Project] Uploading ${itemsToUpload.length} selected library assets to project...`);
-      await performMoveOrCopy(itemsToUpload, 'project', 'library');
+      const source = (assetViewMode === 'plugins' || assetViewMode === 'project') ? assetViewMode : 'library';
+      addLog(`[Project] Uploading ${itemsToUpload.length} selected ${source} assets to project...`);
+      await performMoveOrCopy(itemsToUpload, 'project', source as 'library' | 'plugins');
     } catch(err) {
       addLog(`[Error] Upload failed: ${err}`);
+    }
+  };
+
+  const uploadToLibrary = async () => {
+    try {
+      if (selectedAssets.size === 0) {
+        addLog("[System] No assets selected for upload.");
+        return;
+      }
+      
+      let itemsToUpload = Array.from(selectedAssets);
+      
+      const source = (assetViewMode === 'plugins' || assetViewMode === 'project') ? assetViewMode : 'library';
+      addLog(`[Library] Uploading ${itemsToUpload.length} selected ${source} assets to library...`);
+      await performMoveOrCopy(itemsToUpload, 'library', source as 'library' | 'plugins');
+    } catch(err) {
+      addLog(`[Error] Upload to library failed: ${err}`);
     }
   };
 
@@ -2120,15 +2138,46 @@ export default function App() {
           <div className="flex items-center gap-2 md:gap-4 ml-auto">
             {pdfReady && (
               <div className="flex items-center gap-1.5 md:gap-2">
-                <a 
-                  href="/api/project/download-pdf" 
-                  download="game.pdf"
-                  className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                  title="Download PDF"
-                >
-                  <Download size={14} />
-                  <span className="hidden md:inline">Download PDF</span>
-                </a>
+                {cmdOptions.output_images ? (
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/download-output-images');
+                        if (!response.ok) {
+                          const errorData = await response.json().catch(() => ({}));
+                          addLog(`[Error] ${errorData.message || "Failed to zip images."}`);
+                          return;
+                        }
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', 'output_images.zip');
+                        document.body.appendChild(link);
+                        link.click(); 
+                        link.remove();
+                        window.URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        addLog(`[Error] Network error occurred during download: ${err.message}`);
+                      }
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                    title="Download Images"
+                  >
+                    <Download size={14} />
+                    <span className="hidden md:inline">Download Images</span>
+                  </button>
+                ) : (
+                  <a 
+                    href="/api/project/download-pdf" 
+                    download="game.pdf"
+                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                    title="Download PDF"
+                  >
+                    <Download size={14} />
+                    <span className="hidden md:inline">Download PDF</span>
+                  </a>
+                )}
               </div>
             )}
             <button 
@@ -2136,7 +2185,7 @@ export default function App() {
               className="flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:shadow-none"
             >
               <Play size={14} className="fill-current" />
-              <span className="hidden sm:inline">Generate PDF</span>
+              <span className="hidden sm:inline">Generate</span>
             </button>
             <div className="h-4 w-px bg-white/10 mx-1 md:mx-2" />
             <button onClick={() => setShowThemeSettings(true)} className="text-white/40 hover:text-white transition-colors p-1">
@@ -2589,14 +2638,44 @@ export default function App() {
 
                     {pdfReady && (
                       <div className="flex gap-2 mb-4">
-                        <a 
-                          href="/api/project/download-pdf" 
-                          download="game.pdf"
-                          className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
-                        >
-                          <Download size={20} />
-                          Download PDF
-                        </a>
+                        {cmdOptions.output_images ? (
+                          <button 
+                            onClick={async () => {
+                              try {
+                                const response = await fetch('/api/download-output-images');
+                                if (!response.ok) {
+                                  const errorData = await response.json().catch(() => ({}));
+                                  addLog(`[Error] ${errorData.message || "Failed to zip images."}`);
+                                  return;
+                                }
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.setAttribute('download', 'output_images.zip');
+                                document.body.appendChild(link);
+                                link.click(); 
+                                link.remove();
+                                window.URL.revokeObjectURL(url);
+                              } catch (err: any) {
+                                addLog(`[Error] Network error occurred during download: ${err.message}`);
+                              }
+                            }}
+                            className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                          >
+                            <Download size={20} />
+                            Download Images
+                          </button>
+                        ) : (
+                          <a 
+                            href="/api/project/download-pdf" 
+                            download="game.pdf"
+                            className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                          >
+                            <Download size={20} />
+                            Download PDF
+                          </a>
+                        )}
                       </div>
                     )}
                     <button 
@@ -2604,7 +2683,7 @@ export default function App() {
                       className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-md transition-all active:scale-95"
                     >
                       <Play size={20} fill="currentColor" />
-                      Generate PDF
+                      Generate
                     </button>
 
                      <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
@@ -4369,13 +4448,22 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
-      {assetViewMode === 'library' && selectedAssets.size > 0 && (
+      {(assetViewMode === 'library' || assetViewMode === 'plugins') && selectedAssets.size > 0 && (
         <motion.div
            initial={{ opacity: 0, y: 50 }}
            animate={{ opacity: 1, y: 0 }}
            exit={{ opacity: 0, y: 50 }}
-           className="fixed bottom-6 right-6 z-[100]"
+           className="fixed bottom-6 right-6 z-[100] flex gap-3"
          >
+           {assetViewMode === 'plugins' && (
+             <button 
+               onClick={() => uploadToLibrary()}
+               className="flex items-center gap-2 px-6 py-3 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-fuchsia-600/30 active:scale-95"
+             >
+               <Book size={16} />
+               Add to Library ({selectedAssets.size})
+             </button>
+           )}
            <button 
              onClick={() => uploadToProject()}
              className="flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95"
