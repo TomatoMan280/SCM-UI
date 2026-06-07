@@ -1358,6 +1358,7 @@ export default function App() {
         body: JSON.stringify({
            isOutputImages: cmdOptions.output_images,
            args,
+           pythonPath,
            crop: cmdOptions.crop,
            calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
         })

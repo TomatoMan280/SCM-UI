@@ -984,7 +984,7 @@ async function startServer() {
 
 
   app.post("/api/generate", async (req, res) => {
-    const { isOutputImages, args, crop, calibration } = req.body;
+    const { isOutputImages, args, pythonPath, crop, calibration } = req.body;
     
     if (calibration) {
       writeCalibrationData(calibration);
@@ -992,7 +992,6 @@ async function startServer() {
 
     try {
       const { spawnSync, spawn } = await import('child_process');
-      const pythonPath = getSettings().pythonPath;
       let pythonCmd = pythonPath || "python";
 
       if (!pythonPath) {
