@@ -983,6 +983,170 @@ async function startServer() {
   });
 
 
+  app.post("/api/generate", async (req, res) => {
+    const { isOutputImages, args, crop, calibration } = req.body;
+    
+    if (calibration) {
+      writeCalibrationData(calibration);
+    }
+
+    try {
+      const { spawnSync, spawn } = await import('child_process');
+      const pythonPath = getSettings().pythonPath;
+      let pythonCmd = pythonPath || "python";
+
+      if (!pythonPath) {
+        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+        
+        if (fs.existsSync(venvPythonPath)) {
+           pythonCmd = venvPythonPath;
+        } else if (fs.existsSync(venvPythonPathFallback)) {
+           pythonCmd = venvPythonPathFallback;
+        } else {
+          try {
+            const check = spawnSync("python3", ["--version"]);
+            if (check.status === 0) pythonCmd = "python3";
+          } catch (e) {}
+
+          if (pythonCmd === "python") {
+            try {
+              const check2 = spawnSync("python", ["--version"]);
+              if (check2.status !== 0) pythonCmd = "";
+            } catch (e) {}
+          }
+        }
+      }
+
+      if (!pythonCmd) {
+          return res.status(500).json({ message: "Python interpreter not found." });
+      }
+
+      const customEnv = Object.assign({}, process.env);
+      customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
+      
+      let finalArgs = [...(args || [])];
+      if (crop) {
+          const hasCrop = finalArgs.some(a => a === '--crop');
+          if (!hasCrop) {
+              finalArgs.push('--crop', crop.toString());
+          }
+      }
+
+      if (isOutputImages && !finalArgs.includes('--output_images')) {
+          finalArgs.push('--output_images');
+      }
+
+      const spawnCommand = path.join(scmPath, 'create_pdf.py');
+      
+      // Clear old output
+      const pdfPath = path.join(scmPath, 'game', 'output', 'game.pdf');
+      if (fs.existsSync(pdfPath)) {
+          try { fs.unlinkSync(pdfPath); } catch (e) {}
+      }
+
+      const gameDir = path.join(scmPath, 'game');
+      const dirsToRename = [path.join(gameDir, 'front'), path.join(gameDir, 'double_sided')];
+      const fileRenames: { original: string, temp: string }[] = [];
+
+      dirsToRename.forEach(dir => {
+          if (fs.existsSync(dir)) {
+              const files = fs.readdirSync(dir);
+              files.forEach(f => {
+                  const parsed = path.parse(f);
+                  if (parsed.ext) {
+                     const extLower = parsed.ext.replace('.', '').toLowerCase();
+                     if (!parsed.name.endsWith(`_${extLower}`)) {
+                         const tempName = `${parsed.name}_${extLower}${parsed.ext}`;
+                         const origPath = path.join(dir, f);
+                         const tempPath = path.join(dir, tempName);
+                         try {
+                             fs.renameSync(origPath, tempPath);
+                             fileRenames.push({ original: origPath, temp: tempPath });
+                         } catch (e) {}
+                     }
+                  }
+              });
+          }
+      });
+
+      const executeChild = () => {
+          return new Promise<number>((resolve, reject) => {
+              const child = spawn(pythonCmd, ['-u', spawnCommand, ...finalArgs], { cwd: scmPath, env: customEnv });
+              let errorOutput = "";
+              
+              child.stderr.on('data', (data) => {
+                  errorOutput += data.toString();
+              });
+
+              child.on('close', (code) => {
+                  if (code === 0) {
+                      resolve(code);
+                  } else {
+                      reject(new Error(errorOutput || `Python exited with code ${code}`));
+                  }
+              });
+          });
+      };
+
+      try {
+          await executeChild();
+      } catch (err: any) {
+          return res.status(500).json({ message: "Error running generator: " + err.message });
+      } finally {
+          for (const { original, temp } of fileRenames) {
+              try {
+                  if (fs.existsSync(temp)) fs.renameSync(temp, original);
+              } catch (e) {}
+          }
+      }
+
+      if (isOutputImages) {
+          const outputDir = path.join(scmPath, 'game', 'output');
+          if (!fs.existsSync(outputDir)) {
+            return res.status(400).json({ message: "Output directory not found. Generation failed." });
+          }
+          const files = fs.readdirSync(outputDir).filter(f => fs.statSync(path.join(outputDir, f)).isFile());
+          if (files.length === 0) {
+            return res.status(400).json({ message: "Output directory is empty. Generation failed." });
+          }
+          res.setHeader('Content-Type', 'application/zip');
+          res.setHeader('Content-Disposition', 'attachment; filename="output_images.zip"');
+          const archive = archiver('zip', { zlib: { level: 9 } });
+          archive.on('error', (err) => {
+            console.error('[System] Error zipping images:', err);
+            if (!res.headersSent) res.status(500).json({ message: "Internal server error while zipping." });
+          });
+          archive.pipe(res);
+          files.forEach(file => {
+            let archiveName = file;
+            const parsed = path.parse(file);
+            if (parsed.ext) {
+               const extLower = parsed.ext.replace('.', '').toLowerCase();
+               if (parsed.name.endsWith(`_${extLower}`)) {
+                  archiveName = `${parsed.name.substring(0, parsed.name.length - extLower.length - 1)}${parsed.ext}`;
+               }
+            }
+            const filePath = path.join(outputDir, file);
+            archive.file(filePath, { name: archiveName });
+          });
+          archive.finalize();
+      } else {
+          const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+          if (!fs.existsSync(targetPdf)) {
+              return res.status(500).json({ message: "PDF file was not generated properly." });
+          }
+          res.setHeader('Content-Type', 'application/pdf');
+          res.setHeader('Content-Disposition', 'attachment; filename="game.pdf"');
+          // res.download sets the headers as well, but using createReadStream is fine.
+          const fileStream = fs.createReadStream(targetPdf);
+          fileStream.pipe(res);
+      }
+    } catch (e: any) {
+        res.status(500).json({ message: e.message || "An unexpected error occurred" });
+    }
+  });
+
   app.post("/api/project/upload", (req, res) => {
     try {
       const { items, replaceBack } = req.body;

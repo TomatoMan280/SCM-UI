@@ -1325,12 +1325,14 @@ export default function App() {
     const hasDoubleSided = (currentAssets?.double_sided?.length || 0) > 0;
     
     if (!hasFronts && !hasDoubleSided) {
-        addLog("[Error] Cannot generate PDF: No card fronts found in project.");
+        addLog("[Error] Cannot generate: No card fronts found in project.");
         return;
     }
 
-    addLog("[System] Launching PDF Generator...");
+    addLog("[System] Launching Generator...");
     setPdfReady(false);
+    setTaskProgress({ current: 0, total: 1, message: 'Generating...' });
+    
     const args = [
       '--card_size', cmdOptions.card_size.toString(),
       '--paper_size', cmdOptions.paper_size.toString(),
@@ -1342,23 +1344,61 @@ export default function App() {
     if (cmdOptions.load_offset) args.push('--load_offset');
     if (cmdOptions.show_outline) args.push('--show_outline');
     if (cmdOptions.only_fronts) args.push('--only_fronts');
-    if (cmdOptions.output_images) args.push('--output_images');
     if (cmdOptions.crop_backs) { args.push('--crop_backs'); args.push(cmdOptions.crop_backs); }
     if (cmdOptions.label) { args.push('--label'); args.push(cmdOptions.label); }
     if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
-    const result = await runCommand('create_pdf.py', args, { 
-      startMessage: 'Generating PDF...', 
-      crop: cmdOptions.crop,
-      calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
-    });
-    if (result?.success && result?.output && result.output.some((line: string) => line.includes('PDF generated successfully') || line.includes('PDF successfully moved') || line.includes('Generated PDF') || line.includes('Generated images') || line.includes('Output images generated successfully'))) {
+    
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+           isOutputImages: cmdOptions.output_images,
+           args,
+           crop: cmdOptions.crop,
+           calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
+        })
+      });
+
+      setTaskProgress(null);
+
+      if (!response.ok) {
+         let errorMsg = "Generation failed.";
+         try {
+           const errorData = await response.json();
+           errorMsg = errorData.message || errorData.error || errorMsg;
+         } catch(e) {}
+         addLog("[Error] " + errorMsg);
+         return;
+      }
+
       setPdfReady(true);
       setPdfReadyToastOpen(true);
       playDing();
       setTimeout(() => setPdfReadyToastOpen(false), 5000);
-    } else {
-      addLog("[Error] PDF Generation failed. Check console for details.");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const contentType = response.headers.get('Content-Type');
+      if (contentType && contentType.includes('zip')) {
+         link.setAttribute('download', 'output_images.zip');
+      } else {
+         link.setAttribute('download', 'game.pdf');
+      }
+      
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setTaskProgress(null);
+      addLog("[Error] Network error occurred during generation.");
     }
   };
 
