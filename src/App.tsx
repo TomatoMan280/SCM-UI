@@ -2125,7 +2125,11 @@ export default function App() {
                     onClick={async () => {
                       try {
                         const response = await fetch('/api/download-output-images');
-                        if (!response.ok) throw new Error("Failed to download images");
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            addLog("[Error] " + (errorData.message || errorData.error || "Failed to zip images. Is the output folder empty?"));
+                            return;
+                        }
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);
                         const link = document.createElement('a');
@@ -2135,8 +2139,9 @@ export default function App() {
                         link.click();
                         link.remove();
                         window.URL.revokeObjectURL(url);
-                      } catch (e) {
+                      } catch (e: any) {
                          console.error(e);
+                         addLog("[Error] Network error occurred during download.");
                       }
                     }}
                     className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
@@ -2163,7 +2168,7 @@ export default function App() {
               className="flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:shadow-none"
             >
               <Play size={14} className="fill-current" />
-              <span className="hidden sm:inline">Generate PDF</span>
+              <span className="hidden sm:inline">Generate</span>
             </button>
             <div className="h-4 w-px bg-white/10 mx-1 md:mx-2" />
             <button onClick={() => setShowThemeSettings(true)} className="text-white/40 hover:text-white transition-colors p-1">
@@ -2621,7 +2626,11 @@ export default function App() {
                             onClick={async () => {
                               try {
                                 const response = await fetch('/api/download-output-images');
-                                if (!response.ok) throw new Error("Failed to download images");
+                                if (!response.ok) {
+                                  const errorData = await response.json();
+                                  addLog("[Error] " + (errorData.message || errorData.error || "Failed to zip images. Is the output folder empty?"));
+                                  return;
+                                }
                                 const blob = await response.blob();
                                 const url = window.URL.createObjectURL(blob);
                                 const link = document.createElement('a');
@@ -2631,8 +2640,9 @@ export default function App() {
                                 link.click();
                                 link.remove();
                                 window.URL.revokeObjectURL(url);
-                              } catch (e) {
+                              } catch (e: any) {
                                  console.error(e);
+                                 addLog("[Error] Network error occurred during download.");
                               }
                             }}
                             className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
@@ -2657,7 +2667,7 @@ export default function App() {
                       className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-md transition-all active:scale-95"
                     >
                       <Play size={20} fill="currentColor" />
-                      Generate PDF
+                      Generate
                     </button>
 
                      <div className="mt-8 pt-8 border-t border-white/5 space-y-4">

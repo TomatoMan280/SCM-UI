@@ -933,40 +933,53 @@ async function startServer() {
   app.get("/api/download-output-images", (req, res) => {
     const outputDir = path.join(scmPath, 'game', 'output');
     if (!fs.existsSync(outputDir)) {
-      return res.status(404).json({ error: "Output directory not found" });
+      return res.status(400).json({ message: "Output directory not found. Please generate first." });
     }
-    
-    const archive = archiver('zip', {
-      zlib: { level: 9 }
-    });
 
-    res.attachment('output_images.zip');
-    
-    archive.on('error', (err) => {
-      res.status(500).send({ error: err.message });
-    });
-
-    archive.pipe(res);
-
-    const files = fs.readdirSync(outputDir);
-    files.forEach(file => {
-      let archiveName = file;
-      const parsed = path.parse(file);
-      
-      if (parsed.ext) {
-         const extLower = parsed.ext.replace('.', '').toLowerCase();
-         if (parsed.name.endsWith(`_${extLower}`)) {
-            archiveName = `${parsed.name.substring(0, parsed.name.length - extLower.length - 1)}${parsed.ext}`;
-         }
+    try {
+      const files = fs.readdirSync(outputDir).filter(f => fs.statSync(path.join(outputDir, f)).isFile());
+      if (files.length === 0) {
+        return res.status(400).json({ message: "Output directory is empty. Generate images before downloading." });
       }
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', 'attachment; filename="output_images.zip"');
+
+      const archive = archiver('zip', {
+        zlib: { level: 9 }
+      });
       
-      const filePath = path.join(outputDir, file);
-      if (fs.statSync(filePath).isFile()) {
+      archive.on('error', (err) => {
+        console.error('[System] Error zipping images:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ message: "Internal server error while zipping." });
+        }
+      });
+
+      archive.pipe(res);
+
+      files.forEach(file => {
+        let archiveName = file;
+        const parsed = path.parse(file);
+        
+        if (parsed.ext) {
+           const extLower = parsed.ext.replace('.', '').toLowerCase();
+           if (parsed.name.endsWith(`_${extLower}`)) {
+              archiveName = `${parsed.name.substring(0, parsed.name.length - extLower.length - 1)}${parsed.ext}`;
+           }
+        }
+        
+        const filePath = path.join(outputDir, file);
         archive.file(filePath, { name: archiveName });
-      }
-    });
+      });
 
-    archive.finalize();
+      archive.finalize();
+    } catch (e: any) {
+      console.error(e);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Server error processing images." });
+      }
+    }
   });
 
 
