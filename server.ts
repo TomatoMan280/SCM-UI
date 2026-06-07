@@ -5,6 +5,7 @@ import multer from "multer";
 import fs from "fs";
 import os from "os";
 import { execSync, exec } from "child_process";
+import archiver from "archiver";
 
 console.log("[System] Modules imported successfully.");
 
@@ -929,6 +930,45 @@ async function startServer() {
     res.download(pdfPath, 'game.pdf');
   });
 
+  app.get("/api/download-output-images", (req, res) => {
+    const outputDir = path.join(scmPath, 'game', 'output');
+    if (!fs.existsSync(outputDir)) {
+      return res.status(404).json({ error: "Output directory not found" });
+    }
+    
+    const archive = archiver('zip', {
+      zlib: { level: 9 }
+    });
+
+    res.attachment('output_images.zip');
+    
+    archive.on('error', (err) => {
+      res.status(500).send({ error: err.message });
+    });
+
+    archive.pipe(res);
+
+    const files = fs.readdirSync(outputDir);
+    files.forEach(file => {
+      let archiveName = file;
+      const parsed = path.parse(file);
+      
+      if (parsed.ext) {
+         const extLower = parsed.ext.replace('.', '').toLowerCase();
+         if (parsed.name.endsWith(`_${extLower}`)) {
+            archiveName = `${parsed.name.substring(0, parsed.name.length - extLower.length - 1)}${parsed.ext}`;
+         }
+      }
+      
+      const filePath = path.join(outputDir, file);
+      if (fs.statSync(filePath).isFile()) {
+        archive.file(filePath, { name: archiveName });
+      }
+    });
+
+    archive.finalize();
+  });
+
 
   app.post("/api/project/upload", (req, res) => {
     try {
@@ -1739,31 +1779,44 @@ async function startServer() {
 
           const code = await executeChild();
           
+          const isOutputImages = finalArgs.includes('--output_images');
+          
           if (command === 'create_pdf.py') {
-              const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-              const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-              
-              if (fs.existsSync(generatedPdf)) {
-                  fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
-                  fs.copyFileSync(generatedPdf, targetPdf);
-                  sendEvent('stdout', "[System] PDF generated successfully.");
+              if (isOutputImages) {
+                  sendEvent('stdout', "[System] Output images generated successfully.");
               } else {
-                  sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
-                  hasError = true;
+                  const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+                  const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+                  
+                  if (fs.existsSync(generatedPdf)) {
+                      fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
+                      fs.copyFileSync(generatedPdf, targetPdf);
+                      sendEvent('stdout', "[System] PDF generated successfully.");
+                  } else {
+                      sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+                      hasError = true;
+                  }
               }
           }
           sendEvent('close', { code, hasError });
       } catch (err: any) {
           let hasError = true;
+          const isOutputImages = finalArgs.includes('--output_images');
           if (command === 'create_pdf.py') {
              if (err.message === 'dependencyError') {
                  sendEvent('error', "[Error] Run 'pip install -r requirements.txt' or check Python version compatibility.");
              } else {
-                 sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+                 if (isOutputImages) {
+                    sendEvent('error', "[Error] Output images were not generated properly. Check output for detailed Python errors.");
+                 } else {
+                    sendEvent('error', "[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+                 }
              }
-             const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-             if (fs.existsSync(targetPdf)) {
-                try { fs.unlinkSync(targetPdf); } catch (e) {}
+             if (!isOutputImages) {
+                 const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+                 if (fs.existsSync(targetPdf)) {
+                    try { fs.unlinkSync(targetPdf); } catch (e) {}
+                 }
              }
           }
           sendEvent('close', { code: 1, hasError: true });
@@ -2057,23 +2110,30 @@ async function startServer() {
 
           // Post-command actions
           if (command === 'create_pdf.py') {
-            const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-            const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
-            
-            if (!error && fs.existsSync(generatedPdf)) {
-              fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
-              fs.copyFileSync(generatedPdf, targetPdf);
-              const successMsg = "[System] PDF generated successfully.";
+            const isOutputImages = argString.includes('--output_images');
+            if (isOutputImages) {
+              const successMsg = "[System] Output images generated successfully.";
               console.log(successMsg);
               output.push(successMsg);
             } else {
-              console.warn(`[System] Warning: create_pdf.py finished with error or ${generatedPdf} was not found.`);
-              output.push("[Error] PDF file was not generated properly. Check output for detailed Python errors.");
-              if (fs.existsSync(targetPdf)) {
-                try {
-                  fs.unlinkSync(targetPdf);
-                  output.push("[System] Corrupted incomplete PDF was deleted.");
-                } catch (e) {}
+              const generatedPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+              const targetPdf = path.join(scmPath, 'game', 'output', 'game.pdf');
+              
+              if (!error && fs.existsSync(generatedPdf)) {
+                fs.mkdirSync(path.dirname(targetPdf), { recursive: true });
+                fs.copyFileSync(generatedPdf, targetPdf);
+                const successMsg = "[System] PDF generated successfully.";
+                console.log(successMsg);
+                output.push(successMsg);
+              } else {
+                console.warn(`[System] Warning: create_pdf.py finished with error or ${generatedPdf} was not found.`);
+                output.push("[Error] PDF file was not generated properly. Check output for detailed Python errors.");
+                if (fs.existsSync(targetPdf)) {
+                  try {
+                    fs.unlinkSync(targetPdf);
+                    output.push("[System] Corrupted incomplete PDF was deleted.");
+                  } catch (e) {}
+                }
               }
             }
           }

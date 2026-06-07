@@ -1352,7 +1352,7 @@ export default function App() {
       crop: cmdOptions.crop,
       calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
     });
-    if (result?.success && result?.output && result.output.some((line: string) => line.includes('PDF generated successfully') || line.includes('PDF successfully moved') || line.includes('Generated PDF'))) {
+    if (result?.success && result?.output && result.output.some((line: string) => line.includes('PDF generated successfully') || line.includes('PDF successfully moved') || line.includes('Generated PDF') || line.includes('Generated images') || line.includes('Output images generated successfully'))) {
       setPdfReady(true);
       setPdfReadyToastOpen(true);
       playDing();
@@ -2120,15 +2120,42 @@ export default function App() {
           <div className="flex items-center gap-2 md:gap-4 ml-auto">
             {pdfReady && (
               <div className="flex items-center gap-1.5 md:gap-2">
-                <a 
-                  href="/api/project/download-pdf" 
-                  download="game.pdf"
-                  className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                  title="Download PDF"
-                >
-                  <Download size={14} />
-                  <span className="hidden md:inline">Download PDF</span>
-                </a>
+                {cmdOptions.output_images ? (
+                  <button 
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/download-output-images');
+                        if (!response.ok) throw new Error("Failed to download images");
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', 'output_images.zip');
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                        window.URL.revokeObjectURL(url);
+                      } catch (e) {
+                         console.error(e);
+                      }
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                    title="Download Images (ZIP)"
+                  >
+                    <Download size={14} />
+                    <span className="hidden md:inline">Download ZIP</span>
+                  </button>
+                ) : (
+                  <a 
+                    href="/api/project/download-pdf" 
+                    download="game.pdf"
+                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                    title="Download PDF"
+                  >
+                    <Download size={14} />
+                    <span className="hidden md:inline">Download PDF</span>
+                  </a>
+                )}
               </div>
             )}
             <button 
@@ -2589,14 +2616,40 @@ export default function App() {
 
                     {pdfReady && (
                       <div className="flex gap-2 mb-4">
-                        <a 
-                          href="/api/project/download-pdf" 
-                          download="game.pdf"
-                          className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
-                        >
-                          <Download size={20} />
-                          Download PDF
-                        </a>
+                        {cmdOptions.output_images ? (
+                          <button 
+                            onClick={async () => {
+                              try {
+                                const response = await fetch('/api/download-output-images');
+                                if (!response.ok) throw new Error("Failed to download images");
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.setAttribute('download', 'output_images.zip');
+                                document.body.appendChild(link);
+                                link.click();
+                                link.remove();
+                                window.URL.revokeObjectURL(url);
+                              } catch (e) {
+                                 console.error(e);
+                              }
+                            }}
+                            className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                          >
+                            <Download size={20} />
+                            Download Images (ZIP)
+                          </button>
+                        ) : (
+                          <a 
+                            href="/api/project/download-pdf" 
+                            download="game.pdf"
+                            className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                          >
+                            <Download size={20} />
+                            Download PDF
+                          </a>
+                        )}
                       </div>
                     )}
                     <button 
