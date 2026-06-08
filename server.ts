@@ -4,6 +4,7 @@ import path from "path";
 import multer from "multer";
 import fs from "fs";
 import os from "os";
+import { ZipArchive } from "archiver";
 import { execSync, exec } from "child_process";
 
 console.log("[System] Modules imported successfully.");
@@ -931,7 +932,6 @@ async function startServer() {
 
   app.get("/api/download-output-images", async (req, res) => {
     try {
-      const archiver = require('archiver');
       const outputPath = path.join(scmPath, 'game', 'output');
       if (!fs.existsSync(outputPath)) {
         return res.status(404).json({ message: "Output directory not found." });
@@ -940,7 +940,7 @@ async function startServer() {
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', 'attachment; filename="output_images.zip"');
 
-      const archive = archiver('zip', {
+      const archive = new ZipArchive({
         zlib: { level: 9 } // Sets the compression level.
       });
 
