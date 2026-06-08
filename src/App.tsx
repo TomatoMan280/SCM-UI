@@ -4448,7 +4448,7 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
-      {(assetViewMode === 'library' || assetViewMode === 'plugins') && selectedAssets.size > 0 && (
+      {activeTab === 'assets' && (assetViewMode === 'library' || assetViewMode === 'plugins') && selectedAssets.size > 0 && (
         <motion.div
            initial={{ opacity: 0, y: 50 }}
            animate={{ opacity: 1, y: 0 }}
@@ -4458,7 +4458,7 @@ export default function App() {
            {assetViewMode === 'plugins' && (
              <button 
                onClick={() => uploadToLibrary()}
-               className="flex items-center gap-2 px-6 py-3 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-fuchsia-600/30 active:scale-95"
+               className="flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95"
              >
                <Book size={16} />
                Add to Library ({selectedAssets.size})
