@@ -940,7 +940,7 @@ async function startServer() {
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', 'attachment; filename="output_images.zip"');
 
-      const archive = archiver('zip', {
+      const archive = archiver.create('zip', {
         zlib: { level: 9 } // Sets the compression level.
       });
 
