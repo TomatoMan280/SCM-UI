@@ -2077,7 +2077,7 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">V1.0.8</span>
+                  <span className="text-white/80 font-mono text-[10px]">V1.0.9</span>
                 </div>
               </div>
             </div>
