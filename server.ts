@@ -4,7 +4,7 @@ import path from "path";
 import multer from "multer";
 import fs from "fs";
 import os from "os";
-import archiver from "archiver";
+const archiver = require("archiver");
 import { execSync, exec } from "child_process";
 
 console.log("[System] Modules imported successfully.");
