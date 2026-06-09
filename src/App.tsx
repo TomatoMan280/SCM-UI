@@ -1054,7 +1054,9 @@ export default function App() {
     let serverAssets: string[] = [];
     const current = getCurrentAssets();
     if (type === 'front') {
-      serverAssets = current?.fronts || [];
+      const fronts = current?.fronts || [];
+      const doubleSided = current?.double_sided || [];
+      serverAssets = fronts.filter(f => !doubleSided.some(d => stripExt(d).toLowerCase() === stripExt(f).toLowerCase()));
     } else if (type === 'back') {
       serverAssets = current?.backs || [];
     } else if (type === 'double_sided') {
@@ -1065,6 +1067,9 @@ export default function App() {
       if (a.view !== assetViewMode) return false;
       if (a.type !== type) return false;
       if (serverAssets.includes(a.name)) return false;
+      if (type === 'front' && localAssets.some(other => stripExt(other.name).toLowerCase() === stripExt(a.name).toLowerCase() && other.type === 'double_sided' && other.view === assetViewMode)) {
+        return false;
+      }
       return true;
     }).map(a => a.name);
     
