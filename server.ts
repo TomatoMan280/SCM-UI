@@ -417,7 +417,7 @@ async function startServer() {
     const runCommand = (command: string, args: string[], cwd?: string): Promise<void> => {
       return new Promise((resolve, reject) => {
         const { spawn } = require('child_process');
-        const child = spawn(command, args, { cwd, shell: true });
+        const child = spawn(command, args, { cwd, shell: false });
         
         child.stdout.on('data', (data: any) => {
           const lines = data.toString().split('\n').filter(Boolean);
