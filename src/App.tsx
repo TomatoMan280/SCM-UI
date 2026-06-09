@@ -59,7 +59,7 @@ interface AssetData {
 
 const FORMAT_HINTS: Record<string, string> = {
   // MTG
-  simple: "List just the card names, one per line. Quantities are not supported. Example: Lightning Bolt",
+  simple: "List Just the card names, one per line. Example: Lightning Bolt",
   mtga: "MTG Arena format. Example: 4 Shock (M19) 156",
   mtgo: "Magic Online format. Example: 1 Abzan Battle Priest",
   archidekt: "Archidekt format. Example: 1x Ashnod's Altar (ema) 218 *F*",
@@ -1929,12 +1929,17 @@ export default function App() {
                  <div ref={setupLogEndRef} />
               </div>
 
-              {pythonSetupProgress.step === 'Failed' && (
+              {(!status?.isElectron || pythonSetupProgress.step === 'Failed') && (
                 <button 
-                  onClick={() => setIsSettingUpPython(false)} 
+                  onClick={() => {
+                    setIsSettingUpPython(false);
+                    if (!status?.isElectron) {
+                      localStorage.setItem('scm_python_path', 'preview_bypass');
+                    }
+                  }} 
                   className="mt-4 px-8 py-3 bg-white/5 hover:bg-white/10 text-white font-bold tracking-widest text-xs uppercase rounded-xl transition-colors border border-white/10"
                 >
-                  Dismiss & Continue in Local Mode
+                  {!status?.isElectron ? "Skip Setup (Preview Mode)" : "Dismiss & Continue in Local Mode"}
                 </button>
               )}
             </div>
@@ -3036,7 +3041,7 @@ export default function App() {
 
                         <div className="space-y-4 pt-2">
                           <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Integration</label>
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Game</label>
                             <div className="relative">
                               <select
                                  value={pluginState.selectedPlugin.id}
@@ -3168,7 +3173,7 @@ export default function App() {
                                 <textarea 
                                   value={pluginState.decklist}
                                   onChange={(e) => setPluginState(prev => ({ ...prev, decklist: e.target.value }))}
-                                  placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here (e.g. 4x Lightning Bolt)..."}
+                                  placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here..."}
                                   className="absolute inset-0 w-full h-full bg-transparent p-4 text-sm font-mono focus:outline-none transition-all resize-none"
                                 />
                                 <div className="absolute right-4 bottom-4 pointer-events-none opacity-20 group-hover:opacity-40 transition-opacity">
