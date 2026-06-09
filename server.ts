@@ -504,8 +504,8 @@ async function startServer() {
                 await runCommand('apt-get', ['update']);
                 await runCommand('apt-get', ['install', '-y', 'python3', 'python3-pip', 'python3-venv']);
              }
-             pythonExecutable = 'python3';
           }
+          pythonExecutable = 'python3';
         }
 
         sendEvent('progress', { step: 'Installing required dependencies...', detail: 'Creating virtual environment and installing packages', percent: 80 });
