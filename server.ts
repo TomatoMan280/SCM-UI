@@ -449,8 +449,8 @@ async function startServer() {
         sendEvent('progress', { step: 'Initializing...', detail: 'Preparing python installation', percent: 10 });
 
         if (platform === 'win32') {
-          sendEvent('progress', { step: 'Downloading Python...', detail: 'Fetching Python 3.11 installer for Windows', percent: 40 });
-          sendEvent('stdout', '> Initiating Python download from official servers...');
+          sendEvent('progress', { step: 'Downloading sandboxed Python...', detail: 'Fetching Python 3.11 installer for Windows', percent: 40 });
+          sendEvent('stdout', '> Downloading sandboxed Python...');
           const installerPath = path.join(os.tmpdir(), 'python-installer.exe');
           
           await new Promise<void>((resolve, reject) => {
@@ -484,7 +484,8 @@ async function startServer() {
             });
           });
 
-          sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Running installer silently in the background', percent: 60 });
+          sendEvent('progress', { step: 'Extracting files...', detail: 'Running installer silently in the background', percent: 60 });
+          sendEvent('stdout', '> Extracting files...');
           await runCommand(installerPath, ['/quiet', 'InstallAllUsers=0', 'PrependPath=1', 'Include_test=0']);
           
           pythonExecutable = path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python.exe');
@@ -493,7 +494,8 @@ async function startServer() {
           }
         } else {
           // Mock or use apt-get for non-Windows assuming user is root or in a container
-          sendEvent('progress', { step: 'Installing Python (this may take a minute)...', detail: 'Using apt-get / brew', percent: 60 });
+          sendEvent('progress', { step: 'Extracting files...', detail: 'Using apt-get / brew', percent: 60 });
+          sendEvent('stdout', '> Extracting files...');
           if (platform === 'linux') {
              try {
                 await runCommand('sudo', ['apt-get', 'update']);
@@ -506,11 +508,11 @@ async function startServer() {
           }
         }
 
-        sendEvent('progress', { step: 'Setting up dependencies...', detail: 'Creating virtual environment and installing packages', percent: 80 });
+        sendEvent('progress', { step: 'Installing required dependencies...', detail: 'Creating virtual environment and installing packages', percent: 80 });
         
         const venvPath = path.join(scmPath, 'venv');
         
-        sendEvent('stdout', 'Creating virtual environment...');
+        sendEvent('stdout', '> Installing required dependencies...');
         await runCommand(pythonExecutable, ['-m', 'venv', 'venv'], scmPath);
         
         const pipExecutable = platform === 'win32' 
@@ -520,12 +522,15 @@ async function startServer() {
         sendEvent('stdout', 'Installing requirements...');
         await runCommand(pipExecutable, ['install', '-r', 'requirements.txt'], scmPath);
 
-        sendEvent('progress', { step: 'Ready!', detail: 'Python environment setup complete', percent: 100 });
+        sendEvent('progress', { step: 'Ready', detail: 'Python environment setup complete', percent: 100 });
+        sendEvent('stdout', 'Ready');
         sendEvent('done', { success: true });
         res.end();
 
       } catch (err: any) {
+        sendEvent('progress', { step: 'Failed', detail: err.message, percent: 100 });
         sendEvent('error', `Setup failed: ${err.message}`);
+        sendEvent('stdout', 'Failed');
         sendEvent('done', { success: false });
       }
       res.end();
@@ -553,8 +558,7 @@ async function startServer() {
          checkCmd = `"${venvPythonPathFallback}"`;
          envType = 'Sandboxed';
       } else {
-         checkCmd = 'python3';
-         envType = 'System';
+         return res.json({ found: false, version: '', type: '' });
       }
     }
     
@@ -636,18 +640,6 @@ async function startServer() {
         
         if (fs.existsSync(venvPythonPath) || fs.existsSync(venvPythonPathFallback)) {
            pythonHasBeenFound = true;
-        } else {
-          try {
-            const check = spawnSync("python3", ["--version"]);
-            if (check.status === 0) pythonHasBeenFound = true;
-          } catch (e) {}
-
-          if (!pythonHasBeenFound) {
-            try {
-              const check2 = spawnSync("python", ["--version"]);
-              if (check2.status === 0) pythonHasBeenFound = true;
-            } catch (e) {}
-          }
         }
 
         res.json({
@@ -1546,7 +1538,7 @@ async function startServer() {
     }).join(" ");
     
     import('child_process').then(async ({ spawn, spawnSync }) => {
-      let pythonCmd = pythonPath || "python";
+      let pythonCmd = pythonPath || "";
 
       if (!pythonPath) {
         const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
@@ -1557,17 +1549,7 @@ async function startServer() {
         } else if (fs.existsSync(venvPythonPathFallback)) {
            pythonCmd = venvPythonPathFallback;
         } else {
-          try {
-            const check = spawnSync("python3", ["--version"]);
-            if (check.status === 0) pythonCmd = "python3";
-          } catch (e) {}
-
-          if (pythonCmd === "python") {
-            try {
-              const check2 = spawnSync("python", ["--version"]);
-              if (check2.status !== 0) pythonCmd = "";
-            } catch (e) {}
-          }
+           pythonCmd = "";
         }
       } else {
         // Soft check override
@@ -1603,7 +1585,14 @@ async function startServer() {
       }
 
       const customEnv = Object.assign({}, process.env);
-      customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
+      delete customEnv.PYTHONPATH;
+      delete customEnv.PYTHONHOME;
+      
+      if (pythonCmd && path.isAbsolute(pythonCmd)) {
+        const pythonBinDir = path.dirname(pythonCmd);
+        customEnv.PATH = pythonBinDir + (process.platform === 'win32' ? ';' : ':') + (customEnv.PATH || '');
+      }
+      
       let spawnCwd = scmPath;
       let spawnCommand = command;
 
@@ -1888,7 +1877,7 @@ async function startServer() {
     // Check if python is available and run the child process based on it.
     import('child_process').then(async ({ exec, spawnSync }) => {
       // Find whether to use python3 or python or none
-      let pythonCmd = pythonPath || "python";
+      let pythonCmd = pythonPath || "";
 
       if (!pythonPath) {
         const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
@@ -1899,17 +1888,7 @@ async function startServer() {
         } else if (fs.existsSync(venvPythonPathFallback)) {
            pythonCmd = venvPythonPathFallback;
         } else {
-          try {
-            const check = spawnSync("python3", ["--version"]);
-            if (check.status === 0) pythonCmd = "python3";
-          } catch (e) {}
-
-          if (pythonCmd === "python") {
-            try {
-              const check2 = spawnSync("python", ["--version"]);
-              if (check2.status !== 0) pythonCmd = "";
-            } catch (e) {}
-          }
+           pythonCmd = "";
         }
       } else {
         // If an override is provided, we should just assume it's good or valid, but let's test it
@@ -1944,7 +1923,14 @@ async function startServer() {
       }
 
       const customEnv = Object.assign({}, process.env);
-      customEnv.PYTHONPATH = (customEnv.PYTHONPATH ? customEnv.PYTHONPATH + ":" : "") + "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages";
+      delete customEnv.PYTHONPATH;
+      delete customEnv.PYTHONHOME;
+      
+      if (pythonCmd && path.isAbsolute(pythonCmd)) {
+        const pythonBinDir = path.dirname(pythonCmd);
+        customEnv.PATH = pythonBinDir + (process.platform === 'win32' ? ';' : ':') + (customEnv.PATH || '');
+      }
+      
       let execCwd = scmPath;
       let scriptAbsPath = path.join(scmPath, command);
 

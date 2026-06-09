@@ -34,7 +34,8 @@ import {
   Sliders,
   LayoutGrid,
   Upload,
-  Settings2
+  Settings2,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -58,7 +59,7 @@ interface AssetData {
 
 const FORMAT_HINTS: Record<string, string> = {
   // MTG
-  simple: "List just the card names, one per line. Example: 4 Lightning Bolt",
+  simple: "List just the card names, one per line. Quantities are not supported. Example: Lightning Bolt",
   mtga: "MTG Arena format. Example: 4 Shock (M19) 156",
   mtgo: "Magic Online format. Example: 1 Abzan Battle Priest",
   archidekt: "Archidekt format. Example: 1x Ashnod's Altar (ema) 218 *F*",
@@ -1891,25 +1892,51 @@ export default function App() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/80 backdrop-blur-md pointer-events-auto"
           >
-            <div className="flex flex-col items-center gap-6 p-10 bg-[#0f0f13] rounded-3xl border border-primary-500/20 shadow-[0_0_60px_-15px_rgba(16,185,129,0.3)] max-w-xl w-full text-center">
+            <div className={cn("flex flex-col items-center gap-6 p-10 bg-[#0f0f13] rounded-3xl border shadow-[0_0_60px_-15px_rgba(16,185,129,0.3)] max-w-xl w-full text-center", pythonSetupProgress.step === 'Failed' ? 'border-rose-500/50 shadow-[0_0_60px_-15px_rgba(244,63,94,0.3)]' : 'border-primary-500/20')}>
+              
+              {pythonSetupProgress.step === 'Ready' && (
+                <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/50 mb-2">
+                  <Check className="w-8 h-8 text-emerald-400" />
+                </div>
+              )}
+
+              {pythonSetupProgress.step === 'Failed' && (
+                <div className="w-16 h-16 rounded-full bg-rose-500/20 flex items-center justify-center border border-rose-500/50 mb-2">
+                  <AlertCircle className="w-8 h-8 text-rose-400" />
+                </div>
+              )}
+
+              {pythonSetupProgress.step !== 'Ready' && pythonSetupProgress.step !== 'Failed' && (
+                <Loader2 className="w-12 h-12 text-primary-500 animate-spin mb-2" />
+              )}
+
               <div className="space-y-2">
-                <h3 className="text-lg font-bold tracking-wide text-white">{pythonSetupProgress.step}</h3>
+                <h3 className={cn("text-lg font-bold tracking-wide", pythonSetupProgress.step === 'Failed' ? 'text-rose-400' : 'text-white')}>{pythonSetupProgress.step}</h3>
                 {pythonSetupProgress.detail && (
                   <p className="text-sm font-medium text-white/50">{pythonSetupProgress.detail}</p>
                 )}
               </div>
               <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
                  <div 
-                   className="h-full bg-primary-500 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all duration-500 ease-in-out" 
+                   className={cn("h-full rounded-full transition-all duration-500 ease-in-out", pythonSetupProgress.step === 'Failed' ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-primary-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]')}
                    style={{ width: `${pythonSetupProgress.percent || 10}%` }}
                  ></div>
               </div>
               <div className="w-full h-48 bg-black/50 border border-white/10 rounded-xl mt-4 overflow-y-auto text-left p-3 font-mono text-xs text-white/70">
                  {setupLogs.map((log, i) => (
-                   <div key={i} className={log.includes('[ERROR]') ? 'text-red-400' : ''}>{log}</div>
+                   <div key={i} className={cn(log.includes('[ERROR]') || log.includes('Failed') ? 'text-rose-400' : '')}>{log}</div>
                  ))}
                  <div ref={setupLogEndRef} />
               </div>
+
+              {pythonSetupProgress.step === 'Failed' && (
+                <button 
+                  onClick={() => setIsSettingUpPython(false)} 
+                  className="mt-4 px-8 py-3 bg-white/5 hover:bg-white/10 text-white font-bold tracking-widest text-xs uppercase rounded-xl transition-colors border border-white/10"
+                >
+                  Dismiss & Continue in Local Mode
+                </button>
+              )}
             </div>
           </motion.div>
         )}
