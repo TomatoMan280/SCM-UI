@@ -1649,8 +1649,16 @@ async function startServer() {
                 changed = true;
             }
             // 3. requests User-Agent fix just in case
+            if (pyCode.includes("kwargs['verify'] = False")) {
+               pyCode = pyCode.replace(/kwargs\['verify'\] = False/g, '');
+               changed = true;
+            }
+            if (!pyCode.includes('import certifi')) {
+               pyCode = `import os\ntry:\n    import certifi\n    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()\n    os.environ['SSL_CERT_FILE'] = certifi.where()\nexcept:\n    pass\n\n` + pyCode;
+               changed = true;
+            }
             if (!pyCode.includes('_patched_request_v2')) {
-                pyCode = `try:\n    import urllib3\n    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\nexcept:\n    pass\ntry:\n    import requests\n    _orig_req_v2 = requests.Session.request\n    def _patched_request_v2(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        kwargs['verify'] = False\n        return _orig_req_v2(self, *args, **kwargs)\n    requests.Session.request = _patched_request_v2\n    \n    _orig_get_v2 = requests.get\n    def _patched_get_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        kwargs['verify'] = False\n        return _orig_get_v2(*args, **kwargs)\n    requests.get = _patched_get_v2\n    \n    _orig_post_v2 = requests.post\n    def _patched_post_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        kwargs['verify'] = False\n        return _orig_post_v2(*args, **kwargs)\n    requests.post = _patched_post_v2\nexcept:\n    pass\n\n` + pyCode;
+                pyCode = `try:\n    import urllib3\n    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\nexcept:\n    pass\ntry:\n    import requests\n    _orig_req_v2 = requests.Session.request\n    def _patched_request_v2(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_req_v2(self, *args, **kwargs)\n    requests.Session.request = _patched_request_v2\n    \n    _orig_get_v2 = requests.get\n    def _patched_get_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_get_v2(*args, **kwargs)\n    requests.get = _patched_get_v2\n    \n    _orig_post_v2 = requests.post\n    def _patched_post_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_post_v2(*args, **kwargs)\n    requests.post = _patched_post_v2\nexcept:\n    pass\n\n` + pyCode;
                 changed = true;
             }
             if (changed) {
@@ -2002,8 +2010,16 @@ async function startServer() {
                 pyCode = `import urllib.request\ntry:\n    _opener = urllib.request.build_opener()\n    _opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)')]\n    urllib.request.install_opener(_opener)\nexcept:\n    pass\n\n` + pyCode;
                 changed = true;
             }
+            if (pyCode.includes("kwargs['verify'] = False")) {
+               pyCode = pyCode.replace(/kwargs\['verify'\] = False/g, '');
+               changed = true;
+            }
+            if (!pyCode.includes('import certifi')) {
+               pyCode = `import os\ntry:\n    import certifi\n    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()\n    os.environ['SSL_CERT_FILE'] = certifi.where()\nexcept:\n    pass\n\n` + pyCode;
+               changed = true;
+            }
             if (!pyCode.includes('_patched_request_v2')) {
-                pyCode = `try:\n    import urllib3\n    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\nexcept:\n    pass\ntry:\n    import requests\n    _orig_req_v2 = requests.Session.request\n    def _patched_request_v2(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        kwargs['verify'] = False\n        return _orig_req_v2(self, *args, **kwargs)\n    requests.Session.request = _patched_request_v2\n    _orig_get_v2 = requests.get\n    def _patched_get_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0'\n        kwargs['verify'] = False\n        return _orig_get_v2(*args, **kwargs)\n    requests.get = _patched_get_v2\nexcept:\n    pass\n\n` + pyCode;
+                pyCode = `try:\n    import urllib3\n    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\nexcept:\n    pass\ntry:\n    import requests\n    _orig_req_v2 = requests.Session.request\n    def _patched_request_v2(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_req_v2(self, *args, **kwargs)\n    requests.Session.request = _patched_request_v2\n    _orig_get_v2 = requests.get\n    def _patched_get_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0'\n        return _orig_get_v2(*args, **kwargs)\n    requests.get = _patched_get_v2\nexcept:\n    pass\n\n` + pyCode;
                 changed = true;
             }
             if (changed) {
