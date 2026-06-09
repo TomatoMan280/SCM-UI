@@ -632,67 +632,46 @@ async function startServer() {
         return [];
       };
 
-      import('child_process').then(({ spawnSync }) => {
-        let pythonHasBeenFound = false;
-        
-        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
-        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
-        
-        if (fs.existsSync(venvPythonPath) || fs.existsSync(venvPythonPathFallback)) {
-           pythonHasBeenFound = true;
-        }
+      const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+      const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+      
+      const pythonHasBeenFound = fs.existsSync(venvPythonPath) || fs.existsSync(venvPythonPathFallback);
 
-        res.json({
-          installed: toolInstalled,
-          version: toolVersion,
-          rootDir: rootDir,
-          pythonFound: pythonHasBeenFound,
-          dependenciesOk: toolInstalled,
-          assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
-          library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
-          integrityOk: integrityOk,
-          isElectron: isElectron,
-          libraryPath: libraryPath,
-          userDataPath: baseDataPath,
-          plugins: {
-            fronts: actualPluginsFronts,
-            backs: actualPluginsBacks,
-            double_sided: actualPluginsDoubleSided
-          },
-          savedProjects: getProjects()
-        });
-      }).catch(() => {
-         res.json({
-            installed: toolInstalled,
-            version: toolVersion,
-            rootDir: rootDir,
-            pythonFound: true,
-            dependenciesOk: toolInstalled,
-            assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
-            library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
-            libraryPath: libraryPath,
-            userDataPath: baseDataPath,
-            isElectron: isElectron,
-            plugins: { fronts: [], backs: [], double_sided: [] },
-            savedProjects: getProjects()
-         });
+      res.json({
+        installed: toolInstalled,
+        version: toolVersion,
+        rootDir: rootDir,
+        pythonFound: pythonHasBeenFound,
+        dependenciesOk: toolInstalled,
+        assets: { fronts: actualFronts, backs: actualBacks, double_sided: actualDoubleSided },
+        library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
+        integrityOk: integrityOk,
+        isElectron: isElectron,
+        libraryPath: libraryPath,
+        userDataPath: baseDataPath,
+        plugins: {
+          fronts: actualPluginsFronts,
+          backs: actualPluginsBacks,
+          double_sided: actualPluginsDoubleSided
+        },
+        savedProjects: getProjects()
       });
       return;
 
     } catch(e) {
       res.json({
-        installed: toolInstalled,
-        version: toolVersion,
-        rootDir: rootDir,
-        pythonFound: true,
-        dependenciesOk: toolInstalled,
+        installed: false,
+        version: "0.0",
+        rootDir: "",
+        pythonFound: false,
+        dependenciesOk: false,
         assets: { fronts: [], backs: [], double_sided: [] },
         library: { fronts: [], backs: [], double_sided: [] },
         libraryPath: libraryPath,
         userDataPath: baseDataPath,
         isElectron: isElectron,
         plugins: { fronts: [], backs: [], double_sided: [] },
-        savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
+        savedProjects: []
       });
     }
   });
