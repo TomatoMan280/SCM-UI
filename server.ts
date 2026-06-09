@@ -672,6 +672,7 @@ async function startServer() {
             library: { fronts: actualLibFronts, backs: actualLibBacks, double_sided: actualLibDoubleSided },
             libraryPath: libraryPath,
             userDataPath: baseDataPath,
+            isElectron: isElectron,
             plugins: { fronts: [], backs: [], double_sided: [] },
             savedProjects: getProjects()
          });
@@ -689,6 +690,7 @@ async function startServer() {
         library: { fronts: [], backs: [], double_sided: [] },
         libraryPath: libraryPath,
         userDataPath: baseDataPath,
+        isElectron: isElectron,
         plugins: { fronts: [], backs: [], double_sided: [] },
         savedProjects: (fs.existsSync(projectsDir) ? fs.readdirSync(projectsDir).filter(f => fs.statSync(path.join(projectsDir, f)).isDirectory()) : [])
       });

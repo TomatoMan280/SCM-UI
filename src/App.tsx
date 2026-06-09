@@ -1027,7 +1027,7 @@ export default function App() {
       fetchPythonStatus();
 
       if (data && data.pythonFound === false) {
-        if (!isSettingUpPython && !localStorage.getItem('scm_python_path')) {
+        if (!isSettingUpPython && (!localStorage.getItem('scm_python_path') || data.isElectron)) {
            startPythonSetup();
         }
       }
@@ -4238,6 +4238,24 @@ export default function App() {
                          placeholder="C:\Python310\python.exe or /usr/bin/python3"
                       />
                     </div>
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Environment Recovery</span>
+                      <span className="text-xs text-white/40 block leading-relaxed">
+                        If Python scripts are missing or failed to install correctly, try running the setup background process again. This will create the virtual environment and install pip dependencies.
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setShowThemeSettings(false);
+                        startPythonSetup();
+                      }}
+                      className="px-6 py-2.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-xl font-bold transition-all border border-indigo-500/30 flex items-center gap-2"
+                    >
+                      <RefreshCw size={16} /> Re-run Setup Process
+                    </button>
                   </div>
                 </div>
               )}
