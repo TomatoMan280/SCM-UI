@@ -1054,9 +1054,7 @@ export default function App() {
     let serverAssets: string[] = [];
     const current = getCurrentAssets();
     if (type === 'front') {
-      const fronts = current?.fronts || [];
-      const doubleSided = current?.double_sided || [];
-      serverAssets = fronts.filter(f => !doubleSided.some(d => stripExt(d).toLowerCase() === stripExt(f).toLowerCase()));
+      serverAssets = current?.fronts || [];
     } else if (type === 'back') {
       serverAssets = current?.backs || [];
     } else if (type === 'double_sided') {
@@ -1067,9 +1065,6 @@ export default function App() {
       if (a.view !== assetViewMode) return false;
       if (a.type !== type) return false;
       if (serverAssets.includes(a.name)) return false;
-      if (type === 'front' && localAssets.some(other => stripExt(other.name).toLowerCase() === stripExt(a.name).toLowerCase() && other.type === 'double_sided' && other.view === assetViewMode)) {
-        return false;
-      }
       return true;
     }).map(a => a.name);
     
@@ -3352,7 +3347,7 @@ export default function App() {
                               .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
                               .map((img: string, i: number) => (
                                 <AssetItem 
-                                  key={`b-${img}-${i}`} 
+                                  key={`back_${img}`} 
                                   cacheBustToken={cacheBusts[img]}
                                   name={img} 
                                   type="back" 
@@ -3427,7 +3422,7 @@ export default function App() {
                               .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
                               .map((img: string, i: number) => (
                                 <AssetItem 
-                                  key={`f-${img}-${i}`} 
+                                  key={`front_${img}`} 
                                   cacheBustToken={cacheBusts[img]}
                                   name={img} 
                                   type="front" 
@@ -3504,7 +3499,7 @@ export default function App() {
                               .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
                               .map((img: string, i: number) => (
                                 <AssetItem 
-                                  key={`d-${img}-${i}`} 
+                                  key={`double_sided_${img}`} 
                                   cacheBustToken={cacheBusts[img]}
                                   name={img} 
                                   type="double_sided" 
@@ -4852,13 +4847,16 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
   };
 
   const getImgSrc = () => {
+    // Determine the logical face we want to display on the front of this component
+    const logicalType = type === 'double_sided' ? 'front' : type;
+
     // 1. If we have a blob URL from a recent upload, use it.
-    if (uploadedImages?.[`${type}_${name}`]) {
-      addLog?.(`AssetItem Debug: ${name} FOUND in uploadedImages.`);
-      return uploadedImages[`${type}_${name}`];
+    if (uploadedImages?.[`${logicalType}_${name}`]) {
+      addLog?.(`AssetItem Debug: ${name} FOUND in uploadedImages for ${logicalType}.`);
+      return uploadedImages[`${logicalType}_${name}`];
     }
     
-    // Check if we uploaded the front of a double sided card
+    // Fallback check
     if ((type === 'front' || type === 'double_sided') && uploadedImages?.[`front_${name}`]) {
        return uploadedImages[`front_${name}`];
     }
