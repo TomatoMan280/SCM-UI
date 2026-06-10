@@ -1519,30 +1519,44 @@ async function startServer() {
     }).join(" ");
     
     import('child_process').then(async ({ spawn, spawnSync }) => {
-      let pythonCmd = pythonPath || "";
+      let pythonExecutable = pythonPath || "";
 
       if (!pythonPath) {
         const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
         const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
         
         if (fs.existsSync(venvPythonPath)) {
-           pythonCmd = venvPythonPath;
+           pythonExecutable = venvPythonPath;
         } else if (fs.existsSync(venvPythonPathFallback)) {
-           pythonCmd = venvPythonPathFallback;
+           pythonExecutable = venvPythonPathFallback;
         } else {
-           pythonCmd = "";
+           pythonExecutable = "";
         }
       } else {
+        try {
+          if (fs.existsSync(pythonExecutable) && fs.statSync(pythonExecutable).isDirectory()) {
+            if (process.platform === 'win32') {
+               const winExe = path.join(pythonExecutable, 'python.exe');
+               const winExe2 = path.join(pythonExecutable, 'Scripts', 'python.exe');
+               if (fs.existsSync(winExe)) pythonExecutable = winExe;
+               else if (fs.existsSync(winExe2)) pythonExecutable = winExe2;
+            } else {
+               const macExe = path.join(pythonExecutable, 'bin', 'python3');
+               if (fs.existsSync(macExe)) pythonExecutable = macExe;
+            }
+          }
+        } catch(e) {}
+        
         // Soft check override
         try {
-          const check = spawnSync(pythonCmd, ["--version"]);
+          const check = spawnSync(pythonExecutable, ["--version"]);
           if (check.status !== 0 && check.error) {
-            console.warn("Override python path seems invalid:", pythonCmd);
+            console.warn("Override python path seems invalid:", pythonExecutable);
           }
         } catch (e) {}
       }
 
-      if (!pythonCmd) {
+      if (!pythonExecutable) {
           const fullCommand = `python3 ${command} ${argString}`;
           sendEvent('stdout', `$ ${fullCommand}`);
           sendEvent('error', "[System Error] Python interpreter not found in the environment.");
@@ -1550,7 +1564,7 @@ async function startServer() {
           return;
       }
 
-      const fullCommand = `${pythonCmd} ${command} ${argString}`;
+      const fullCommand = `${pythonExecutable} ${command} ${argString}`;
       sendEvent('stdout', `$ ${fullCommand}`);
 
       if (command === 'create_pdf.py') {
@@ -1569,8 +1583,8 @@ async function startServer() {
       delete customEnv.PYTHONPATH;
       delete customEnv.PYTHONHOME;
       
-      if (pythonCmd && path.isAbsolute(pythonCmd)) {
-        const pythonBinDir = path.dirname(pythonCmd);
+      if (pythonExecutable && path.isAbsolute(pythonExecutable)) {
+        const pythonBinDir = path.dirname(pythonExecutable);
         customEnv.PATH = pythonBinDir + (process.platform === 'win32' ? ';' : ':') + (customEnv.PATH || '');
       }
       
@@ -1581,7 +1595,7 @@ async function startServer() {
         spawnCwd = scmPath;
         spawnCommand = path.join(scmPath, command);
         try {
-            const versionOutput = spawnSync(pythonCmd, ['--version']);
+            const versionOutput = spawnSync(pythonExecutable, ['--version']);
             const verStr = "Python Version Diagnostics: " + (versionOutput.stdout?.toString().trim() || versionOutput.stderr?.toString().trim() || 'Unknown');
             sendEvent('stdout', `[Diagnostics] ${verStr}`);
         } catch (e: any) {
@@ -1706,7 +1720,7 @@ async function startServer() {
 
           const executeChild = () => {
               return new Promise<number>((resolve, reject) => {
-                  const child = spawn(pythonCmd, ['-u', spawnCommand, ...finalArgs], { cwd: spawnCwd, env: customEnv });
+                  const child = spawn(pythonExecutable, [spawnCommand, ...finalArgs], { cwd: spawnCwd, env: customEnv });
                   
                   const pingInterval = setInterval(() => {
                       sendEvent('ping', { time: Date.now() });
@@ -1866,36 +1880,48 @@ async function startServer() {
     // Check if python is available and run the child process based on it.
     import('child_process').then(async ({ exec, spawnSync }) => {
       // Find whether to use python3 or python or none
-      let pythonCmd = pythonPath || "";
+      let pythonExecutable = pythonPath || "";
 
       if (!pythonPath) {
         const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
         const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
         
         if (fs.existsSync(venvPythonPath)) {
-           pythonCmd = venvPythonPath;
+           pythonExecutable = venvPythonPath;
         } else if (fs.existsSync(venvPythonPathFallback)) {
-           pythonCmd = venvPythonPathFallback;
+           pythonExecutable = venvPythonPathFallback;
         } else {
-           pythonCmd = "";
+           pythonExecutable = "";
         }
       } else {
-        // If an override is provided, we should just assume it's good or valid, but let's test it
         try {
-          const check = spawnSync(pythonCmd, ["--version"]);
+          if (fs.existsSync(pythonExecutable) && fs.statSync(pythonExecutable).isDirectory()) {
+            if (process.platform === 'win32') {
+               const winExe = path.join(pythonExecutable, 'python.exe');
+               const winExe2 = path.join(pythonExecutable, 'Scripts', 'python.exe');
+               if (fs.existsSync(winExe)) pythonExecutable = winExe;
+               else if (fs.existsSync(winExe2)) pythonExecutable = winExe2;
+            } else {
+               const macExe = path.join(pythonExecutable, 'bin', 'python3');
+               if (fs.existsSync(macExe)) pythonExecutable = macExe;
+            }
+          }
+        } catch(e) {}
+        
+        try {
+          const check = spawnSync(pythonExecutable, ["--version"]);
           if (check.status !== 0 && check.error) {
-            console.warn("Override python path seems invalid:", pythonCmd);
-            // We'll still try to use it and let it fail naturally
+            console.warn("Override python path seems invalid:", pythonExecutable);
           }
         } catch (e) {}
       }
 
-      if (!pythonCmd) {
+      if (!pythonExecutable) {
           const fullCommand = `python3 ${command} ${argString}`;
           return res.json({ output: [`$ ${fullCommand}`, "[System Error] Python interpreter not found in the environment. This environment only runs Node.js natively. Please use mock mode or verify python installation."] });
       }
 
-      const fullCommand = `${pythonCmd} ${command} ${argString}`;
+      const fullCommand = `${pythonExecutable} ${command} ${argString}`;
       let output = [`$ ${fullCommand}`];
 
       // Clean up old PDF if generating PDF
@@ -1915,8 +1941,8 @@ async function startServer() {
       delete customEnv.PYTHONPATH;
       delete customEnv.PYTHONHOME;
       
-      if (pythonCmd && path.isAbsolute(pythonCmd)) {
-        const pythonBinDir = path.dirname(pythonCmd);
+      if (pythonExecutable && path.isAbsolute(pythonExecutable)) {
+        const pythonBinDir = path.dirname(pythonExecutable);
         customEnv.PATH = pythonBinDir + (process.platform === 'win32' ? ';' : ':') + (customEnv.PATH || '');
       }
       
@@ -1927,7 +1953,7 @@ async function startServer() {
         execCwd = scmPath;
         scriptAbsPath = path.join(scmPath, command);
         try {
-            const versionOutput = spawnSync(pythonCmd, ['--version']);
+            const versionOutput = spawnSync(pythonExecutable, ['--version']);
             const verStr = "Python Version Diagnostics: " + (versionOutput.stdout?.toString().trim() || versionOutput.stderr?.toString().trim() || 'Unknown');
             output.push(`[Diagnostics] ${verStr}`);
         } catch (e: any) {
@@ -1977,7 +2003,7 @@ async function startServer() {
         }
       }
       
-      let execCommand = `${pythonCmd} "${scriptAbsPath}" ${argStringUpdated}`;
+      let execCommand = `"${pythonExecutable}" "${scriptAbsPath}" ${argStringUpdated}`;
 
       console.log(`[System] Executing: ${execCommand} in ${execCwd}`);
       
