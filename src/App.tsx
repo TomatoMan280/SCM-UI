@@ -353,25 +353,34 @@ interface AppStatus {
 
 const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onClose: () => void }) => {
   const [currentImage, setCurrentImage] = useState(initialImage);
-  const allImages = useRef<string[]>([]);
+  const [allImages, setAllImages] = useState<string[]>([]);
 
   useEffect(() => {
-    allImages.current = Array.from(document.querySelectorAll<HTMLElement>('.lightbox-trigger'))
+    const allElements = Array.from(document.querySelectorAll<HTMLElement>('.lightbox-trigger'));
+    const initialEl = allElements.find(el => el.getAttribute('data-enlarge-src') === initialImage);
+    const group = initialEl?.getAttribute('data-lightbox-group');
+    
+    let filteredElements = allElements;
+    if (group) {
+        filteredElements = allElements.filter(el => el.getAttribute('data-lightbox-group') === group);
+    }
+    
+    setAllImages(filteredElements
       .map(el => el.getAttribute('data-enlarge-src') as string)
-      .filter(Boolean);
-  }, []);
+      .filter(Boolean));
+  }, [initialImage]);
 
   const goPrev = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
     e?.stopPropagation();
-    const idx = allImages.current.indexOf(currentImage);
-    if (idx > 0) setCurrentImage(allImages.current[idx - 1]);
-  }, [currentImage]);
+    const idx = allImages.indexOf(currentImage);
+    if (idx > 0) setCurrentImage(allImages[idx - 1]);
+  }, [currentImage, allImages]);
 
   const goNext = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
     e?.stopPropagation();
-    const idx = allImages.current.indexOf(currentImage);
-    if (idx !== -1 && idx < allImages.current.length - 1) setCurrentImage(allImages.current[idx + 1]);
-  }, [currentImage]);
+    const idx = allImages.indexOf(currentImage);
+    if (idx !== -1 && idx < allImages.length - 1) setCurrentImage(allImages[idx + 1]);
+  }, [currentImage, allImages]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -394,9 +403,9 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
     setTouchStart(null);
   };
 
-  const currentIndex = allImages.current.indexOf(currentImage);
+  const currentIndex = allImages.indexOf(currentImage);
   const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex !== -1 && currentIndex < allImages.current.length - 1;
+  const hasNext = currentIndex !== -1 && currentIndex < allImages.length - 1;
 
   return (
     <div 
@@ -405,44 +414,42 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
+      <button 
+        className="absolute top-6 right-6 p-2 text-white/50 hover:text-white transition-colors z-20"
+        onClick={onClose}
+      >
+        <X size={28} />
+      </button>
+
+      <button 
+        className={`absolute left-2 md:left-6 p-2 transition-colors z-20 ${hasPrev ? 'text-white/30 hover:text-white' : 'text-white/10 cursor-not-allowed'}`}
+        onClick={goPrev}
+        disabled={!hasPrev}
+      >
+        <ChevronLeft size={48} strokeWidth={1.5} />
+      </button>
+
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="relative max-h-[90vh] max-w-full outline-none flex flex-col items-center justify-center"
-        onClick={(e) => e.stopPropagation()}
+        className="relative max-h-full max-w-full outline-none flex flex-col items-center justify-center pointer-events-none"
       >
         <img 
           src={currentImage} 
           alt="Enlarged asset" 
-          className="max-h-[90vh] max-w-full object-contain rounded-lg shadow-2xl" 
+          className="max-h-[85vh] max-w-full object-contain rounded-lg shadow-2xl pointer-events-auto" 
+          onClick={(e) => e.stopPropagation()}
         />
-        
-        <button 
-          className="absolute -top-4 -right-4 p-2 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform z-10"
-          onClick={onClose}
-        >
-          <X size={20} />
-        </button>
-
-        {hasPrev && (
-          <button 
-            className="absolute left-4 p-3 bg-black/50 text-white rounded-full hover:bg-black/80 transition-colors z-10"
-            onClick={goPrev}
-          >
-            <ChevronLeft size={24} />
-          </button>
-        )}
-
-        {hasNext && (
-          <button 
-            className="absolute right-4 p-3 bg-black/50 text-white rounded-full hover:bg-black/80 transition-colors z-10"
-            onClick={goNext}
-          >
-             <ChevronRight size={24} />
-          </button>
-        )}
       </motion.div>
+
+      <button 
+        className={`absolute right-2 md:right-6 p-2 transition-colors z-20 ${hasNext ? 'text-white/30 hover:text-white' : 'text-white/10 cursor-not-allowed'}`}
+        onClick={goNext}
+        disabled={!hasNext}
+      >
+         <ChevronRight size={48} strokeWidth={1.5} />
+      </button>
     </div>
   );
 };
@@ -5077,6 +5084,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
           "cursor-pointer lightbox-trigger"
         )}
         data-enlarge-src={enlargeSrc}
+        data-lightbox-group={type}
         onClick={(e) => {
           if (e.shiftKey || e.ctrlKey || e.metaKey) {
             onSelect?.(e);
