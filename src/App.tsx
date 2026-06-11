@@ -2323,13 +2323,13 @@ export default function App() {
                         label="Card Size" 
                         value={cmdOptions.card_size} 
                         onChange={(v) => setCmdOptions(p => ({...p, card_size: v}))}
-                        options={['standard', 'poker', 'bridge', 'american_mini', 'japanese', 'tarot']} 
+                        options={['standard', 'poker', 'bridge', 'american_mini', 'bridge_square', 'business', 'catan', 'credit', 'domino', 'domino_square', 'euro_business', 'euro_mini', 'japanese', 'jumbo', 'micro', 'mini', 'standard_double', 'tarot', '70mm_square']} 
                       />
                       <SelectGroup 
                         label="Paper Size" 
                         value={cmdOptions.paper_size} 
                         onChange={(v) => setCmdOptions(p => ({...p, paper_size: v}))}
-                        options={['letter', 'tabloid', 'a4', 'a3']} 
+                        options={['letter', 'tabloid', 'a4', 'a3', 'arch_b']} 
                       />
                       <SelectGroup 
                         label="Registration" 
