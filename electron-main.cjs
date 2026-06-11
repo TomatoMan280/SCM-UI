@@ -36,6 +36,15 @@ function createWindow() {
     },
   });
 
+  // Intercept window.open or target="_blank" and open them in the user's actual default browser.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https:') || url.startsWith('http:')) {
+      require('electron').shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
   // Load a simple loading message first
   mainWindow.loadURL(`data:text/html;charset=utf-8,
     <body style="background: #111; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">

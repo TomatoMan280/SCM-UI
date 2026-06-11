@@ -447,70 +447,7 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
   );
 };
 
-const ExternalLinkModal = ({ url, title, onClose }: { url: string, title?: string, onClose: () => void }) => {
-  const [copied, setCopied] = useState(false);
-  
-  return (
-    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-[#1a1a20] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-white">
-            {title || "External Link"}
-          </h3>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-colors">
-            <X size={18} />
-          </button>
-        </div>
-        
-        <p className="text-sm text-white/60 mb-4">
-          You are about to open an external link. You can easily copy the URL below:
-        </p>
-        
-        <div className="flex items-center gap-2 mb-6 w-full">
-          <input 
-            type="text" 
-            readOnly 
-            value={url} 
-            className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-primary-300 font-mono outline-none min-w-0"
-            onClick={(e) => e.currentTarget.select()}
-          />
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(url);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }}
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-colors shrink-0"
-          >
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-        
-        <div className="flex gap-3 justify-end mt-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/5 text-white/70 transition-colors">
-            Close
-          </button>
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onClose}
-            className="px-5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-bold transition-all"
-          >
-            Open in Browser
-          </a>
-        </div>
-      </motion.div>
-    </div>
-  );
-};
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -674,7 +611,7 @@ export default function App() {
   const [showPluginLoadModal, setShowPluginLoadModal] = useState(false);
   const [pluginReadme, setPluginReadme] = useState<{ id: string, name: string, content: string } | null>(null);
   const [showPluginReadmeModal, setShowPluginReadmeModal] = useState(false);
-  const [externalLinkModal, setExternalLinkModal] = useState<{ url: string, title?: string } | null>(null);
+
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchReadme = async (plugin: PluginConfig) => {
@@ -2280,11 +2217,10 @@ export default function App() {
             <div className="space-y-4 px-2 pt-2 border-t border-white/5">
               <p className="text-[10px] font-semibold text-white/20 uppercase tracking-widest">Support the Creators</p>
               <div className="space-y-3">
-                <button 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setExternalLinkModal({ url: "https://www.paypal.com/donate/?hosted_button_id=ZH2XCSLXERBW8", title: "Donate to Alan Cha" });
-                  }}
+                <a 
+                  href="https://www.paypal.com/donate/?hosted_button_id=ZH2XCSLXERBW8" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
                   className="w-full flex flex-col group transition-all text-left"
                 >
                   <div className="flex items-center justify-between text-xs text-white/40 group-hover:text-amber-400 transition-colors">
@@ -2292,12 +2228,11 @@ export default function App() {
                     <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                   <span className="text-[10px] text-white/20 mt-0.5">SCM Creator</span>
-                </button>
-                <button 
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setExternalLinkModal({ url: "https://www.paypal.com/donate/?business=YB3JBRNMXGUWG&no_recurring=0&item_name=Thanks+for+supporting+SCMUI%21&currency_code=USD", title: "Donate to Cecil Carnes" });
-                  }}
+                </a>
+                <a 
+                  href="https://www.paypal.com/donate/?business=YB3JBRNMXGUWG&no_recurring=0&item_name=Thanks+for+supporting+SCMUI%21&currency_code=USD" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
                   className="w-full flex flex-col group transition-all text-left"
                 >
                   <div className="flex items-center justify-between text-xs text-white/40 group-hover:text-primary-400 transition-colors">
@@ -2305,7 +2240,7 @@ export default function App() {
                     <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                   <span className="text-[10px] text-white/20 mt-0.5">SCM UI Creator</span>
-                </button>
+                </a>
               </div>
             </div>
           </div>
@@ -2443,13 +2378,15 @@ export default function App() {
                         <Layers size={18} />
                         Launch PDF Builder
                       </button>
-                      <button 
-                        onClick={() => setExternalLinkModal({ url: 'https://alan-cha.github.io/silhouette-card-maker/tutorial/', title: 'Tutorial Guide' })}
+                      <a 
+                        href="https://alan-cha.github.io/silhouette-card-maker/tutorial/"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="px-6 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl font-semibold border border-white/10 transition-all flex items-center gap-2 text-white/80"
                       >
                         <Book size={18} />
                         Tutorial Guide
-                      </button>
+                      </a>
                     </div>
                   </section>
                 </motion.div>
@@ -2616,16 +2553,15 @@ export default function App() {
                           <Layers size={20} />
                           Calibration
                         </h4>
-                        <button 
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setExternalLinkModal({ url: "https://alan-cha.github.io/silhouette-card-maker/docs/offset/", title: "Offset Documentation" });
-                          }}
-                          className="text-xs text-white/40 hover:text-primary-400 transition-colors underline underline-offset-4 decoration-white/10 hover:decoration-primary-400 block text-left pt-1"
+                        <a 
+                          href="https://alan-cha.github.io/silhouette-card-maker/docs/offset/" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs text-white/40 hover:text-primary-400 transition-colors underline underline-offset-4 decoration-white/10 hover:decoration-primary-400 block pt-1"
                         >
                           Adjust for printer misalignment
-                        </button>
+                        </a>
                       </div>
                       <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => setIsOffsetPresetsOpen(true)} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 whitespace-nowrap">
@@ -3227,16 +3163,9 @@ export default function App() {
                                 <Book size={12} /> Readme
                               </button>
                               {pluginState.selectedPlugin.websites?.map((site, idx) => (
-                                <button
-                                  key={idx}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    setExternalLinkModal({ url: site.url, title: site.name });
-                                  }}
-                                  className="text-xs text-white/50 hover:text-white/80 flex items-center gap-1 transition-colors"
-                                >
+                                <a key={idx} href={site.url} target="_blank" rel="noopener noreferrer" className="text-xs text-white/50 hover:text-white/80 flex items-center gap-1 transition-colors">
                                   <ExternalLink size={12} /> {site.name}
-                                </button>
+                                </a>
                               ))}
                             </div>
                           </div>
@@ -4304,26 +4233,30 @@ export default function App() {
                     <div className="px-4 pb-1">
                       <p className="text-[10px] font-semibold text-white/20 uppercase tracking-widest">Open Source Repositories</p>
                     </div>
-                    <button
-                      onClick={() => setExternalLinkModal({ url: "https://github.com/Alan-Cha/silhouette-card-maker", title: "Original SCM Engine" })}
-                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group text-left"
+                    <a
+                      href="https://github.com/Alan-Cha/silhouette-card-maker"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group"
                     >
                       <div className="flex flex-col">
                         <span className="text-sm text-white/60 group-hover:text-amber-400 font-medium transition-colors">Original SCM Engine</span>
                         <span className="text-[10px] text-white/40">Python Backend Logic</span>
                       </div>
                       <ExternalLink size={16} className="text-white/40 group-hover:text-amber-400 transition-colors" />
-                    </button>
-                    <button
-                      onClick={() => setExternalLinkModal({ url: "https://github.com/TomatoMan280/SCM-UI", title: "SCMUI Wrapper" })}
-                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group text-left"
+                    </a>
+                    <a
+                      href="https://github.com/TomatoMan280/SCM-UI"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group"
                     >
                        <div className="flex flex-col">
                         <span className="text-sm text-white/60 group-hover:text-primary-400 font-medium transition-colors">SCMUI Wrapper</span>
                         <span className="text-[10px] text-white/40">React UI Frontend</span>
                       </div>
                       <ExternalLink size={16} className="text-white/40 group-hover:text-primary-400 transition-colors" />
-                    </button>
+                    </a>
                   </div>
                 </div>
               )}
@@ -4440,15 +4373,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {externalLinkModal && (
-          <ExternalLinkModal 
-            url={externalLinkModal.url}
-            title={externalLinkModal.title}
-            onClose={() => setExternalLinkModal(null)}
-          />
-        )}
-      </AnimatePresence>
+
 
       <AnimatePresence>
         {showPluginReadmeModal && pluginReadme && (
