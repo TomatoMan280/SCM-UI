@@ -14,24 +14,3 @@ A high-performance modern web-based and Electron-supported desktop user interfac
 
 For installation instructions and executable downloads, please visit the [Releases section](https://github.com/TomatoMan280/SCM-UI/releases) of the GitHub repository.
 
-### Development
-
-Run the full-stack development server with live preview:
-
-```bash
-npm run dev
-```
-
-### Production Build
-
-Bundle both client-side assets and backend routing engines:
-
-```bash
-npm run build
-```
-
-The resulting assets compile into `dist/` and server assets under CJS targets (`dist/server.cjs`), ready for direct execution or Electron bundling.
-
-## System Contributions
-
-Contributions are welcome. Please refer to `CONTRIBUTING.md` in the submodules or open an issue on the repository page.
