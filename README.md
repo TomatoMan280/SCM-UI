@@ -10,31 +10,9 @@ A high-performance modern web-based and Electron-supported desktop user interfac
 - **Calibrated Multi-Axis Offsets**: Direct interface adjustments for printer alignments (X/Y margins and rotational skew) using custom grid sheets.
 - **Desktop/Electron & Server Ready**: Compiles cleanly into single-executable Electron bundles or fully responsive full-stack server containers.
 
-## Getting Started
+## Installation
 
-### Prerequisites
-
-- `Node.js` (v18 or higher)
-- `npm` or `yarn`
-- `Python` (v3.10+ recommended for backend PDF processing actions)
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/TomatoMan280/SCM-UI.git
-   cd SCM-UI
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Create configured workspace environment files:
-   ```bash
-   cp .env.example .env
-   ```
+For installation instructions and executable downloads, please visit the [Releases section](https://github.com/TomatoMan280/SCM-UI/releases) of the GitHub repository.
 
 ### Development
 
