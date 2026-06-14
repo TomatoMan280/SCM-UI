@@ -601,7 +601,7 @@ async function startServer() {
       const getFiles = (dir: string) => {
         try {
           if (fs.existsSync(dir)) {
-            return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+            return fs.readdirSync(dir).filter(f => /\.(png|jpg|jpeg|tif|tiff)$/i.test(f));
           }
         } catch (e) { }
         return [];
@@ -736,7 +736,7 @@ async function startServer() {
         const fullDir = path.join(scmPath, 'game', dir);
         if (fs.existsSync(fullDir)) {
           fs.readdirSync(fullDir).forEach(f => {
-            if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) fs.unlinkSync(path.join(fullDir, f));
+            if (/\.(png|jpg|jpeg|tif|tiff)$/i.test(f)) fs.unlinkSync(path.join(fullDir, f));
           });
         }
       });
@@ -879,7 +879,7 @@ async function startServer() {
     const getFiles = (dir: string) => {
       try {
         if (fs.existsSync(dir)) {
-          return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+          return fs.readdirSync(dir).filter(f => /\.(png|jpg|jpeg|tif|tiff)$/i.test(f));
         }
       } catch (e) { }
       return [];
@@ -1379,7 +1379,7 @@ async function startServer() {
       const getFiles = (dir: string) => {
         try {
           if (fs.existsSync(dir)) {
-            return fs.readdirSync(dir).filter((f: string) => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+            return fs.readdirSync(dir).filter((f: string) => /\.(png|jpg|jpeg|tif|tiff)$/i.test(f));
           }
         } catch (e) { }
         return [];
@@ -1849,7 +1849,7 @@ async function startServer() {
                 if (fs.existsSync(srcDir)) {
                     fs.mkdirSync(dstDir, { recursive: true });
                     fs.readdirSync(srcDir).forEach(f => {
-                       if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
+                       if (/\.(png|jpg|jpeg|tif|tiff)$/i.test(f)) {
                            fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
                        }
                     });
@@ -2163,7 +2163,7 @@ async function startServer() {
          const getFiles = (dir: string) => {
            try {
              if (fs.existsSync(dir)) {
-               return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+               return fs.readdirSync(dir).filter(f => /\.(png|jpg|jpeg|tif|tiff)$/i.test(f));
              }
            } catch (e) { }
            return [];
@@ -2178,7 +2178,7 @@ async function startServer() {
             if (fs.existsSync(srcDir)) {
                 fs.mkdirSync(dstDir, { recursive: true });
                 fs.readdirSync(srcDir).forEach(f => {
-                   if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
+                   if (/\.(png|jpg|jpeg|tif|tiff)$/i.test(f)) {
                        fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
                    }
                 });
@@ -2225,7 +2225,7 @@ async function startServer() {
        
        if (fs.existsSync(srcFolder)) {
           fs.readdirSync(srcFolder).forEach(file => {
-             if (file.endsWith('.png') || file.endsWith('.jpg') || file.endsWith('.jpeg')) {
+             if (/\.(png|jpg|jpeg|tif|tiff)$/i.test(file)) {
                 const identity = `${type}:${file}`;
                 const resolution = resolutions?.[identity] || 'replace';
                 if (!(resolution === 'skip' && fs.existsSync(path.join(dstFolder, file)))) {

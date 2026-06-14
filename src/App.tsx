@@ -4770,7 +4770,7 @@ function TemplateCard({ type, onUpload, multiple = false }: { type: 'front' | 'b
         type="file" 
         ref={fileInputRef} 
         className="hidden" 
-        accept="image/*"
+        accept="image/*, .tiff, .tif"
         multiple={multiple}
         onChange={(e) => {
           if (e.target.files?.length) {
