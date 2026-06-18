@@ -267,6 +267,44 @@ async function startServer() {
     }
   });
 
+  app.get("/api/custom-scripts", (req, res) => {
+    const scriptsDir = path.join(libraryPath, 'custom_scripts');
+    if (!fs.existsSync(scriptsDir)) {
+      return res.json({ scripts: [] });
+    }
+    const scripts = fs.readdirSync(scriptsDir).filter(f => f.endsWith('.py'));
+    res.json({ scripts });
+  });
+
+  app.post("/api/custom-scripts/upload", upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const scriptsDir = path.join(libraryPath, 'custom_scripts');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+    
+    const targetPath = path.join(scriptsDir, req.file.originalname);
+    
+    try {
+        fs.renameSync(req.file.path, targetPath);
+        res.json({ success: true, path: targetPath, filename: req.file.originalname });
+    } catch(err) {
+        res.status(500).json({ error: "Failed to save script" });
+    }
+  });
+
+  app.post("/api/custom-scripts/delete", (req, res) => {
+    const { filename } = req.body;
+    if (!filename) return res.status(400).json({ error: "Filename is required" });
+    const scriptPath = path.join(libraryPath, 'custom_scripts', path.basename(filename));
+    try {
+      if (fs.existsSync(scriptPath)) {
+        fs.unlinkSync(scriptPath);
+      }
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: `Failed to delete script: ${err}` });
+    }
+  });
+
   app.post("/api/library/save-decklist", (req, res) => {
     const { pluginId, saveName, decklist, format, options } = req.body;
     if (!pluginId || !saveName || decklist === undefined) return res.status(400).json({ error: "Missing fields" });
@@ -601,7 +639,7 @@ async function startServer() {
       const getFiles = (dir: string) => {
         try {
           if (fs.existsSync(dir)) {
-            return fs.readdirSync(dir).filter(f => /\.(png|jpg|jpeg|tif|tiff)$/i.test(f));
+            return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
           }
         } catch (e) { }
         return [];
@@ -736,7 +774,7 @@ async function startServer() {
         const fullDir = path.join(scmPath, 'game', dir);
         if (fs.existsSync(fullDir)) {
           fs.readdirSync(fullDir).forEach(f => {
-            if (/\.(png|jpg|jpeg|tif|tiff)$/i.test(f)) fs.unlinkSync(path.join(fullDir, f));
+            if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) fs.unlinkSync(path.join(fullDir, f));
           });
         }
       });
@@ -879,7 +917,7 @@ async function startServer() {
     const getFiles = (dir: string) => {
       try {
         if (fs.existsSync(dir)) {
-          return fs.readdirSync(dir).filter(f => /\.(png|jpg|jpeg|tif|tiff)$/i.test(f));
+          return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
         }
       } catch (e) { }
       return [];
@@ -1379,7 +1417,7 @@ async function startServer() {
       const getFiles = (dir: string) => {
         try {
           if (fs.existsSync(dir)) {
-            return fs.readdirSync(dir).filter((f: string) => /\.(png|jpg|jpeg|tif|tiff)$/i.test(f));
+            return fs.readdirSync(dir).filter((f: string) => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
           }
         } catch (e) { }
         return [];
@@ -1616,8 +1654,12 @@ async function startServer() {
         }
         
         spawnCwd = tempBase;
-        spawnCommand = path.join(scmPath, command);
-      } else if (command.startsWith('plugins/')) {
+        if (command.startsWith('__CUSTOM_SCRIPT__:')) {
+            spawnCommand = path.join(libraryPath, 'custom_scripts', command.substring('__CUSTOM_SCRIPT__:'.length));
+        } else {
+            spawnCommand = path.join(scmPath, command);
+        }
+      } else if (command.startsWith('plugins/') || req.body.isPluginFetch) {
         customEnv.SCM_GAME_DIR = path.join(pluginsPath, 'game');
         spawnCwd = pluginsPath;
         ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(pluginsPath, 'game', df), { recursive: true }));
@@ -1628,7 +1670,11 @@ async function startServer() {
           fs.cpSync(sourceDecklistDir, targetDecklistDir, { recursive: true });
         }
         
-        spawnCommand = path.join(scmPath, command);
+        if (command.startsWith('__CUSTOM_SCRIPT__:')) {
+            spawnCommand = path.join(libraryPath, 'custom_scripts', command.substring('__CUSTOM_SCRIPT__:'.length));
+        } else {
+            spawnCommand = path.join(scmPath, command);
+        }
       }
 
       let finalArgs = [...(args || [])];
@@ -1842,14 +1888,14 @@ async function startServer() {
                double_sided: getFiles('double_sided')
              };
              sendEvent('fetched_files', fetchedFiles);
-          } else if (command.startsWith('plugins/')) {
+          } else if (command.startsWith('plugins/') || req.body.isPluginFetch) {
              ['front', 'back', 'double_sided'].forEach(df => {
                 const srcDir = path.join(pluginsPath, 'game', df);
                 const dstDir = path.join(pluginsPath, df);
                 if (fs.existsSync(srcDir)) {
                     fs.mkdirSync(dstDir, { recursive: true });
                     fs.readdirSync(srcDir).forEach(f => {
-                       if (/\.(png|jpg|jpeg|tif|tiff)$/i.test(f)) {
+                       if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
                            fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
                        }
                     });
@@ -1947,7 +1993,9 @@ async function startServer() {
       }
       
       let execCwd = scmPath;
-      let scriptAbsPath = path.join(scmPath, command);
+      let scriptAbsPath = command.startsWith('__CUSTOM_SCRIPT__:') 
+          ? path.join(libraryPath, 'custom_scripts', command.substring('__CUSTOM_SCRIPT__:'.length))
+          : path.join(scmPath, command);
 
       if (command === 'create_pdf.py') {
         execCwd = scmPath;
@@ -1991,7 +2039,7 @@ async function startServer() {
         }
         
         execCwd = tempBase;
-      } else if (command.startsWith('plugins/')) {
+      } else if (command.startsWith('plugins/') || req.body.isPluginFetch) {
         customEnv.SCM_GAME_DIR = path.join(pluginsPath, 'game');
         execCwd = pluginsPath;
         ['front', 'back', 'double_sided'].forEach(df => fs.mkdirSync(path.join(pluginsPath, 'game', df), { recursive: true }));
@@ -2163,7 +2211,7 @@ async function startServer() {
          const getFiles = (dir: string) => {
            try {
              if (fs.existsSync(dir)) {
-               return fs.readdirSync(dir).filter(f => /\.(png|jpg|jpeg|tif|tiff)$/i.test(f));
+               return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
              }
            } catch (e) { }
            return [];
@@ -2171,14 +2219,14 @@ async function startServer() {
          fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'front'));
          fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'back'));
          fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'double_sided'));
-      } else if (command.startsWith('plugins/')) {
+      } else if (command.startsWith('plugins/') || req.body.isPluginFetch) {
          ['front', 'back', 'double_sided'].forEach(df => {
             const srcDir = path.join(pluginsPath, 'game', df);
             const dstDir = path.join(pluginsPath, df);
             if (fs.existsSync(srcDir)) {
                 fs.mkdirSync(dstDir, { recursive: true });
                 fs.readdirSync(srcDir).forEach(f => {
-                   if (/\.(png|jpg|jpeg|tif|tiff)$/i.test(f)) {
+                   if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
                        fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
                    }
                 });
@@ -2225,7 +2273,7 @@ async function startServer() {
        
        if (fs.existsSync(srcFolder)) {
           fs.readdirSync(srcFolder).forEach(file => {
-             if (/\.(png|jpg|jpeg|tif|tiff)$/i.test(file)) {
+             if (file.endsWith('.png') || file.endsWith('.jpg') || file.endsWith('.jpeg')) {
                 const identity = `${type}:${file}`;
                 const resolution = resolutions?.[identity] || 'replace';
                 if (!(resolution === 'skip' && fs.existsSync(path.join(dstFolder, file)))) {

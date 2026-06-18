@@ -332,6 +332,14 @@ const PLUGINS: PluginConfig[] = [
     formats: ['ydke', 'ydk'],
     options: [],
     websites: [{ name: 'YGOProDeck', url: 'https://ygoprodeck.com/' }]
+  },
+  {
+    id: 'custom_script_upload',
+    name: 'Custom Python Script',
+    formats: ['script'],
+    options: [
+      { label: 'Script Arguments (space separated)', flag: '--args', type: 'text' }
+    ]
   }
 ];
 
@@ -1026,6 +1034,19 @@ export default function App() {
   });
 
   const [pluginFile, setPluginFile] = useState<File | null>(null);
+  const [customScripts, setCustomScripts] = useState<string[]>([]);
+
+  const fetchCustomScripts = async () => {
+    try {
+      const res = await fetch('/api/custom-scripts');
+      const data = await res.json();
+      setCustomScripts(data.scripts || []);
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchCustomScripts();
+  }, []);
 
   useEffect(() => {
     const stateToSave = {
@@ -1274,7 +1295,7 @@ export default function App() {
     addLog("[Plugins] Exported configuration to JSON file.");
   };
 
-  const runCommand = async (command: string, args?: string[], options?: { startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string } }) => {
+  const runCommand = async (command: string, args?: string[], options?: { isPluginFetch?: boolean, startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string } }) => {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     const abortController = new AbortController();
@@ -1286,6 +1307,7 @@ export default function App() {
         body: JSON.stringify({ 
           command, 
           args, 
+          isPluginFetch: options?.isPluginFetch,
           tempDirId: options?.tempDirId, 
           uploadedPluginFilePath: options?.uploadedPluginFilePath, 
           pythonPath, 
@@ -3178,12 +3200,90 @@ export default function App() {
                           </div>
 
                           <div>
-                            <SelectGroup 
-                              label="Format"
-                              value={pluginState.format} 
-                              onChange={(v) => setPluginState(prev => ({ ...prev, format: v }))}
-                              options={pluginState.selectedPlugin.formats} 
-                            />
+                            {pluginState.selectedPlugin.id === 'custom_script_upload' ? (
+                               <div className="space-y-4">
+                                  {customScripts.length > 0 && (
+                                    <div>
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Saved Scripts</label>
+                                      <div className="flex items-center gap-2">
+                                        <div className="relative flex-1">
+                                          <select 
+                                            value={pluginState.format === 'script' && customScripts.length > 0 ? customScripts[0] : pluginState.format} 
+                                            onChange={(e) => setPluginState(prev => ({ ...prev, format: e.target.value }))}
+                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
+                                          >
+                                            {customScripts.map(s => <option key={s} value={s} className="bg-[#1a1a20]">{s}</option>)}
+                                          </select>
+                                          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                                        </div>
+                                        <button 
+                                          onClick={async () => {
+                                            const currentVal = pluginState.format === 'script' && customScripts.length > 0 ? customScripts[0] : pluginState.format;
+                                            if (!currentVal || currentVal === 'script') return;
+                                            try {
+                                              await fetch('/api/custom-scripts/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: currentVal }) });
+                                              await fetchCustomScripts();
+                                              const remaining = customScripts.filter(s => s !== currentVal);
+                                              const newFormat = remaining.length > 0 ? remaining[0] : 'script';
+                                              setPluginState(prev => ({ ...prev, format: newFormat }));
+                                            } catch (e) {}
+                                          }}
+                                          className="p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg transition-colors border border-red-500/20"
+                                          title="Delete Script"
+                                        >
+                                          <Trash2 size={16} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
+                                      New Script (.py)
+                                    </label>
+                                    <div className="relative">
+                                      <input 
+                                        id="custom-script-upload"
+                                        type="file" 
+                                        accept=".py"
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                              setTaskProgress({ current: 0, total: 1, message: `Uploading ${file.name}...` });
+                                              const fd = new FormData();
+                                              fd.append('file', file);
+                                              try {
+                                                  const res = await fetch('/api/custom-scripts/upload', { method: 'POST', body: fd });
+                                                  const data = await res.json();
+                                                  if (data.success) {
+                                                      await fetchCustomScripts();
+                                                      setPluginState(prev => ({ ...prev, format: data.filename }));
+                                                      addLog(`[System] Uploaded ${data.filename}`);
+                                                  }
+                                              } catch(err) {
+                                                  addLog(`[Error] Failed to upload script: ${err}`);
+                                              }
+                                              setTaskProgress(null);
+                                          }
+                                          const input = document.getElementById('custom-script-upload') as HTMLInputElement;
+                                          if (input) { input.value = ''; }
+                                        }}
+                                        className="hidden"
+                                      />
+                                      <label htmlFor="custom-script-upload" className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 border-dashed hover:border-primary-500/50 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-semibold text-white/70 hover:text-white group">
+                                        <Upload size={16} className="text-white/40 group-hover:text-primary-400 transition-colors" />
+                                        Select a .py file to upload
+                                      </label>
+                                    </div>
+                                  </div>
+                               </div>
+                            ) : (
+                              <SelectGroup 
+                                label="Format"
+                                value={pluginState.format} 
+                                onChange={(v) => setPluginState(prev => ({ ...prev, format: v }))}
+                                options={pluginState.selectedPlugin.formats} 
+                              />
+                            )}
                           </div>
 
                           {pluginState.selectedPlugin.options.length > 0 && (
@@ -3326,6 +3426,12 @@ export default function App() {
 
                           <button 
                             onClick={async () => {
+                              if (pluginState.selectedPlugin.id === 'custom_script_upload' && (!pluginState.format || pluginState.format === 'script')) {
+                                  addLog(`[Error] Please upload or select a .py script file in the Format section first.`);
+                                  setTaskProgress(null);
+                                  return;
+                              }
+
                               let targetInput = '';
                               let uploadedPluginFilePath: string | undefined = undefined;
 
@@ -3369,28 +3475,39 @@ export default function App() {
                               }
 
                               // 2. Build and run command
-                              const args = [targetInput, pluginState.format];
-                              Object.entries(pluginState.options).forEach(([flag, val]) => {
-                                if (val === true) {
-                                  args.push(flag);
-                                } else if (typeof val === 'string' && val.trim() !== "") {
-                                  if ((flag === '-s' || flag === '--ignore_set') && val.includes(',')) {
-                                    val.split(',').forEach(item => {
-                                      const trimmed = item.trim();
-                                      if (trimmed) {
-                                        args.push(flag);
-                                        args.push(trimmed);
-                                      }
-                                    });
-                                  } else {
+                              let args: string[] = [];
+                              let targetCommand = `plugins/${pluginState.selectedPlugin.id}/fetch.py`;
+
+                              if (pluginState.selectedPlugin.id === 'custom_script_upload') {
+                                targetCommand = `__CUSTOM_SCRIPT__:${pluginState.format}`;
+                                const userArgsStr = pluginState.options['--args'] as string || '';
+                                const userArgs = userArgsStr.split(' ').filter(a => a.trim() !== '');
+                                args = [...userArgs, targetInput];
+                              } else {
+                                args = [targetInput, pluginState.format];
+                                Object.entries(pluginState.options).forEach(([flag, val]) => {
+                                  if (val === true) {
                                     args.push(flag);
-                                    args.push(val.trim());
+                                  } else if (typeof val === 'string' && val.trim() !== "") {
+                                    if ((flag === '-s' || flag === '--ignore_set') && val.includes(',')) {
+                                      val.split(',').forEach(item => {
+                                        const trimmed = item.trim();
+                                        if (trimmed) {
+                                          args.push(flag);
+                                          args.push(trimmed);
+                                        }
+                                      });
+                                    } else {
+                                      args.push(flag);
+                                      args.push(val.trim());
+                                    }
                                   }
-                                }
-                              });
+                                });
+                              }
                               
                               const tempDirId = crypto.randomUUID();
-                              const result = await runCommand(`plugins/${pluginState.selectedPlugin.id}/fetch.py`, args, {
+                              const result = await runCommand(targetCommand, args, {
+                                isPluginFetch: pluginState.selectedPlugin.id === 'custom_script_upload',
                                 startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
                                 hideProgressOnComplete: true,
                                 tempDirId,
@@ -3429,7 +3546,7 @@ export default function App() {
                             className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg"
                           >
                             <Download size={20} />
-                            Sync Artwork
+                            {pluginState.selectedPlugin.id === 'custom_script_upload' ? "Run Script" : "Sync Artwork"}
                           </button>
                        </div>
                      </div>
@@ -4770,7 +4887,7 @@ function TemplateCard({ type, onUpload, multiple = false }: { type: 'front' | 'b
         type="file" 
         ref={fileInputRef} 
         className="hidden" 
-        accept="image/*, .tiff, .tif"
+        accept="image/*"
         multiple={multiple}
         onChange={(e) => {
           if (e.target.files?.length) {
