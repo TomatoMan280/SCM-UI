@@ -608,6 +608,140 @@ export default function App() {
   const [verifyResult, setVerifyResult] = useState<{ missing: number, restored: number, check: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type?: string } | null>(null);
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
+  const [isDragSelecting, setIsDragSelecting] = useState(false);
+
+  const dragState = useRef({
+    isSelecting: false,
+    startCard: null as string | null,
+    initialSelection: new Set<string>(),
+    scrollAnimationId: 0,
+    scrollSpeed: 0,
+    lastClientX: 0,
+    lastClientY: 0
+  });
+
+  const handleDragStart = (name: string) => {
+    setIsDragSelecting(true);
+    dragState.current.startCard = name;
+    dragState.current.initialSelection = new Set(selectedAssets);
+    // Include the first card in the initial selection to guarantee it's highlighted immediately
+    dragState.current.initialSelection.add(name);
+    setSelectedAssets(new Set(dragState.current.initialSelection));
+  };
+
+  useEffect(() => {
+    dragState.current.isSelecting = isDragSelecting;
+    if (!isDragSelecting) {
+      cancelAnimationFrame(dragState.current.scrollAnimationId);
+      dragState.current.scrollSpeed = 0;
+    } else {
+      const checkSelection = (clientX: number, clientY: number) => {
+        if (clientX === 0 && clientY === 0) return;
+        const el = document.elementFromPoint(clientX, clientY);
+        const assetEl = el?.closest('[data-asset-name]');
+        if (assetEl && dragState.current.startCard) {
+          const name = assetEl.getAttribute('data-asset-name');
+          if (name) {
+            const cards = Array.from(document.querySelectorAll('[data-asset-name]')).map(el => el.getAttribute('data-asset-name')!);
+            const startIndex = cards.indexOf(dragState.current.startCard);
+            const currentIndex = cards.indexOf(name);
+            
+            if (startIndex !== -1 && currentIndex !== -1) {
+              const min = Math.min(startIndex, currentIndex);
+              const max = Math.max(startIndex, currentIndex);
+              const rangeNames = cards.slice(min, max + 1);
+              
+              setSelectedAssets(() => {
+                const next = new Set(dragState.current.initialSelection);
+                rangeNames.forEach(n => next.add(n));
+                return next;
+              });
+            }
+          }
+        }
+      };
+
+      const scrollStep = () => {
+        if (dragState.current.isSelecting && dragState.current.scrollSpeed !== 0) {
+          const container = document.getElementById('main-scroll-container');
+          if (container) {
+            container.scrollTop += dragState.current.scrollSpeed;
+          } else {
+            window.scrollBy(0, dragState.current.scrollSpeed);
+          }
+          checkSelection(dragState.current.lastClientX, dragState.current.lastClientY);
+        }
+        if (dragState.current.isSelecting) {
+          dragState.current.scrollAnimationId = requestAnimationFrame(scrollStep);
+        }
+      };
+      dragState.current.scrollAnimationId = requestAnimationFrame(scrollStep);
+    }
+  }, [isDragSelecting]);
+
+  useEffect(() => {
+    const checkSelection = (clientX: number, clientY: number) => {
+      if (clientX === 0 && clientY === 0) return;
+      const el = document.elementFromPoint(clientX, clientY);
+      const assetEl = el?.closest('[data-asset-name]');
+      if (assetEl && dragState.current.startCard) {
+        const name = assetEl.getAttribute('data-asset-name');
+        if (name) {
+          const cards = Array.from(document.querySelectorAll('[data-asset-name]')).map(el => el.getAttribute('data-asset-name')!);
+          const startIndex = cards.indexOf(dragState.current.startCard);
+          const currentIndex = cards.indexOf(name);
+          
+          if (startIndex !== -1 && currentIndex !== -1) {
+            const min = Math.min(startIndex, currentIndex);
+            const max = Math.max(startIndex, currentIndex);
+            const rangeNames = cards.slice(min, max + 1);
+            
+            setSelectedAssets(() => {
+              const next = new Set(dragState.current.initialSelection);
+              rangeNames.forEach(n => next.add(n));
+              return next;
+            });
+          }
+        }
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!dragState.current.isSelecting) return;
+      e.preventDefault(); 
+      const touch = e.touches[0];
+      dragState.current.lastClientX = touch.clientX;
+      dragState.current.lastClientY = touch.clientY;
+      
+      const EDGE_THRESHOLD = 200;
+      const MAX_SPEED = 30;
+      
+      if (touch.clientY < EDGE_THRESHOLD) {
+        dragState.current.scrollSpeed = -MAX_SPEED * (1 - touch.clientY / EDGE_THRESHOLD);
+      } else if (window.innerHeight - touch.clientY < EDGE_THRESHOLD) {
+        dragState.current.scrollSpeed = MAX_SPEED * (1 - (window.innerHeight - touch.clientY) / EDGE_THRESHOLD);
+      } else {
+        dragState.current.scrollSpeed = 0;
+      }
+      
+      checkSelection(touch.clientX, touch.clientY);
+    };
+
+    const handleTouchEnd = () => {
+      if (dragState.current.isSelecting) {
+        setIsDragSelecting(false);
+      }
+    };
+
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+    document.addEventListener('touchcancel', handleTouchEnd);
+    return () => {
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+      document.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, []);
   const [flippedAssets, setFlippedAssets] = useState<Set<string>>(new Set());
   const [uploadedImages, setUploadedImages] = useState<Record<string, string>>({});
   const [localAssets, setLocalAssets] = useState<Array<{name: string, type: 'front' | 'back' | 'double_sided', view: 'project' | 'library' | 'plugins'}>>([]);
@@ -670,6 +804,24 @@ export default function App() {
     };
   });
 
+  const [tunnelUrl, setTunnelUrl] = useState<string | null>(null);
+  const [isTunnelStarting, setIsTunnelStarting] = useState(false);
+
+  useEffect(() => {
+    const fetchTunnel = () => {
+      fetch(`/api/tunnel`)
+        .then(res => res.json())
+        .then(data => { 
+           if (data.url) setTunnelUrl(data.url);
+           if (data.starting !== undefined) setIsTunnelStarting(data.starting);
+        })
+        .catch(() => {});
+    };
+    fetchTunnel();
+    const interval = setInterval(fetchTunnel, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('scm_shortcuts', JSON.stringify(shortcuts));
   }, [shortcuts]);
@@ -693,11 +845,11 @@ export default function App() {
     const stored = localStorage.getItem('scm_card_width');
     if (stored) {
       const parsed = parseInt(stored, 10);
-      if (!isNaN(parsed) && parsed >= 120 && parsed <= 320) {
+      if (!isNaN(parsed) && parsed >= 80 && parsed <= 320) {
         return parsed;
       }
     }
-    return 180;
+    return window.innerWidth < 640 ? 110 : 180;
   });
 
   const fetchPluginConfigs = async () => {
@@ -2011,7 +2163,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-[#0a0a0c] text-[#e1e1e6] font-sans selection:bg-primary-500/30 overflow-hidden">
+    <div className={cn("flex h-screen bg-[#0a0a0c] text-[#e1e1e6] font-sans selection:bg-primary-500/30 overflow-hidden", isDragSelecting && "touch-none")}>
       <ErrorBanner logs={logs} />
       <AnimatePresence>
         {isSettingUpPython && (
@@ -2356,7 +2508,7 @@ export default function App() {
         </header>
 
         {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 relative min-h-0">
+        <div id="main-scroll-container" className="flex-1 overflow-y-auto p-4 md:p-8 relative min-h-0">
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' && (
               <div className="flex flex-col gap-6">
@@ -3134,7 +3286,7 @@ export default function App() {
                         <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-widest text-white/40">Card Size</span>
                         <input
                           type="range"
-                          min="120"
+                          min="80"
                           max="320"
                           step="10"
                           value={cardWidth}
@@ -3618,6 +3770,7 @@ export default function App() {
                                   selected={selectedAssets.has(`back:${img}`)}
                                   onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'back' })}
                                   onSelect={(e) => handleAssetSelect(`back:${img}`, e)}
+                                  onDragSelectStart={() => handleDragStart(`back:${img}`)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   uploadedImages={uploadedImages}
                                   assetViewMode={assetViewMode}
@@ -3693,6 +3846,7 @@ export default function App() {
                                   selected={selectedAssets.has(`front:${img}`)}
                                   onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'front' })}
                                   onSelect={(e) => handleAssetSelect(`front:${img}`, e)}
+                                  onDragSelectStart={() => handleDragStart(`front:${img}`)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   isFlipped={flippedAssets.has(`front:${img}`)}
                                   onToggleFlip={(e) => handleToggleFlip(`front:${img}`, e)}
@@ -3770,6 +3924,7 @@ export default function App() {
                                   selected={selectedAssets.has(`double_sided:${img}`)}
                                   onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'double_sided' })}
                                   onSelect={(e) => handleAssetSelect(`double_sided:${img}`, e)}
+                                  onDragSelectStart={() => handleDragStart(`double_sided:${img}`)}
                                   onEnlarge={(src) => setEnlargedImage(src)}
                                   isFlipped={flippedAssets.has(`double_sided:${img}`)}
                                   onToggleFlip={(e) => handleToggleFlip(`double_sided:${img}`, e)}
@@ -4446,6 +4601,39 @@ export default function App() {
 
               {settingsTab === 'system' && (
                 <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
+                  
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Mobile App Connection URL</span>
+                      <span className="text-xs text-white/40 block leading-relaxed">
+                        Enter this URL into your browser to connect to this desktop backend.
+                      </span>
+                    </div>
+                    <div>
+                      {tunnelUrl ? (
+                        <div className="w-full bg-black/40 border border-emerald-500/30 rounded-lg p-2 text-sm font-mono text-emerald-400 flex items-center justify-between">
+                          <span>{tunnelUrl}</span>
+                          <button onClick={() => navigator.clipboard.writeText(tunnelUrl)} className="text-emerald-500/50 hover:text-emerald-400 font-bold transition-colors">Copy</button>
+                        </div>
+                      ) : isTunnelStarting ? (
+                        <div className="w-full bg-black/40 border border-white/10 rounded-lg p-3 flex items-center justify-center gap-2">
+                           <RefreshCw size={16} className="text-white/40 animate-spin" />
+                           <span className="text-xs text-white/50 font-medium">Starting server broadcast...</span>
+                        </div>
+                      ) : (
+                        <button 
+                          onClick={() => {
+                            setIsTunnelStarting(true);
+                            fetch('/api/tunnel/start', { method: 'POST' });
+                          }}
+                          className="w-full px-4 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg font-bold transition-all border border-emerald-500/30"
+                        >
+                          Start Server Broadcast
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
                     <div className="space-y-1">
                       <span className="text-sm font-medium text-white block">Python Path Override</span>
@@ -4543,11 +4731,10 @@ export default function App() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 10 }}
             style={{ 
-              top: contextMenu.y, 
-              left: contextMenu.x,
-              transform: 'translate(-50%, -100%)' // Center horizontally and place above cursor
+              bottom: typeof window !== 'undefined' ? window.innerHeight - contextMenu.y : 0, 
+              right: typeof window !== 'undefined' ? window.innerWidth - contextMenu.x : 0,
             }}
-            className="fixed z-[100] pointer-events-auto flex flex-col items-stretch gap-0.5 p-1.5 bg-[#1a1b23]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)] min-w-[180px]"
+            className="fixed z-[100] pointer-events-auto flex flex-col items-stretch gap-0.5 p-1.5 bg-[#1a1b23]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)] w-48 max-w-[200px]"
           >
             {(!contextMenu.type || contextMenu.type !== 'back') && (
               <button 
@@ -4727,16 +4914,16 @@ export default function App() {
         )}
       </AnimatePresence>
       {activeTab === 'assets' && (assetViewMode === 'library' || assetViewMode === 'plugins') && selectedAssets.size > 0 && (
-        <motion.div
+         <motion.div
            initial={{ opacity: 0, y: 50 }}
            animate={{ opacity: 1, y: 0 }}
            exit={{ opacity: 0, y: 50 }}
-           className="fixed bottom-6 right-6 z-[100] flex gap-3"
+           className="fixed bottom-24 left-1/2 -translate-x-1/2 md:bottom-6 md:left-auto md:right-6 md:translate-x-0 w-[90%] md:w-auto z-[100] flex justify-center gap-3 pointer-events-none"
          >
            {assetViewMode === 'plugins' && (
              <button 
                onClick={() => uploadToLibrary()}
-               className="flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95"
+               className="pointer-events-auto flex items-center gap-2 px-4 py-3 md:px-6 md:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs md:text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95 flex-1 md:flex-none justify-center"
              >
                <Book size={16} />
                Add to Library ({selectedAssets.size})
@@ -4744,7 +4931,7 @@ export default function App() {
            )}
            <button 
              onClick={() => uploadToProject()}
-             className="flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95"
+             className="pointer-events-auto flex items-center gap-2 px-4 py-3 md:px-6 md:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs md:text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95 flex-1 md:flex-none justify-center"
            >
              <Download size={16} />
              Add to Project ({selectedAssets.size})
@@ -5090,7 +5277,8 @@ interface AssetItemProps {
   allAssets?: AssetData | null;
   onContextMenu?: (x: number, y: number) => void;
   selected?: boolean;
-  onSelect?: (e: React.MouseEvent) => void;
+  onSelect?: (e: React.MouseEvent | React.TouchEvent) => void;
+  onDragSelectStart?: (name: string) => void;
   onEnlarge?: (src: string) => void;
   isFlipped?: boolean;
   onToggleFlip?: (e: React.MouseEvent) => void;
@@ -5101,7 +5289,7 @@ interface AssetItemProps {
   cacheBustToken?: number;
 }
 
-const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken }) => {
+const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onDragSelectStart, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken }) => {
 
   
   const getBaseUrl = () => {
@@ -5178,6 +5366,26 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     return null;
   };
 
+  const timerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    const { clientX, clientY } = touch;
+    timerRef.current = setTimeout(() => {
+      if (onContextMenu) {
+        onContextMenu(clientX, clientY);
+        if (navigator.vibrate) navigator.vibrate(50);
+      }
+    }, 500);
+  };
+
+  const cancelTouch = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
   const backFace = getBackFace();
 
   const baseUrl = getBaseUrl();
@@ -5188,13 +5396,18 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
 
   return (
     <div 
-      className="group space-y-3"
+      className="group space-y-3 asset-card"
+      data-asset-name={`${type}:${name}`}
       onContextMenu={(e) => {
         e.preventDefault();
         if (onContextMenu) {
           onContextMenu(e.clientX, e.clientY);
         }
       }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={cancelTouch}
+      onTouchEnd={cancelTouch}
+      onTouchCancel={cancelTouch}
     >
       <div 
         className={cn(
@@ -5297,6 +5510,11 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
           onClick={(e) => {
             e.stopPropagation();
             onSelect?.(e);
+          }}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            onSelect?.(e);
+            if (onDragSelectStart) onDragSelectStart(name);
           }}
           className={cn(
             "absolute top-2 left-2 z-30 w-6 h-6 rounded-full border flex items-center justify-center transition-all shadow-md active:scale-95",

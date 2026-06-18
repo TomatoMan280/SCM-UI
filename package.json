@@ -4,7 +4,7 @@
   "description": "Silhouette Card Maker UI",
   "author": "SCMUI",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.1.0",
   "type": "module",
   "main": "electron-main.cjs",
   "scripts": {
@@ -46,7 +46,8 @@
       "Build/icon.png"
     ],
     "asarUnpack": [
-      "src/silhouette-card-maker-main/**/*"
+      "src/silhouette-card-maker-main/**/*",
+      "node_modules/cloudflared/**/*"
     ],
     "mac": {
       "target": "dmg",
@@ -75,11 +76,16 @@
     }
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.0",
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "adm-zip": "^0.5.17",
     "archiver": "^8.0.0",
+    "cloudflared": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "electron-updater": "^6.8.3",

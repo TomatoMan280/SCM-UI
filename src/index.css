@@ -61,6 +61,20 @@
   filter: invert(1) hue-rotate(180deg);
 }
 
+/* Mobile Touch Optimizations */
+img, video {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+
+.asset-card {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .markdown-body h1, .markdown-body h2, .markdown-body h3 {
   font-weight: 700;
   margin-top: 1.5em;

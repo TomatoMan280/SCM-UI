@@ -2383,32 +2383,6 @@ async function startServer() {
     res.status(404).end();
   });
 
-  // Vite middleware for development
-  if (!isProd) {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    // In production bundled mode (dist/server.cjs), __dirname is the dist folder itself.
-    // In other production modes, it might be the project root.
-    const distPath = fs.existsSync(path.join(__dirname, 'index.html')) 
-      ? __dirname 
-      : path.join(baseAppPath, 'dist');
-
-    if (fs.existsSync(path.join(distPath, 'index.html'))) {
-      app.use(express.static(distPath));
-      app.get('*', (req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
-      });
-    } else {
-      app.get('*', (req, res) => {
-        res.status(404).send("SCMUI: Could not find application assets. Checked: " + distPath);
-      });
-    }
-  }
 
   app.post("/api/admin/repair-scripts", (req, res) => {
     if (!isElectron) return res.status(400).json({error: "Only available in desktop app"});
@@ -2492,6 +2466,76 @@ async function startServer() {
       files: listFiles(scmPath)
     });
   });
+
+  let globalTunnelUrl = "";
+  let isTunnelStarting = false;
+
+  const startCloudflareTunnel = () => {
+    if (globalTunnelUrl || isTunnelStarting) return;
+    isTunnelStarting = true;
+    try {
+      let cloudflaredBin = require('cloudflared').bin;
+      if (cloudflaredBin.includes('app.asar')) {
+        cloudflaredBin = cloudflaredBin.replace('app.asar', 'app.asar.unpacked');
+      }
+      const { spawn } = require('child_process');
+      console.log(`[Cloudflare] Starting Quick Tunnel for mobile access...`);
+      const tunnel = spawn(cloudflaredBin, ['tunnel', '--url', `http://localhost:${PORT}`]);
+      
+      tunnel.stderr.on('data', (data: any) => {
+        const output = data.toString();
+        const match = output.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
+        if (match) {
+          globalTunnelUrl = match[0];
+          isTunnelStarting = false;
+          console.log('\n======================================================');
+          console.log('🌍 MOBILE APP CONNECTION URL:');
+          console.log(`   ${match[0]}`);
+          console.log('======================================================\n');
+        }
+      });
+    } catch (err: any) {
+      console.error(`[Cloudflare] Failed to start tunnel: ${err.message}`);
+      isTunnelStarting = false;
+    }
+  };
+
+  app.get("/api/tunnel", (req, res) => {
+    res.json({ url: globalTunnelUrl, starting: isTunnelStarting });
+  });
+
+  app.post("/api/tunnel/start", (req, res) => {
+    startCloudflareTunnel();
+    res.json({ success: true });
+  });
+
+  // Vite middleware for development (catch-all)
+  if (!isProd) {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    // In production bundled mode (dist/server.cjs), __dirname is the dist folder itself.
+    // In other production modes, it might be the project root.
+    const distPath = fs.existsSync(path.join(__dirname, 'index.html')) 
+      ? __dirname 
+      : path.join(baseAppPath, 'dist');
+
+    if (fs.existsSync(path.join(distPath, 'index.html'))) {
+      app.use(express.static(distPath));
+      app.get('*', (req, res) => {
+        res.sendFile(path.join(distPath, 'index.html'));
+      });
+    } else {
+      app.get('*', (req, res) => {
+        res.status(404).send("SCMUI: Could not find application assets. Checked: " + distPath);
+      });
+    }
+  }
+
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
