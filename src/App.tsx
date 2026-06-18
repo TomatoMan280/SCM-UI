@@ -4893,6 +4893,7 @@ function TemplateCard({ type, onUpload, multiple = false }: { type: 'front' | 'b
           if (e.target.files?.length) {
             onUpload(Array.from(e.target.files));
           }
+          e.target.value = '';
         }}
       />
       <div className="absolute inset-0 bg-primary-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
