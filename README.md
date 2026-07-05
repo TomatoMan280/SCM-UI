@@ -12,5 +12,5 @@ A high-performance modern web-based and Electron-supported desktop user interfac
 
 ## Installation
 
-For installation instructions and executable downloads, please visit the [Releases section](https://github.com/TomatoMan280/SCM-UI/releases) of the GitHub repository.
+For installatio, please visit the [Releases section](https://github.com/TomatoMan280/SCM-UI/releases) of the GitHub repository and download the executable for your operating system.
 
