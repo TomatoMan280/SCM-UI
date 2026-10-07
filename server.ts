@@ -973,6 +973,30 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           if (!fs.existsSync(pythonExecutable)) {
             pythonExecutable = 'python'; // fallback
           }
+        } else if (platform === 'darwin') {
+          const arch = os.arch();
+          const isArm = arch === 'arm64' || arch === 'aarch64';
+          const downloadUrl = isArm 
+             ? 'https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.11.8+20240224-aarch64-apple-darwin-install_only.tar.gz'
+             : 'https://github.com/indygreg/python-build-standalone/releases/download/20240224/cpython-3.11.8+20240224-x86_64-apple-darwin-install_only.tar.gz';
+             
+          sendEvent('progress', { step: 'Downloading portable Python...', detail: `Fetching Python for Mac ${arch}`, percent: 40 });
+          sendEvent('stdout', `> Downloading portable Python for Mac (${arch}) using curl...`);
+          
+          const tarPath = path.join(os.tmpdir(), 'python-mac.tar.gz');
+          const destDir = path.join(scmPath, 'python-mac');
+          
+          await runCommand('curl', ['-L', '-sS', '-o', tarPath, downloadUrl]);
+          
+          sendEvent('progress', { step: 'Extracting Python...', detail: 'Extracting portable Python', percent: 60 });
+          sendEvent('stdout', '> Extracting portable Python...');
+          
+          if (!fs.existsSync(destDir)) {
+              fs.mkdirSync(destDir, { recursive: true });
+          }
+          await runCommand('tar', ['-xzf', tarPath, '-C', destDir]);
+          
+          pythonExecutable = path.join(destDir, 'python', 'bin', 'python3');
         } else {
           // Mock or use apt-get for non-Windows assuming user is root or in a container
           sendEvent('progress', { step: 'Extracting files...', detail: 'Using apt-get / brew', percent: 60 });
