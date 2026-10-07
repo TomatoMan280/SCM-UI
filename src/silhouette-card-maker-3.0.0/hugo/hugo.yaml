@@ -1,0 +1,26 @@
+languageCode: en-us
+params:
+  page:
+    width: wide
+markup:
+  goldmark:
+    renderer:
+      unsafe: true
+title: Silhouette Card Maker
+theme: hextra
+menu:
+  main:
+    - name: Search
+      weight: 4
+      params:
+        type: search
+    - name: GitHub
+      weight: 5
+      url: "https://github.com/Alan-Cha/silhouette-card-maker"
+      params:
+        icon: github
+    - name: Discord
+      weight: 6
+      url: "https://discord.gg/jhsKmAgbXc"
+      params:
+        icon: discord

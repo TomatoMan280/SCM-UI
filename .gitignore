@@ -6,7 +6,3 @@ coverage/
 *.log
 .env*
 !.env.example
-
-src/silhouette-card-maker-main/
-
-src/silhouette-card-maker-3.0.0/
