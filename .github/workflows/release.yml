@@ -1,0 +1,55 @@
+name: Build SCMUI Desktop App
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Build macOS app (.dmg)
+      if: matrix.os == 'macos-latest'
+      run: npm run desktop:build:mac
+
+    - name: Build Windows app (.exe)
+      if: matrix.os == 'windows-latest'
+      run: npm run desktop:build:win
+
+    - name: Upload macOS Artifacts
+      if: matrix.os == 'macos-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: SCMUI-macOS-Build
+        path: |
+          release/*.dmg
+          release/*.zip
+          
+    - name: Upload Windows Artifacts
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: SCMUI-Windows-Build
+        path: |
+          release/*.exe
+          release/*.exe.blockmap

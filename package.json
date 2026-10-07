@@ -4,7 +4,7 @@
   "description": "Silhouette Card Maker UI",
   "author": "SCMUI",
   "private": true,
-  "version": "1.1.0",
+  "version": "3.0.0-beta",
   "type": "module",
   "main": "electron-main.cjs",
   "scripts": {
@@ -38,15 +38,15 @@
       "dist/**/*",
       "electron-main.cjs",
       "package.json",
-      "src/Library",
-      "src/silhouette-card-maker-main",
-      "src/projects",
+      "src/Library/**/*",
+      "src/silhouette-card-maker-3.0.0/**/*",
+      "src/projects/**/*",
       "icon.png",
       "build/icon.png",
       "Build/icon.png"
     ],
     "asarUnpack": [
-      "src/silhouette-card-maker-main/**/*",
+      "src/silhouette-card-maker-3.0.0/**/*",
       "node_modules/cloudflared/**/*"
     ],
     "mac": {

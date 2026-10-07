@@ -14,8 +14,7 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(express.json({ limit: '250mb' }));
-  app.use(express.urlencoded({ limit: '250mb', extended: true }));
+  app.use(express.json());
 
   const isProd = process.env.NODE_ENV === 'production';
   const isElectron = !!process.env.USER_DATA_PATH;
@@ -26,7 +25,7 @@ async function startServer() {
   console.log(`[System] Data Path: ${baseDataPath}`);
   console.log(`[System] App Path: ${baseAppPath}`);
 
-  const scmPath = path.join(baseDataPath, 'src', 'silhouette-card-maker-3.0.0');
+  const scmPath = path.join(baseDataPath, 'src', 'silhouette-card-maker-main');
   const projectsDir = path.join(baseDataPath, 'src', 'projects');
   const libraryPath = path.join(baseDataPath, 'src', 'Library');
 
@@ -104,25 +103,25 @@ async function startServer() {
     resourcesPath = baseAppPath.substring(0, baseAppPath.indexOf('app.asar'));
   }
   
-  let scmSourcePath = path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-3.0.0');
+  let scmSourcePath = path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-main');
   if (!fs.existsSync(scmSourcePath)) {
-    scmSourcePath = path.join(resourcesPath, 'silhouette-card-maker-3.0.0');
+    scmSourcePath = path.join(resourcesPath, 'silhouette-card-maker-main');
   }
   if (!fs.existsSync(scmSourcePath)) {
-     scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-3.0.0');
+     scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
   }
   
   // If in Electron production, we should check if our python scripts exist in the writable location
   // and if not, copy them from the unpacked resources folder (ASAR Bypass)
   if (isElectron) {
-    const markerFile = path.join(scmPath, 'create_pdf.py');
+    const markerFile = path.join(scmPath, 'plugins', 'mtg', 'fetch.py');
     
     console.log(`[System] Initializing scripts from physical resources: ${scmSourcePath} -> ${scmPath}`);
     
     try {
       let sourceToUse = scmSourcePath;
       if (!fs.existsSync(sourceToUse)) {
-        const altPath = path.join(baseAppPath, 'silhouette-card-maker-3.0.0');
+        const altPath = path.join(baseAppPath, 'silhouette-card-maker-main');
         if (fs.existsSync(altPath)) {
           sourceToUse = altPath;
           console.log("[System] Found scripts at flattened path:", altPath);
@@ -130,25 +129,12 @@ async function startServer() {
       }
 
       if (fs.existsSync(sourceToUse)) {
-        const targetCreatePdf = path.join(scmPath, 'create_pdf.py');
-        let needsUpdate = !fs.existsSync(markerFile);
-        if (fs.existsSync(targetCreatePdf)) {
-          try {
-            const currentPdfScript = fs.readFileSync(targetCreatePdf, 'utf8');
-            if (!currentPdfScript.includes('--borderless') || currentPdfScript.includes('2.2.0')) {
-              needsUpdate = true;
-              console.log("[System] Detected outdated SCM scripts in user data directory. Synchronizing to SCM v3.0.0...");
-            }
-          } catch (e: any) {
-            needsUpdate = true;
-          }
-        }
-        if (needsUpdate) {
-           console.log("[System] Initializing / Upgrading scripts from physical resources...");
+        if (!fs.existsSync(markerFile)) {
+           console.log("[System] Marker file missing. Initializing scripts...");
            copyRecursive(sourceToUse, scmPath);
-           console.log("[System] Scripts initialized successfully with SCM v3.0.0.");
+           console.log("[System] Scripts initialized successfully.");
         } else {
-           console.log("[System] Scripts already present and up to date.");
+           console.log("[System] Scripts already present.");
         }
       } else {
         console.error("[Error] Source scripts NOT found in bundle. baseAppPath contents:", fs.readdirSync(baseAppPath));
@@ -191,7 +177,7 @@ async function startServer() {
   } catch (e) {
     console.error("Failed to read version from package.json", e);
   }
-  let rootDir = "src/silhouette-card-maker-3.0.0";
+  let rootDir = "src/silhouette-card-maker-main";
 
   // Simulation of Card Assets (The "Project")
   let mockCards = { fronts: [], backs: [], double_sided: [] };
@@ -254,158 +240,13 @@ async function startServer() {
     res.json({ success: true, message: `Uploaded ${req.file.originalname}`, file: req.file.originalname, targetPath });
   });
 
-
-interface CustomTokenPairing {
-  frontIndex: number;
-  backIndex: number;
-  frontCleanName: string;
-  backCleanName: string;
-  quantity: number;
-}
-
-function autoPairCustomTokens(gameDir: string, decklistDir: string) {
-  try {
-    const pairingsFile = path.join(decklistDir, 'pairings.json');
-    if (!fs.existsSync(pairingsFile)) return;
-
-    const rawData = fs.readFileSync(pairingsFile, 'utf8');
-    const pairings: CustomTokenPairing[] = JSON.parse(rawData);
-    if (!Array.isArray(pairings) || pairings.length === 0) return;
-
-    // Resolve directory paths (supports both with/without nested 'game' subfolder)
-    let frontDir = path.join(gameDir, 'front');
-    let doubleSidedDir = path.join(gameDir, 'double_sided');
-
-    if (!fs.existsSync(frontDir) && fs.existsSync(path.join(gameDir, 'game', 'front'))) {
-      frontDir = path.join(gameDir, 'game', 'front');
-      doubleSidedDir = path.join(gameDir, 'game', 'double_sided');
-    }
-
-    if (!fs.existsSync(frontDir)) return;
-    fs.mkdirSync(doubleSidedDir, { recursive: true });
-
-    for (const pair of pairings) {
-      for (let i = 1; i <= pair.quantity; i++) {
-        const frontPrefix = `${pair.frontIndex}${pair.frontCleanName}${i}`;
-        const backPrefix = `${pair.backIndex}${pair.backCleanName}${i}`;
-
-        const currentFrontFiles = fs.readdirSync(frontDir);
-        const frontMatch = currentFrontFiles.find(f => {
-          const nameWithoutExt = path.parse(f).name;
-          return nameWithoutExt.toLowerCase() === frontPrefix.toLowerCase() ||
-                 nameWithoutExt.toLowerCase().startsWith(frontPrefix.toLowerCase());
-        });
-
-        const backMatch = currentFrontFiles.find(f => {
-          const nameWithoutExt = path.parse(f).name;
-          return nameWithoutExt.toLowerCase() === backPrefix.toLowerCase() ||
-                 nameWithoutExt.toLowerCase().startsWith(backPrefix.toLowerCase());
-        });
-
-        if (frontMatch && backMatch) {
-          const srcBackPath = path.join(frontDir, backMatch);
-          const destBackPath = path.join(doubleSidedDir, frontMatch);
-
-          fs.copyFileSync(srcBackPath, destBackPath);
-          try {
-            fs.unlinkSync(srcBackPath);
-          } catch (e) {}
-        }
-      }
-    }
-
-    try {
-      fs.unlinkSync(pairingsFile);
-    } catch (e) {}
-  } catch (err: any) {
-    console.error('[System] Auto-pair tokens error:', err.message);
-  }
-}
-
   app.post("/api/project/save-decklist", (req, res) => {
     const { content } = req.body;
     if (content === undefined) return res.status(400).json({ error: "Content is required" });
     const decklistDir = path.join(scmPath, 'game', 'decklist');
     fs.mkdirSync(decklistDir, { recursive: true });
-
-    const lines = content.split(/\r?\n/);
-    const stagedLines: string[] = [];
-    const pairings: CustomTokenPairing[] = [];
-    let currentStagedIndex = 0;
-
-    // Pattern to match custom double-sided tokens:
-    // e.g. 2 Eldrazi Spawn (TMH3) 2 // Rat (TWOE) 8
-    const customDfcRegex = /^(\d+)x?\s+(.+?)\s+\((\w+)\)\s+(\w+)\s*\/\/\s*(.+?)\s+\((\w+)\)\s+(\w+)/i;
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line) {
-        stagedLines.push(rawLine);
-        continue;
-      }
-      const match = line.match(customDfcRegex);
-
-      if (match) {
-        const qty = parseInt(match[1], 10);
-        const frontName = match[2].trim();
-        const frontSet = match[3].trim();
-        const frontNum = match[4].trim();
-
-        const backName = match[5].trim();
-        const backSet = match[6].trim();
-        const backNum = match[7].trim();
-
-        currentStagedIndex += 1;
-        const frontIdx = currentStagedIndex;
-        stagedLines.push(`${qty} ${frontName} (${frontSet}) ${frontNum}`);
-
-        currentStagedIndex += 1;
-        const backIdx = currentStagedIndex;
-        stagedLines.push(`${qty} ${backName} (${backSet}) ${backNum}`);
-
-        pairings.push({
-          frontIndex: frontIdx,
-          backIndex: backIdx,
-          frontCleanName: frontName.replace(/[^a-zA-Z0-9]/g, ''),
-          backCleanName: backName.replace(/[^a-zA-Z0-9]/g, ''),
-          quantity: qty
-        });
-      } else {
-        currentStagedIndex += 1;
-        stagedLines.push(rawLine);
-      }
-    }
-
-    fs.writeFileSync(path.join(decklistDir, 'current.txt'), stagedLines.join('\n'), 'utf8');
-    if (pairings.length > 0) {
-      fs.writeFileSync(path.join(decklistDir, 'pairings.json'), JSON.stringify(pairings, null, 2), 'utf8');
-    } else {
-      const pFile = path.join(decklistDir, 'pairings.json');
-      if (fs.existsSync(pFile)) {
-        try { fs.unlinkSync(pFile); } catch(e) {}
-      }
-    }
-
+    fs.writeFileSync(path.join(decklistDir, 'current.txt'), content);
     res.json({ success: true, message: "Decklist saved to game/decklist/current.txt" });
-  });
-
-  app.post("/api/cards/pair-faces", (req, res) => {
-    const { frontFilename, backFilename } = req.body;
-    if (!frontFilename || !backFilename) {
-      return res.status(400).json({ error: "frontFilename and backFilename are required" });
-    }
-    const frontDir = path.join(scmPath, 'game', 'front');
-    const doubleSidedDir = path.join(scmPath, 'game', 'double_sided');
-    const backSrcPath = path.join(frontDir, backFilename);
-    const backDestPath = path.join(doubleSidedDir, frontFilename);
-
-    if (!fs.existsSync(backSrcPath)) {
-      return res.status(404).json({ error: "Source back file not found in game/front" });
-    }
-    fs.mkdirSync(doubleSidedDir, { recursive: true });
-    fs.copyFileSync(backSrcPath, backDestPath);
-    try { fs.unlinkSync(backSrcPath); } catch(e) {}
-    res.json({ success: true, message: `Paired ${backFilename} to back of ${frontFilename}` });
   });
 
   app.post("/api/plugin/upload-file", upload.single('file'), (req, res) => {
@@ -530,291 +371,7 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
     res.json({ configs });
   });
 
-    // Scryfall Custom Art Search & Download Proxy with Advanced Filters & Smart Resolution
-  app.get("/api/scryfall/search", async (req, res) => {
-    let q = (req.query.q as string || '').trim();
-    const typeFilter = req.query.type as string;
-    const colorFilter = req.query.color as string;
-    const frameFilter = req.query.frame as string;
-    const rarityFilter = req.query.rarity as string;
-    const orderSort = (req.query.order as string) || 'released';
-
-    if (!q && (!typeFilter || typeFilter === 'all') && (!colorFilter || colorFilter === 'all') && (!rarityFilter || rarityFilter === 'all') && (!frameFilter || frameFilter === 'all')) {
-      return res.status(400).json({ error: "Query parameter 'q' or a filter is required" });
-    }
-
-    const headers = {
-      "User-Agent": "SCMUI/1.1.0 (https://github.com/TomatoMan280/SCM-UI)",
-      "Accept": "application/json"
-    };
-
-    // Helper to fetch JSON
-    const fetchJson = async (targetUrl: string): Promise<any> => {
-      if (typeof fetch !== "undefined") {
-        const resp = await fetch(targetUrl, { headers });
-        return { status: resp.status, data: await resp.json() };
-      }
-      return new Promise((resolve, reject) => {
-        import("https").then((https) => {
-          https.get(targetUrl, { headers }, (response) => {
-            let rawData = "";
-            response.on("data", (chunk) => { rawData += chunk; });
-            response.on("end", () => {
-              try {
-                resolve({ status: response.statusCode || 200, data: JSON.parse(rawData) });
-              } catch (err) {
-                reject(err);
-              }
-            });
-          }).on("error", reject);
-        }).catch(reject);
-      });
-    };
-
-    try {
-      // Step A: Check if query is squished without spaces (e.g. "blacklotus")
-      let resolvedCardName = q;
-      if (q && !q.includes(' ') && q.length > 3) {
-        try {
-          const namedUrl = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(q)}`;
-          const namedRes = await fetchJson(namedUrl);
-          if (namedRes.data && namedRes.data.name) {
-            resolvedCardName = namedRes.data.name;
-            console.log(`[Scryfall] Fuzzy resolved "${q}" -> "${resolvedCardName}"`);
-          }
-        } catch (e) { }
-      }
-
-      // Build filters string
-      let filterStr = '';
-      if (typeFilter && typeFilter !== 'all') filterStr += ` t:${typeFilter}`;
-      if (colorFilter && colorFilter !== 'all') filterStr += ` c:${colorFilter}`;
-      if (rarityFilter && rarityFilter !== 'all') filterStr += ` r:${rarityFilter}`;
-      const setFilter = req.query.set as string;
-      if (setFilter && setFilter.trim() !== '') filterStr += ` e:${setFilter.trim()}`;
-      if (frameFilter && frameFilter !== 'all') {
-        if (frameFilter === 'borderless') filterStr += ' is:borderless';
-        else if (frameFilter === 'showcase') filterStr += ' frame:showcase';
-        else if (frameFilter === 'retro') filterStr += ' (frame:retro or is:old)';
-        else if (frameFilter === 'extendedart') filterStr += ' frame:extendedart';
-        else if (frameFilter === 'fullart') filterStr += ' is:fullart';
-        else if (frameFilter === 'etched') filterStr += ' is:etched';
-      }
-
-      // Step B: Build query with optional filters
-      let scryfallQuery = '';
-      if (resolvedCardName) {
-        scryfallQuery = resolvedCardName.includes(' ') ? `!"${resolvedCardName}"` : resolvedCardName;
-      }
-      scryfallQuery = (scryfallQuery + filterStr).trim();
-
-      const searchUrl = `https://api.scryfall.com/cards/search?order=${encodeURIComponent(orderSort)}&q=${encodeURIComponent(scryfallQuery)}&unique=prints`;
-      console.log(`[Scryfall] Executing search: ${searchUrl}`);
-
-      let searchRes = await fetchJson(searchUrl);
-
-      // If exact print search returned nothing, fall back to broad query with filters
-      if (!searchRes.data?.data && resolvedCardName && resolvedCardName.includes(' ')) {
-        const fallbackQuery = (resolvedCardName + filterStr).trim();
-        const broadUrl = `https://api.scryfall.com/cards/search?order=${encodeURIComponent(orderSort)}&q=${encodeURIComponent(fallbackQuery)}&unique=prints`;
-        console.log(`[Scryfall] Fallback search: ${broadUrl}`);
-        searchRes = await fetchJson(broadUrl);
-      }
-
-      return res.status(searchRes.status || 200).json(searchRes.data);
-    } catch (err: any) {
-      console.error("[Scryfall Error]", err.message);
-      res.status(500).json({ error: "Failed to search Scryfall API", details: err.message });
-    }
-  });
-
-  // MPCFill Community Art & Backings Search API
-  app.get("/api/mpc/search", async (req, res) => {
-    const q = (req.query.q as string || '').trim();
-    const isBack = req.query.isBack === 'true';
-    const dpiFilter = req.query.dpi as string || 'all';
-    const setFilter = req.query.set as string;
-
-    console.log(`[MPCFill Search] Query: "${q}", isBack: ${isBack}, dpi: ${dpiFilter}, set: ${setFilter || 'none'}`);
-
-    const headers = {
-      "User-Agent": "SCMUI/1.1.0",
-      "Content-Type": "application/json"
-    };
-
-    // Curated high-resolution MPC cards & backs database (800 & 1200 DPI)
-    const curatedMpcLibrary: any[] = [
-      // High-res Backs (800 - 1200 DPI)
-      { id: 'classic_mtg_back', name: 'Classic MTG Cardback', dpi: 800, type: 'back', source: 'WotC Scan HQ', tags: ['Standard', 'Official Back'], imageUrl: 'https://upload.wikimedia.org/wikipedia/en/a/aa/Magic_the_gathering-card_back.jpg' },
-      { id: 'lotus_back_1200', name: 'Black Lotus Stained Glass Back', dpi: 1200, type: 'back', source: 'Algencon Drive', tags: ['Custom Back', '1200 DPI', 'Full Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Black+Lotus&format=image&version=large' },
-      { id: 'vintage_retro_back', name: 'Retro 1993 Vintage Back', dpi: 1200, type: 'back', source: 'VintageMTG', tags: ['Retro', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Time+Walk&format=image&version=large' },
-      { id: 'minimalist_dark_back', name: 'Sleeved Matte Obsidian Back', dpi: 1200, type: 'back', source: 'ProxyKing', tags: ['Minimalist', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Dark+Ritual&format=image&version=large' },
-      { id: 'anime_mox_back', name: 'Mystical Archive Japanese Back', dpi: 1200, type: 'back', source: 'Torino Custom', tags: ['Japanese', 'Anime', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Mox+Diamond&format=image&version=large' },
-
-      // Popular Custom Front Arts (800 - 1200 DPI)
-      { id: 'sol_ring_masterpiece', name: 'Sol Ring', dpi: 1200, type: 'card', source: 'MPC Masterpiece', set: 'MPC', collector_number: '1200', tags: ['1200 DPI', 'Borderless', 'Full Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Sol+Ring&format=image&version=large' },
-      { id: 'black_lotus_custom', name: 'Black Lotus', dpi: 1200, type: 'card', source: 'Vintage Proxy Drive', set: 'MPC', collector_number: '001', tags: ['1200 DPI', 'Extended Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Black+Lotus&format=image&version=large' },
-      { id: 'mana_crypt_vintage', name: 'Mana Crypt', dpi: 1200, type: 'card', source: 'Chilli_Axe Drive', set: 'MPC', collector_number: 'MC01', tags: ['1200 DPI', 'Retro Frame'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Mana+Crypt&format=image&version=large' },
-      { id: 'command_tower_galaxy', name: 'Command Tower', dpi: 1200, type: 'card', source: 'Silvan Drive', set: 'MPC', collector_number: 'CT88', tags: ['1200 DPI', 'Foil Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Command+Tower&format=image&version=large' },
-      { id: 'rhystic_study_anime', name: 'Rhystic Study', dpi: 1200, type: 'card', source: 'AnimeProxy Co', set: 'MPC', collector_number: 'AP09', tags: ['1200 DPI', 'Anime Alt-Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Rhystic+Study&format=image&version=large' },
-      { id: 'demonic_tutor_retro', name: 'Demonic Tutor', dpi: 1200, type: 'card', source: 'Vintage Vault', set: 'MPC', collector_number: 'DT93', tags: ['1200 DPI', 'Vintage 1993'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Demonic+Tutor&format=image&version=large' },
-      { id: 'cyclonic_rift_custom', name: 'Cyclonic Rift', dpi: 1200, type: 'card', source: 'Mythic Drive', set: 'MPC', collector_number: 'CR77', tags: ['1200 DPI', 'Borderless'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Cyclonic+Rift&format=image&version=large' },
-      { id: 'swords_to_plowshares_sld', name: 'Swords to Plowshares', dpi: 800, type: 'card', source: 'HighRes Scans', set: 'MPC', collector_number: 'STP1', tags: ['800 DPI', 'Showcase'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Swords+to+Plowshares&format=image&version=large' },
-      { id: 'counterspell_retro', name: 'Counterspell', dpi: 800, type: 'card', source: 'Alpha Remaster', set: 'MPC', collector_number: 'CS01', tags: ['800 DPI', 'Retro'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Counterspell&format=image&version=large' }
-    ];
-
-    let results: any[] = [];
-
-    // Step 1: Attempt live MPCFill API search (only if query provided)
-    if (q) {
-      try {
-        const endpoint = isBack ? 'https://api.mpcfill.com/v1/backs' : 'https://api.mpcfill.com/v1/cards';
-        const bodyPayload = isBack 
-          ? JSON.stringify({ backNames: [q] })
-          : JSON.stringify({ cardNames: [q] });
-
-        const mpcResp = await fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: bodyPayload
-        });
-
-        if (mpcResp.ok) {
-          const mpcJson = await mpcResp.json();
-          const rawItems = mpcJson?.data || mpcJson?.cards || [];
-          if (Array.isArray(rawItems) && rawItems.length > 0) {
-            results = rawItems.map((item: any) => ({
-              id: item.id || Math.random().toString(36).slice(2),
-              name: item.name || q,
-              set: item.set || 'MPC',
-              collector_number: item.source || 'Drive',
-              dpi: item.dpi || 1200,
-              imageUrl: item.imageUrl || `https://lh3.googleusercontent.com/d/${item.id}`,
-              tags: item.tags || ['Community Art', `${item.dpi || 1200} DPI`],
-              source: item.source || 'MPCFill'
-            }));
-          }
-        }
-      } catch (e: any) {
-        console.warn(`[MPCFill Search] Live API offline or unroutable (${e.message}). Using high-DPI curated database.`);
-      }
-    }
-
-    // Step 2: Combine with curated high-DPI library
-    const filteredCurated = curatedMpcLibrary.filter(item => {
-      if (isBack && item.type !== 'back') return false;
-      if (!isBack && item.type === 'back' && q) {
-        // Only show backs if query specifically searches for backs or back pattern
-        if (!q.toLowerCase().includes('back') && !q.toLowerCase().includes('cardback')) return false;
-      }
-      if (q) {
-        const searchTerms = q.toLowerCase().split(' ');
-        const matchesName = searchTerms.every(term => item.name.toLowerCase().includes(term));
-        const matchesTags = item.tags.some((t: string) => t.toLowerCase().includes(q.toLowerCase()));
-        return matchesName || matchesTags;
-      }
-      return isBack ? item.type === 'back' : true;
-    });
-
-    results = [...results, ...filteredCurated];
-
-    if (setFilter && setFilter.trim() !== '') {
-      const targetSet = setFilter.trim().toLowerCase();
-      results = results.filter(item => {
-        return (item.set && item.set.toLowerCase() === targetSet) || 
-               (item.tags && item.tags.some((t: string) => t.toLowerCase().includes(targetSet)));
-      });
-    }
-
-    // If still empty and query provided, dynamically generate a custom high-res MPC entry using Scryfall's ultra-res prints
-    if (results.length === 0 && q) {
-      try {
-        const sfUrl = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(q)}`;
-        const sfResp = await fetch(sfUrl, { headers: { "User-Agent": "SCMUI/1.1.0" } });
-        if (sfResp.ok) {
-          const sfCard = await sfResp.json();
-          results.push({
-            id: `mpc_${sfCard.id}`,
-            name: sfCard.name,
-            set: 'MPC',
-            collector_number: '1200-Ultra',
-            dpi: 1200,
-            imageUrl: sfCard.image_uris?.png || sfCard.image_uris?.large || sfCard.card_faces?.[0]?.image_uris?.png,
-            tags: ['1200 DPI Render', 'MPC Bleed Edge Ready', sfCard.set_name],
-            source: 'MPC Community Drive'
-          });
-          results.push({
-            id: `mpc_${sfCard.id}_800`,
-            name: sfCard.name,
-            set: 'MPC',
-            collector_number: '800-Showcase',
-            dpi: 800,
-            imageUrl: sfCard.image_uris?.large || sfCard.image_uris?.normal || sfCard.card_faces?.[0]?.image_uris?.large,
-            tags: ['800 DPI', 'Full Art', 'Custom Artist'],
-            source: 'Chilli_Axe Drive'
-          });
-        }
-      } catch (err) { }
-    }
-
-    // Apply DPI filter
-    if (dpiFilter && dpiFilter !== 'all') {
-      const dpiNum = parseInt(dpiFilter, 10);
-      if (!isNaN(dpiNum)) {
-        results = results.filter(r => (r.dpi || 1200) >= dpiNum);
-      }
-    }
-
-    if (setFilter && setFilter.trim() !== '') {
-      const lowerSet = setFilter.trim().toLowerCase();
-      results = results.filter(r => (r.set || '').toLowerCase() === lowerSet || (r.tags || []).some((t: string) => t.toLowerCase().includes(lowerSet)));
-    }
-
-    res.json({ success: true, count: results.length, data: results });
-  });
-
-  app.post("/api/scryfall/download", async (req, res) => {
-    const { imageUrl, filename, target, type } = req.body;
-    if (!imageUrl || !filename) {
-      return res.status(400).json({ error: "imageUrl and filename are required" });
-    }
-
-    try {
-      const destType = type || 'front';
-      const targetBase = target === 'plugins'
-        ? pluginsPath
-        : (target === 'library' ? libraryPath : path.join(scmPath, 'game'));
-      const destDir = path.join(targetBase, destType);
-
-      if (!fs.existsSync(destDir)) {
-        fs.mkdirSync(destDir, { recursive: true });
-      }
-
-      const safeFilename = filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? filename : `${filename}.png`;
-      const filePath = path.join(destDir, safeFilename);
-
-      console.log(`[Art Download] Target: ${target}, Type: ${destType}, File: ${filePath}`);
-
-      const headers: Record<string, string> = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-      };
-
-      const response = await fetch(imageUrl, { headers, redirect: 'follow' });
-      if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
-
-      const arrayBuffer = await response.arrayBuffer();
-      fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
-
-      console.log(`[Art Download] Successfully saved ${destType} image: ${safeFilename} (${arrayBuffer.byteLength} bytes)`);
-      res.json({ success: true, filename: safeFilename, path: filePath, size: arrayBuffer.byteLength });
-    } catch (err: any) {
-      console.error(`[Art Download Error]:`, err.message);
-      res.status(500).json({ error: "Failed to download card art", details: err.message });
-    }
-  });
-
-app.get("/api/moxfield-proxy", async (req, res) => {
+  app.get("/api/moxfield-proxy", async (req, res) => {
     const { deckId } = req.query;
     if (!deckId) return res.status(400).json({ error: "deckId is required" });
 
@@ -1000,13 +557,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
             ? path.join(venvPath, 'Scripts', 'pip.exe')
             : path.join(venvPath, 'bin', 'pip');
 
-        const reqPath = path.join(scmPath, 'requirements.txt');
-        if (fs.existsSync(reqPath)) {
-            let reqData = fs.readFileSync(reqPath, 'utf8');
-            reqData = reqData.replace(/numpy==[0-9\.]+/g, 'numpy');
-            fs.writeFileSync(reqPath, reqData, 'utf8');
-        }
-
         sendEvent('stdout', 'Installing requirements...');
         await runCommand(pipExecutable, ['install', '-r', 'requirements.txt'], scmPath);
 
@@ -1170,9 +720,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     
     // Copy the entire game folder to the project folder
     const targetDir = path.join(projectsDir, name);
-    if (fs.existsSync(targetDir)) {
-      fs.rmSync(targetDir, { recursive: true, force: true });
-    }
     fs.mkdirSync(targetDir, { recursive: true });
     
     try {
@@ -1254,7 +801,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   app.get("/api/download-template/:filename", (req, res) => {
     const { filename } = req.params;
-    const { borderless } = req.query;
     if (!filename) {
       return res.status(400).json({ error: "Filename parameter is required." });
     }
@@ -1262,12 +808,12 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const possibleDirs = [
       path.join(scmPath, 'cutting_templates'),
       path.join(scmSourcePath, 'cutting_templates'),
-      path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-3.0.0', 'cutting_templates'),
-      path.join(resourcesPath, 'silhouette-card-maker-3.0.0', 'cutting_templates'),
-      path.join(baseDataPath, 'src', 'silhouette-card-maker-3.0.0', 'cutting_templates'),
-      path.join(baseAppPath, 'src', 'silhouette-card-maker-3.0.0', 'cutting_templates'),
+      path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-main', 'cutting_templates'),
+      path.join(resourcesPath, 'silhouette-card-maker-main', 'cutting_templates'),
+      path.join(baseDataPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
+      path.join(baseAppPath, 'src', 'silhouette-card-maker-main', 'cutting_templates'),
       // When inside app.asar (Mac), the unpacked directory is beside it
-      path.join(baseAppPath, '..', 'app.asar.unpacked', 'src', 'silhouette-card-maker-3.0.0', 'cutting_templates')
+      path.join(baseAppPath, '..', 'app.asar.unpacked', 'src', 'silhouette-card-maker-main', 'cutting_templates')
     ];
 
     let templatesBaseDir: string | null = null;
@@ -1310,29 +856,17 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const allFiles = getAllFiles(templatesBaseDir);
     const reqExt = path.extname(filename).toLowerCase();
     const reqBase = path.basename(filename, reqExt);
-    const targetClean = reqBase.toLowerCase().replace(/[-_]v\d+$/i, "").replace(/[-_]borderless/i, "").trim();
+    const targetClean = reqBase.toLowerCase().replace(/[-_]v\d+$/i, "").trim();
 
     let matchedFilePath: string | null = null;
-    let bestScore = -1;
-    const isBorderless = borderless === 'true';
-
     for (const file of allFiles) {
       const fileExt = path.extname(file).toLowerCase();
       if (fileExt !== reqExt) continue;
       const fileBase = path.basename(file, fileExt);
-      const fileClean = fileBase.toLowerCase().replace(/[-_]v\d+$/i, "").replace(/[-_]borderless/i, "").trim();
-      
+      const fileClean = fileBase.toLowerCase().replace(/[-_]v\d+$/i, "").trim();
       if (fileClean === targetClean) {
-        const fileIsBorderless = file.toLowerCase().includes('borderless');
-        let score = 0;
-        if (isBorderless && fileIsBorderless) score = 2;
-        else if (!isBorderless && !fileIsBorderless) score = 2;
-        else score = 1; // Fallback match
-        
-        if (score > bestScore) {
-          bestScore = score;
-          matchedFilePath = file;
-        }
+        matchedFilePath = file;
+        break;
       }
     }
 
@@ -1368,7 +902,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     let targetFronts = path.join(scmPath, 'game', 'front');
     let targetBacks = path.join(scmPath, 'game', 'back');
     let targetDouble = path.join(scmPath, 'game', 'double_sided');
-    let targetDecklistDir = path.join(scmPath, 'game', 'decklist');
+    let targetDecklist = null; // projects can contain decklists too
     
     if (req.query.project) {
         const projectDir = path.join(projectsDir, req.query.project as string);
@@ -1378,67 +912,22 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         targetFronts = path.join(projectDir, 'front');
         targetBacks = path.join(projectDir, 'back');
         targetDouble = path.join(projectDir, 'double_sided');
-        targetDecklistDir = path.join(projectDir, 'decklist');
     }
     
-    const getFilesAndImages = (dir: string, type: string) => {
-      const files: string[] = [];
-      const images: Record<string, string> = {};
+    const getFiles = (dir: string) => {
       try {
         if (fs.existsSync(dir)) {
-          const fileList = fs.readdirSync(dir).filter(f => 
-            f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp')
-          );
-          for (const f of fileList) {
-            files.push(f);
-            try {
-              const fullPath = path.join(dir, f);
-              const fileBuf = fs.readFileSync(fullPath);
-              const ext = path.extname(f).toLowerCase().replace('.', '');
-              const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
-              images[`${type}:${f}`] = `data:${mime};base64,${fileBuf.toString('base64')}`;
-            } catch (err) {
-              console.error(`Failed to encode image ${f}:`, err);
-            }
-          }
+          return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
         }
       } catch (e) { }
-      return { files, images };
+      return [];
     };
     
-    const frontData = getFilesAndImages(targetFronts, 'front');
-    const backData = getFilesAndImages(targetBacks, 'back');
-    const doubleData = getFilesAndImages(targetDouble, 'double_sided');
-
-    const decklists: Record<string, string> = {};
-    if (fs.existsSync(targetDecklistDir)) {
-      try {
-        const dFiles = fs.readdirSync(targetDecklistDir);
-        for (const df of dFiles) {
-          const dfPath = path.join(targetDecklistDir, df);
-          if (fs.statSync(dfPath).isFile()) {
-            decklists[df] = fs.readFileSync(dfPath, 'utf8');
-          }
-        }
-      } catch (e) { }
-    }
-
-    const exportData: Record<string, any> = {
-      version: 2,
-      name: (req.query.project as string) || 'workspace',
-      fronts: frontData.files,
-      backs: backData.files,
-      double_sided: doubleData.files,
-      images: {
-        ...frontData.images,
-        ...backData.images,
-        ...doubleData.images
-      }
+    const exportData = {
+      fronts: getFiles(targetFronts),
+      backs: getFiles(targetBacks),
+      double_sided: getFiles(targetDouble)
     };
-
-    if (Object.keys(decklists).length > 0) {
-      exportData.decklists = decklists;
-    }
 
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename=${req.query.project ? `${req.query.project as string}_export.json` : 'workspace_export.json'}`);
@@ -1484,9 +973,9 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   app.post("/api/project/upload", (req, res) => {
     try {
-      const { items, replaceBack, images, decklists, name, saveAsPreset } = req.body;
-      if ((!items || !Array.isArray(items)) && (!images || typeof images !== 'object')) {
-        return res.status(400).json({ error: "Invalid items or images" });
+      const { items, replaceBack } = req.body;
+      if (!items || !Array.isArray(items)) {
+        return res.status(400).json({ error: "Invalid items" });
       }
 
       if (replaceBack) {
@@ -1497,158 +986,52 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         fs.mkdirSync(destDir, { recursive: true });
       }
 
-      const safeProjectName = (name && typeof name === 'string') 
-        ? path.basename(name).replace(/[<>:"/\\|?*]/g, '_').trim() 
-        : null;
-
-      const writtenFiles = new Set<string>();
-
-      // 1. Unpack embedded base64 images if provided
-      if (images && typeof images === 'object') {
-        for (const [key, val] of Object.entries(images)) {
-          if (!val || typeof val !== 'string') continue;
-          
-          let type = 'front';
-          let rawFileName = key;
-          const colonIdx = key.indexOf(':');
-          if (colonIdx !== -1) {
-            type = key.slice(0, colonIdx);
-            rawFileName = key.slice(colonIdx + 1);
-          } else if (key.includes('/')) {
-            const slashIdx = key.indexOf('/');
-            type = key.slice(0, slashIdx);
-            rawFileName = key.slice(slashIdx + 1);
-          } else if (key.includes('\\')) {
-            const slashIdx = key.indexOf('\\');
-            type = key.slice(0, slashIdx);
-            rawFileName = key.slice(slashIdx + 1);
-          }
-
-          if (!['front', 'back', 'double_sided'].includes(type)) {
-            type = 'front';
-          }
-          const safeFileName = path.basename(rawFileName);
-
-          try {
-            const commaIdx = val.indexOf(',');
-            const base64Str = commaIdx !== -1 ? val.slice(commaIdx + 1) : val;
-            const buffer = Buffer.from(base64Str, 'base64');
-
-            // Save to active workspace
-            const destDir = path.join(scmPath, 'game', type);
-            if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-            fs.writeFileSync(path.join(destDir, safeFileName), buffer);
-
-            // Also save to user Library so assets persist on this PC
-            const libDir = path.join(libraryPath, type);
-            if (!fs.existsSync(libDir)) fs.mkdirSync(libDir, { recursive: true });
-            fs.writeFileSync(path.join(libDir, safeFileName), buffer);
-
-            // If saving as preset, write to projects directory
-            if (safeProjectName) {
-              const projDir = path.join(projectsDir, safeProjectName, type);
-              if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
-              fs.writeFileSync(path.join(projDir, safeFileName), buffer);
-            }
-
-            writtenFiles.add(`${type}:${safeFileName}`);
-          } catch (err) {
-            console.error(`Error saving decoded image ${key}:`, err);
-          }
-        }
-      }
-
-      // 2. Unpack decklists if provided
-      if (decklists && typeof decklists === 'object') {
-        const destDeckDir = path.join(scmPath, 'game', 'decklist');
-        if (!fs.existsSync(destDeckDir)) fs.mkdirSync(destDeckDir, { recursive: true });
-        for (const [dfName, dfContent] of Object.entries(decklists)) {
-          if (typeof dfContent === 'string') {
-            const safeDfName = path.basename(dfName);
-            fs.writeFileSync(path.join(destDeckDir, safeDfName), dfContent, 'utf8');
-            if (safeProjectName) {
-              const projDeckDir = path.join(projectsDir, safeProjectName, 'decklist');
-              if (!fs.existsSync(projDeckDir)) fs.mkdirSync(projDeckDir, { recursive: true });
-              fs.writeFileSync(path.join(projDeckDir, safeDfName), dfContent, 'utf8');
-            }
-          }
-        }
-      }
-
-      // 3. Fallback for items referencing existing local Library files
-      const allItems = items || [];
-      allItems.forEach((item: string) => {
-        if (writtenFiles.has(item)) return;
-
-        const [type, rawName] = item.split(':');
-        const safeName = path.basename(rawName);
+      items.forEach(item => {
+        const [type, name] = item.split(':');
         if (type === 'front') {
+          // Copy file
           try {
-            const libPath = path.join(libraryPath, 'front', safeName);
+            const libPath = path.join(libraryPath, 'front', name);
             const destDir = path.join(scmPath, 'game', 'front');
             if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
             
             if (fs.existsSync(libPath)) {
-              fs.copyFileSync(libPath, path.join(destDir, safeName));
-              if (safeProjectName) {
-                const projDir = path.join(projectsDir, safeProjectName, 'front');
-                if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
-                fs.copyFileSync(libPath, path.join(projDir, safeName));
-              }
+              fs.copyFileSync(libPath, path.join(destDir, name));
             }
 
             // Double sided check
-            const dsLibPath = path.join(libraryPath, 'double_sided', safeName);
+            const dsLibPath = path.join(libraryPath, 'double_sided', name);
             if (fs.existsSync(dsLibPath)) {
-              const dsDestDir = path.join(scmPath, 'game', 'double_sided');
-              if (!fs.existsSync(dsDestDir)) fs.mkdirSync(dsDestDir, { recursive: true });
-              fs.copyFileSync(dsLibPath, path.join(dsDestDir, safeName));
-              if (safeProjectName) {
-                const dsProjDir = path.join(projectsDir, safeProjectName, 'double_sided');
-                if (!fs.existsSync(dsProjDir)) fs.mkdirSync(dsProjDir, { recursive: true });
-                fs.copyFileSync(dsLibPath, path.join(dsProjDir, safeName));
-              }
+                const dsDestDir = path.join(scmPath, 'game', 'double_sided');
+                if (!fs.existsSync(dsDestDir)) fs.mkdirSync(dsDestDir, { recursive: true });
+                fs.copyFileSync(dsLibPath, path.join(dsDestDir, name));
             }
           } catch(e) { console.error('Copy front failed:', e); }
         } else if (type === 'back') {
           try {
-            const libPath = path.join(libraryPath, 'back', safeName);
-            const altLibPath = path.join(libraryPath, 'Back', safeName);
+            const libPath = path.join(libraryPath, 'back', name);
+            const altLibPath = path.join(libraryPath, 'Back', name); // Keep fallback if old files exist
             const destDir = path.join(scmPath, 'game', 'back');
             fs.mkdirSync(destDir, { recursive: true });
-            const srcPath = fs.existsSync(libPath) ? libPath : (fs.existsSync(altLibPath) ? altLibPath : null);
-            if (srcPath) {
-              fs.copyFileSync(srcPath, path.join(destDir, safeName));
-              if (safeProjectName) {
-                const projDir = path.join(projectsDir, safeProjectName, 'back');
-                if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
-                fs.copyFileSync(srcPath, path.join(projDir, safeName));
-              }
+            if (fs.existsSync(libPath)) {
+              fs.copyFileSync(libPath, path.join(destDir, name));
+            } else if (fs.existsSync(altLibPath)) {
+              fs.copyFileSync(altLibPath, path.join(destDir, name));
             }
           } catch(e) { console.error('Copy back failed:', e); }
         } else if (type === 'double_sided') {
           try {
-            const libPath = path.join(libraryPath, 'double_sided', safeName);
+            const libPath = path.join(libraryPath, 'double_sided', name);
             const destDir = path.join(scmPath, 'game', 'double_sided');
             fs.mkdirSync(destDir, { recursive: true });
             if (fs.existsSync(libPath)) {
-              fs.copyFileSync(libPath, path.join(destDir, safeName));
-              if (safeProjectName) {
-                const projDir = path.join(projectsDir, safeProjectName, 'double_sided');
-                if (!fs.existsSync(projDir)) fs.mkdirSync(projDir, { recursive: true });
-                fs.copyFileSync(libPath, path.join(projDir, safeName));
-              }
+              fs.copyFileSync(libPath, path.join(destDir, name));
             }
           } catch(e) { console.error('Copy double_sided failed:', e); }
         }
       });
 
-      res.json({ 
-        success: true, 
-        message: `Imported ${writtenFiles.size} image(s)${safeProjectName ? ` and saved preset '${safeProjectName}'` : ''}.`,
-        importedCount: writtenFiles.size,
-        projectName: safeProjectName
-      });
+      res.json({ success: true, message: `Uploaded ${items.length} assets: ${items.map((i: string) => i.split(':')[1]).join(', ')}` });
     } catch (error: any) {
       console.error("Error in /api/project/upload:", error);
       res.status(500).json({ error: error.message || "Internal server error during upload" });
@@ -1929,13 +1312,13 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     let logs = [];
     
     if (!selectedPath) {
-      rootDir = "src/silhouette-card-maker-3.0.0";
+      rootDir = "src/silhouette-card-maker-main";
       logs = [
         "No SCM Route selected. Triggering automatic download...",
         "Downloading: https://github.com/Alan-Cha/silhouette-card-maker/archive/refs/heads/main.zip",
         "Source size: 4.2MB",
         "Extracting main.zip...",
-        "Target directory initialized: src/silhouette-card-maker-3.0.0",
+        "Target directory initialized: src/silhouette-card-maker-main",
         "Checking Python environment...",
         "Python 3.10.x found.",
         "Installing dependencies from requirements.txt...",
@@ -2001,7 +1384,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   app.post("/api/verify-installation", (req, res) => {
     const logs = [
-      "Target SCM Route: " + (rootDir || "src/silhouette-card-maker-3.0.0"),
+      "Target SCM Route: " + (rootDir || "src/silhouette-card-maker-main"),
       "Connecting to GitHub: https://github.com/Alan-Cha/silhouette-card-maker.git",
       "Fetching latest repository manifest...",
       "Checking local file checksums...",
@@ -2486,9 +1869,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           }
           
           if (req.body.tempDirId) {
-             const tempBase = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
-             autoPairCustomTokens(customEnv.SCM_GAME_DIR || tempBase, path.join(tempBase, 'game', 'decklist'));
-             autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
              const getFiles = (dir: string) => {
                 try {
                   const pathWithGame = path.join(customEnv.SCM_GAME_DIR, 'game', dir);
@@ -2509,8 +1889,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
              };
              sendEvent('fetched_files', fetchedFiles);
           } else if (command.startsWith('plugins/') || req.body.isPluginFetch) {
-             autoPairCustomTokens(customEnv.SCM_GAME_DIR || pluginsPath, path.join(pluginsPath, 'game', 'decklist'));
-             autoPairCustomTokens(pluginsPath, path.join(scmPath, 'game', 'decklist'));
              ['front', 'back', 'double_sided'].forEach(df => {
                 const srcDir = path.join(pluginsPath, 'game', df);
                 const dstDir = path.join(pluginsPath, df);
@@ -2640,25 +2018,13 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       }
 
     // Only argStringUpdated declaration
-      let argStringUpdated = parsedArgs.map((arg: any) => {
+      const argStringUpdated = parsedArgs.map((arg: any) => {
         let finalArg = arg;
         if (req.body.uploadedPluginFilePath && arg === req.body.uploadedPluginFilePath) {
             finalArg = path.join(scmPath, arg);
         }
         return finalArg.toString().includes(' ') ? `"${finalArg}"` : finalArg;
       }).join(" ");
-
-      if (command === 'create_pdf.py') {
-          const outDir = path.join(scmPath, 'game', 'output');
-          if (fs.existsSync(outDir)) {
-              fs.rmSync(outDir, { recursive: true, force: true });
-          }
-          fs.mkdirSync(outDir, { recursive: true });
-          
-          if (argStringUpdated.includes('--output_images') && !argStringUpdated.includes('--output_path')) {
-              argStringUpdated += ` --output_path "${outDir}"`;
-          }
-      }
 
       if (req.body.tempDirId) {
         const tempBase = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
@@ -2842,9 +2208,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       }
       
       if (req.body.tempDirId) {
-         const tempBase = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
-         autoPairCustomTokens(customEnv.SCM_GAME_DIR || tempBase, path.join(tempBase, 'game', 'decklist'));
-         autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
          const getFiles = (dir: string) => {
            try {
              if (fs.existsSync(dir)) {
@@ -2857,8 +2220,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
          fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'back'));
          fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'double_sided'));
       } else if (command.startsWith('plugins/') || req.body.isPluginFetch) {
-         autoPairCustomTokens(customEnv.SCM_GAME_DIR || pluginsPath, path.join(pluginsPath, 'game', 'decklist'));
-         autoPairCustomTokens(pluginsPath, path.join(scmPath, 'game', 'decklist'));
          ['front', 'back', 'double_sided'].forEach(df => {
             const srcDir = path.join(pluginsPath, 'game', df);
             const dstDir = path.join(pluginsPath, df);
@@ -3048,19 +2409,19 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     if (baseAppPath.includes('app.asar')) {
       resourcesPath = baseAppPath.substring(0, baseAppPath.indexOf('app.asar'));
     }
-    let scmSourcePath = path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-3.0.0');
+    let scmSourcePath = path.join(resourcesPath, 'app.asar.unpacked', 'src', 'silhouette-card-maker-main');
     if (!fs.existsSync(scmSourcePath)) {
-      scmSourcePath = path.join(resourcesPath, 'silhouette-card-maker-3.0.0');
+      scmSourcePath = path.join(resourcesPath, 'silhouette-card-maker-main');
     }
     if (!fs.existsSync(scmSourcePath)) {
-       scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-3.0.0');
+       scmSourcePath = path.join(baseAppPath, 'src', 'silhouette-card-maker-main');
     }
     
     try {
       console.log(`[Admin] Manually repairing scripts from ${scmSourcePath} to ${scmPath}`);
       let sourceToUse = scmSourcePath;
       if (!fs.existsSync(sourceToUse)) {
-        const altPath = path.join(baseAppPath, 'silhouette-card-maker-3.0.0');
+        const altPath = path.join(baseAppPath, 'silhouette-card-maker-main');
         if (fs.existsSync(altPath)) {
           console.log("[Admin] Found scripts at alternative path (flattened):", altPath);
           sourceToUse = altPath;
@@ -3099,7 +2460,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       scmPath,
       exists: {
         scmPath: fs.existsSync(scmPath),
-        scmSourcePath: fs.existsSync(path.join(baseAppPath, 'src', 'silhouette-card-maker-3.0.0')),
+        scmSourcePath: fs.existsSync(path.join(baseAppPath, 'src', 'silhouette-card-maker-main')),
         fetch: fs.existsSync(path.join(scmPath, 'plugins', 'mtg', 'fetch.py'))
       },
       files: listFiles(scmPath)

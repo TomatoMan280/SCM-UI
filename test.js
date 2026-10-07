@@ -1,6 +1,6 @@
 const { execSync } = require('child_process');
 try {
-  const result = execSync('python3 src/silhouette-card-maker-main/create_pdf.py --help');
+  const result = execSync('python3 src/silhouette-card-maker-3.0.0/create_pdf.py --help');
   console.log(result.toString());
 } catch (e) {
   console.error(e.message);

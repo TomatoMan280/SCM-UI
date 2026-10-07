@@ -20,7 +20,7 @@ def offset_images(images, x_offset, y_offset, ppi, angle_offset=0.0):
     return result_images
 
 def test():
-    pdf = pdfium.PdfDocument('src/silhouette-card-maker-main/calibration/letter-calibration.pdf')
+    pdf = pdfium.PdfDocument('src/silhouette-card-maker-3.0.0/calibration/letter-calibration.pdf')
     raw_images = []
     ppi = 300
     for page_number in range(len(pdf)):

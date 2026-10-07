@@ -1,7 +1,7 @@
 from PIL import ImageFont
 import os
 
-font_path = "/src/silhouette-card-maker-main/assets/arial.ttf"
+font_path = "/src/silhouette-card-maker-3.0.0/assets/arial.ttf"
 print(f"Checking {font_path}")
 if os.path.exists(font_path):
     print("File exists")

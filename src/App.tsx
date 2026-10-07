@@ -36,7 +36,9 @@ import {
   LayoutGrid,
   Upload,
   Settings2,
-  Check
+  Check,
+  Sparkles,
+  Search
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -44,9 +46,32 @@ import { Theme, setTheme, getTheme } from './lib/theme';
 import PresetManager from './components/PresetManager';
 import ProjectManager from './components/ProjectManager';
 
-const stripExt = (filename: string) => {
+const stripExt = (filename?: string | null) => {
+  if (!filename || typeof filename !== 'string') return '';
   const lastDot = filename.lastIndexOf('.');
   return lastDot === -1 ? filename : filename.substring(0, lastDot);
+};
+
+const cleanCardName = (filename?: string | null): string => {
+  if (!filename) return '';
+  let clean = stripExt(filename);
+  // Strip duplicate tags like _copy, _copy2, (1), etc.
+  clean = clean.replace(/_copy\d*$/i, '').replace(/\s*\(\d+\)$/, '');
+  // Strip parenthetical set and collector number info e.g. " (SLD 243)" or " [LEA 12]"
+  clean = clean.replace(/\s*\([a-zA-Z0-9]+\s+[a-zA-Z0-9]+\)$/i, '');
+  clean = clean.replace(/\s*\[[a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)?\]$/i, '');
+  // Strip quantity prefixes e.g. "1x ", "4x ", "1 "
+  clean = clean.replace(/^[0-9]+x?\s+/, '');
+  // Handle SCM's squished format e.g. "1blacklotus1" -> strip leading digits and trailing digits
+  if (/^\d+[a-zA-Z]/.test(clean)) {
+    clean = clean.replace(/^\d+/, '');
+  }
+  if (/[a-zA-Z]\d+$/.test(clean)) {
+    clean = clean.replace(/\d+$/, '');
+  }
+  // Replace underscores and dashes with spaces
+  clean = clean.replace(/[_-]+/g, ' ');
+  return clean.trim();
 };
 
 // Types
@@ -334,6 +359,37 @@ const PLUGINS: PluginConfig[] = [
     websites: [{ name: 'YGOProDeck', url: 'https://ygoprodeck.com/' }]
   },
   {
+    id: 'lotr_lcg',
+    name: 'The Lord of the Rings: The Card Game',
+    formats: ['ringsdb_url', 'ringsdb_decklist', 'hallofbeorn_url'],
+    options: [
+      { label: 'Scenario Mode', flag: '--scenario_mode', type: 'select', choices: ['normal', 'easy', 'nightmare'] }
+    ],
+    websites: [
+      { name: 'RingsDB', url: 'https://ringsdb.com/' },
+      { name: 'Hall of Beorn', url: 'https://hallofbeorn.com/' }
+    ]
+  },
+  {
+    id: 'keyforge',
+    name: 'KeyForge',
+    formats: ['master_vault_url', 'decks_of_keyforge_url', 'csv'],
+    options: [],
+    websites: [
+      { name: 'Master Vault', url: 'https://mastervault.com/' },
+      { name: 'Decks of KeyForge', url: 'https://decksofkeyforge.com/' }
+    ]
+  },
+  {
+    id: 'arkham_horror_lcg',
+    name: 'Arkham Horror: The Card Game',
+    formats: ['arkhamdb_url', 'arkhamdb_decklist'],
+    options: [],
+    websites: [
+      { name: 'ArkhamDB', url: 'https://arkhamdb.com/' }
+    ]
+  },
+  {
     id: 'custom_script_upload',
     name: 'Custom Python Script',
     formats: ['script'],
@@ -362,6 +418,8 @@ interface AppStatus {
 const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onClose: () => void }) => {
   const [currentImage, setCurrentImage] = useState(initialImage);
   const [allImages, setAllImages] = useState<string[]>([]);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [backSrc, setBackSrc] = useState<string | null>(null);
 
   useEffect(() => {
     const allElements = Array.from(document.querySelectorAll<HTMLElement>('.lightbox-trigger'));
@@ -376,7 +434,20 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
     setAllImages(filteredElements
       .map(el => el.getAttribute('data-enlarge-src') as string)
       .filter(Boolean));
+
+    const bSrc = initialEl?.getAttribute('data-back-src');
+    setBackSrc(bSrc || null);
+    setIsFlipped(false);
   }, [initialImage]);
+
+  // When currentImage changes, update backSrc
+  useEffect(() => {
+    const allElements = Array.from(document.querySelectorAll<HTMLElement>('.lightbox-trigger'));
+    const matchEl = allElements.find(el => el.getAttribute('data-enlarge-src') === currentImage);
+    const bSrc = matchEl?.getAttribute('data-back-src');
+    setBackSrc(bSrc || null);
+    setIsFlipped(false);
+  }, [currentImage]);
 
   const goPrev = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
     e?.stopPropagation();
@@ -390,15 +461,24 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
     if (idx !== -1 && idx < allImages.length - 1) setCurrentImage(allImages[idx + 1]);
   }, [currentImage, allImages]);
 
+  const toggleFlip = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
+    e?.stopPropagation();
+    if (backSrc) setIsFlipped(f => !f);
+  }, [backSrc]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') goPrev(e);
       if (e.key === 'ArrowRight') goNext(e);
       if (e.key === 'Escape') onClose();
+      if ((e.key === 'f' || e.key === 'F' || e.key === ' ') && backSrc) {
+        e.preventDefault();
+        toggleFlip(e);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [goPrev, goNext, onClose]);
+  }, [goPrev, goNext, onClose, toggleFlip, backSrc]);
 
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => setTouchStart(e.targetTouches[0].clientX);
@@ -415,19 +495,33 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex !== -1 && currentIndex < allImages.length - 1;
 
+  const displaySrc = isFlipped && backSrc ? backSrc : currentImage;
+
   return (
     <div 
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-8"
+      className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-8"
       onClick={onClose}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      <button 
-        className="absolute top-6 right-6 p-2 text-white/50 hover:text-white transition-colors z-20"
-        onClick={onClose}
-      >
-        <X size={28} />
-      </button>
+      <div className="absolute top-6 right-6 flex items-center gap-3 z-30">
+        {backSrc && (
+          <button 
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-primary-600/30 active:scale-95 cursor-pointer"
+            onClick={toggleFlip}
+            title="Flip card (or press F / Space)"
+          >
+            <RotateCcw size={15} className={cn("transition-transform duration-300", isFlipped && "-rotate-180")} />
+            <span>Flip Card ({isFlipped ? 'Back' : 'Front'})</span>
+          </button>
+        )}
+        <button 
+          className="p-2 text-white/50 hover:text-white transition-colors bg-white/5 rounded-full hover:bg-white/10"
+          onClick={onClose}
+        >
+          <X size={24} />
+        </button>
+      </div>
 
       <button 
         className={`absolute left-2 md:left-6 p-2 transition-colors z-20 ${hasPrev ? 'text-white/30 hover:text-white' : 'text-white/10 cursor-not-allowed'}`}
@@ -439,15 +533,21 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
 
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="relative max-h-full max-w-full outline-none flex flex-col items-center justify-center pointer-events-none"
+        animate={{ scale: 1, opacity: 1, rotateY: isFlipped ? 180 : 0 }}
+        transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+        className="relative max-h-full max-w-full outline-none flex flex-col items-center justify-center pointer-events-none perspective-1000"
       >
         <img 
-          src={currentImage} 
+          src={displaySrc} 
           alt="Enlarged asset" 
-          className="max-h-[85vh] max-w-full object-contain rounded-lg shadow-2xl pointer-events-auto" 
-          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            "max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl pointer-events-auto transition-transform duration-300",
+            isFlipped && "[transform:scaleX(-1)]"
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (backSrc) toggleFlip(e);
+          }}
         />
       </motion.div>
 
@@ -1088,13 +1188,21 @@ export default function App() {
   const [cmdOptions, setCmdOptions] = useState(() => {
     const saved = localStorage.getItem('scm_cmd_options');
     return saved ? JSON.parse(saved) : {
+      specialty: 'none',
       card_size: 'standard',
       paper_size: 'letter',
       registration: '3',
+      registration_orientation: 'default',
+      borderless: false,
       only_fronts: false,
       fit: 'stretch',
       extend_corners: 0,
-      ppi: 300,
+      extend_corners_backs: "",
+      extend_bleed: "",
+      extend_bleed_backs: "",
+      extend_edges: "",
+      extend_edges_backs: "",
+      ppi: 1200,
       quality: 100,
       load_offset: true,
       skip: "",
@@ -1151,6 +1259,22 @@ export default function App() {
     localStorage.setItem('scm_advanced_collapsed', String(isAdvancedCollapsed));
   }, [isAdvancedCollapsed]);
 
+  const [isPdfGeneratorCollapsed, setIsPdfGeneratorCollapsed] = useState(() => {
+    return localStorage.getItem('scm_pdf_generator_collapsed') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_pdf_generator_collapsed', String(isPdfGeneratorCollapsed));
+  }, [isPdfGeneratorCollapsed]);
+
+  const [isLiveCommandCollapsed, setIsLiveCommandCollapsed] = useState(() => {
+    return localStorage.getItem('scm_live_command_collapsed') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('scm_live_command_collapsed', String(isLiveCommandCollapsed));
+  }, [isLiveCommandCollapsed]);
+
   const [commandCopied, setCommandCopied] = useState(false);
 
   const CALIBRATION_SHEETS = [
@@ -1160,6 +1284,178 @@ export default function App() {
     { label: 'Arch B', value: 'arch_b-calibration.pdf' },
     { label: 'Tabloid', value: 'tabloid-calibration.pdf' }
   ];
+
+  // Scryfall / Custom Art Picker State
+    // Selected Card for Art Picker
+  const [artTargetCard, setArtTargetCard] = useState<{ name: string; type: 'front' | 'back' | 'double_sided'; targetMode?: 'front' | 'double_sided' | 'back' } | null>(null);
+  const [artSourceTab, setArtSourceTab] = useState<'scryfall' | 'mpcfill'>('scryfall');
+  const [artCardSize, setArtCardSize] = useState(() => {
+    return parseInt(localStorage.getItem('scm_art_card_size') || '150');
+  });
+  useEffect(() => {
+    localStorage.setItem('scm_art_card_size', artCardSize.toString());
+  }, [artCardSize]);
+
+  const [mtgSets, setMtgSets] = useState<{code: string, name: string}[]>([]);
+  useEffect(() => {
+    fetch('https://api.scryfall.com/sets')
+      .then(res => res.json())
+      .then(data => {
+        if (data.data) {
+          setMtgSets(data.data.map((s: any) => ({ code: s.code, name: s.name })));
+        }
+      })
+      .catch(err => console.error("Failed to load MTG sets", err));
+  }, []);
+  const [isBacksOnlyModal, setIsBacksOnlyModal] = useState(false);
+  const [setBackSearchCategory, setSetBackSearchCategory] = useState<'cards' | 'backs'>('cards');
+
+  // Scryfall Filters
+  const [scryfallFilters, setScryfallFilters] = useState({
+    frame: 'all',
+    type: 'all',
+    color: 'all',
+    rarity: 'all',
+    order: 'released',
+    set: ''
+  });
+
+  // MPC Filters
+  const [mpcFilters, setMpcFilters] = useState({
+    dpi: 'all',
+    tag: 'all',
+    set: ''
+  });
+
+  const [isArtPickerOpen, setIsArtPickerOpen] = useState(false);
+  const [artQuery, setArtQuery] = useState('');
+  const [artResults, setArtResults] = useState<any[]>([]);
+  const [isSearchingArt, setIsSearchingArt] = useState(false);
+  const [artDownloadMsg, setArtDownloadMsg] = useState<string | null>(null);
+
+  const handleSearchArt = async (name: string, customFilters?: any, sourceOverride?: 'scryfall' | 'mpcfill') => {
+    const activeSource = sourceOverride || artSourceTab;
+    const queryTerm = (name || '').trim();
+    setIsSearchingArt(true);
+    setArtDownloadMsg(null);
+    try {
+      if (activeSource === 'mpcfill') {
+        const mp = customFilters || mpcFilters;
+        const params = new URLSearchParams({
+          q: queryTerm,
+          isBack: isBacksOnlyModal ? 'true' : 'false',
+          dpi: mp.dpi || 'all',
+          set: mp.set || ''
+        });
+        const res = await fetch(`/api/mpc/search?${params.toString()}`);
+        const data = await res.json();
+        if (data.data && Array.isArray(data.data)) {
+          setArtResults(data.data);
+          if (data.data.length === 0) {
+            setArtDownloadMsg("No matching cards found in MPCFill.");
+          }
+        } else {
+          setArtResults([]);
+          setArtDownloadMsg("No matching cards found in MPCFill.");
+        }
+      } else {
+        const sf = customFilters || scryfallFilters;
+        const params = new URLSearchParams({
+          q: queryTerm || '',
+          frame: sf.frame,
+          type: sf.type,
+          color: sf.color,
+          rarity: sf.rarity,
+          order: sf.order,
+          set: sf.set || ''
+        });
+        const res = await fetch(`/api/scryfall/search?${params.toString()}`);
+        const data = await res.json();
+        if (data.data && Array.isArray(data.data)) {
+          setArtResults(data.data);
+        } else {
+          setArtResults([]);
+          setArtDownloadMsg(data.details || "No matching card printings found.");
+        }
+      }
+    } catch (e: any) {
+      setArtDownloadMsg(`Search failed: ${e.message}`);
+    } finally {
+      setIsSearchingArt(false);
+    }
+  };
+
+  const handleDownloadCardArt = async (card: any, target: 'project' | 'library' | 'plugins', type: 'front' | 'back' | 'double_sided' = 'front', replaceOriginalFilename?: string) => {
+    try {
+      const imgUrl = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
+      if (!imgUrl) {
+        alert("No valid image URL found for this card.");
+        return;
+      }
+      const cleanTitle = (card.name || 'Card').replace(/[/\\?%*:|"<>]/g, '-').trim();
+      const setTag = (card.set || 'custom').toUpperCase();
+      const numTag = card.collector_number || '1';
+      const safeName = replaceOriginalFilename || (type === 'back' ? `${cleanTitle}.png` : `${cleanTitle} (${setTag} ${numTag}).png`);
+      
+      setArtDownloadMsg(`Downloading ${card.name || safeName}...`);
+      
+      const res = await fetch('/api/scryfall/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: imgUrl,
+          filename: safeName,
+          target,
+          type
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setArtDownloadMsg(`✓ Applied "${safeName}" as ${type === 'double_sided' ? 'reverse back' : type} to ${target}!`);
+        const finalFilename = data.filename || safeName;
+        setLocalAssets(prev => [{ name: finalFilename, type, view: target }, ...prev]);
+        setCacheBusts(prev => ({ 
+          ...prev, 
+          [finalFilename]: Date.now(),
+          ...(replaceOriginalFilename ? { [replaceOriginalFilename]: Date.now() } : {})
+        }));
+        await fetchStatus();
+      } else {
+        setArtDownloadMsg(`Error: ${data.error}`);
+      }
+    } catch (e: any) {
+      setArtDownloadMsg(`Download failed: ${e.message}`);
+    }
+  };
+
+  const openArtPickerForCard = (cardFilename: string, type: 'front' | 'back' | 'double_sided' = 'front', targetMode: 'front' | 'double_sided' | 'back' = 'front') => {
+    const isBack = type === 'back' && targetMode !== 'double_sided';
+    setIsBacksOnlyModal(isBack);
+    if (isBack) {
+      setArtSourceTab('mpcfill');
+      setArtTargetCard({ name: cardFilename, type: 'back', targetMode: 'back' });
+      setArtQuery('');
+      setIsArtPickerOpen(true);
+    } else if (targetMode === 'double_sided') {
+      const cleaned = cleanCardName(cardFilename);
+      setArtSourceTab('scryfall');
+      setArtTargetCard({ name: cardFilename, type: 'double_sided', targetMode: 'double_sided' });
+      setArtQuery(cleaned);
+      setIsArtPickerOpen(true);
+      if (cleaned) {
+        handleSearchArt(cleaned);
+      }
+    } else {
+      const cleaned = cleanCardName(cardFilename);
+      setArtSourceTab('scryfall');
+      setArtTargetCard({ name: cardFilename, type, targetMode: 'front' });
+      setArtQuery(cleaned);
+      setIsArtPickerOpen(true);
+      if (cleaned) {
+        handleSearchArt(cleaned);
+      }
+    }
+  };
 
   const [pluginState, setPluginState] = useState(() => {
     const saved = localStorage.getItem('scm_plugin_state');
@@ -1613,21 +1909,39 @@ export default function App() {
 
     addLog("[System] Launching PDF Generator...");
     setPdfReady(false);
-    const args = [
-      '--card_size', cmdOptions.card_size.toString(),
-      '--paper_size', cmdOptions.paper_size.toString(),
-      '--registration', cmdOptions.registration.toString(),
+    const args: string[] = [];
+    if (cmdOptions.specialty && cmdOptions.specialty !== 'none') {
+      args.push('--specialty', cmdOptions.specialty.toString());
+    } else {
+      args.push(
+        '--card_size', cmdOptions.card_size.toString(),
+        '--paper_size', cmdOptions.paper_size.toString(),
+        '--registration', cmdOptions.registration.toString()
+      );
+    }
+    args.push(
       '--fit', cmdOptions.fit.toString(),
       '--ppi', cmdOptions.ppi.toString(),
       '--quality', cmdOptions.quality.toString()
-    ];
+    );
     if (cmdOptions.load_offset) args.push('--load_offset');
     if (cmdOptions.show_outline) args.push('--show_outline');
+    if (cmdOptions.borderless) args.push('--borderless');
     if (cmdOptions.only_fronts) args.push('--only_fronts');
     if (cmdOptions.output_images) args.push('--output_images');
+    if (cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default') {
+      args.push('--registration_orientation');
+      args.push(cmdOptions.registration_orientation);
+    }
+    if (cmdOptions.crop) { args.push('--crop'); args.push(cmdOptions.crop); }
     if (cmdOptions.crop_backs) { args.push('--crop_backs'); args.push(cmdOptions.crop_backs); }
-    if (cmdOptions.label) { args.push('--label'); args.push(cmdOptions.label); }
+    if (cmdOptions.extend_bleed) { args.push('--extend_bleed'); args.push(cmdOptions.extend_bleed); }
+    if (cmdOptions.extend_bleed_backs) { args.push('--extend_bleed_backs'); args.push(cmdOptions.extend_bleed_backs); }
     if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
+    if (cmdOptions.extend_corners_backs) { args.push('--extend_corners_backs'); args.push(cmdOptions.extend_corners_backs); }
+    if (cmdOptions.extend_edges) { args.push('--extend_edges'); args.push(cmdOptions.extend_edges); }
+    if (cmdOptions.extend_edges_backs) { args.push('--extend_edges_backs'); args.push(cmdOptions.extend_edges_backs); }
+    if (cmdOptions.label) { args.push('--label'); args.push(cmdOptions.label); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
     const result = await runCommand('create_pdf.py', args, { 
       startMessage: 'Generating PDF...', 
@@ -1670,7 +1984,7 @@ export default function App() {
     });
   };
 
-  const handleAssetSelect = (identity: string, e?: React.MouseEvent) => {
+  const handleAssetSelect = (identity: string, e?: React.MouseEvent | React.TouchEvent) => {
     const isMultiSelect = e?.ctrlKey || e?.metaKey;
     const isRangeSelect = e?.shiftKey;
     const isBack = identity.startsWith('back:');
@@ -1979,20 +2293,21 @@ export default function App() {
       addLog(`[System] Moved ${finalItems.length} cards to ${destination}.`);
   };
 
-  const saveProject = async () => {
-    if (!saveName) return;
-    setTaskProgress({ current: 1, total: 1, message: `Saving project '${saveName}'...` });
-    addLog(`[Project] Saving current assets as '${saveName}'...`);
+  const saveProject = async (customName?: string) => {
+    const nameToUse = (typeof customName === 'string' && customName.trim()) ? customName.trim() : saveName.trim();
+    if (!nameToUse) return;
+    setTaskProgress({ current: 1, total: 1, message: `Saving project '${nameToUse}'...` });
+    addLog(`[Project] Saving current assets as '${nameToUse}'...`);
     try {
       const res = await fetch('/api/project/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: saveName })
+        body: JSON.stringify({ name: nameToUse })
       });
       const data = await res.json();
       if (data.success) {
         addLog(`[Project] Success: ${data.message}`);
-        setLoadedProject(saveName);
+        setLoadedProject(nameToUse);
         setSaveName("");
         setShowSaveModal(false);
         setTaskProgress(prev => prev ? { ...prev, message: 'Saved successfully.' } : null);
@@ -2074,7 +2389,7 @@ export default function App() {
     try {
       const filename = `${cmdOptions.paper_size}-${cmdOptions.card_size}.${format}`;
       addLog(`[System] Exporting template: ${filename}...`);
-      const response = await fetch(`/api/download-template/${filename}`);
+      const response = await fetch(`/api/download-template/${filename}?borderless=${cmdOptions.borderless}`);
       if (!response.ok) {
         throw new Error(`Template file not found or server error (status ${response.status})`);
       }
@@ -2108,28 +2423,37 @@ export default function App() {
           ...(data.double_sided || []).map((d: string) => `double_sided:${d}`)
         ];
 
-        if (itemsToUpload.length === 0) {
-          addLog(`[Error] Imported JSON contains no items.`);
+        const hasImages = data.images && typeof data.images === 'object' && Object.keys(data.images).length > 0;
+        if (itemsToUpload.length === 0 && !hasImages) {
+          addLog(`[Error] Imported JSON contains no items or images.`);
           return;
         }
 
-        setTaskProgress({ current: 1, total: 1, message: "Importing project assets..." });
+        const presetName = data.name || file.name.replace(/_export\.json$/i, '').replace(/\.json$/i, '');
+        setTaskProgress({ current: 1, total: 1, message: "Importing preset assets & images..." });
         
         const res = await fetch('/api/project/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: itemsToUpload })
+          body: JSON.stringify({ 
+            items: itemsToUpload,
+            images: data.images || {},
+            decklists: data.decklists || {},
+            name: presetName,
+            saveAsPreset: true
+          })
         });
         const result = await res.json();
         
         if (result.success) {
-          addLog(`[Project] Successfully imported project JSON (${itemsToUpload.length} items).`);
+          addLog(`[Project] Successfully imported preset '${presetName}' (${result.message}).`);
+          setLoadedProject(presetName);
           await fetchStatus();
         } else {
           addLog(`[Error] Failed to import: ${result.error}`);
         }
-      } catch (err) {
-        addLog(`[Error] Invalid JSON format uploaded`);
+      } catch (err: any) {
+        addLog(`[Error] Invalid JSON format uploaded: ${err?.message || err}`);
       } finally {
         setTimeout(() => setTaskProgress(null), 1500);
       }
@@ -2390,7 +2714,7 @@ export default function App() {
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">V1.0.9</span>
+                  <span className="text-white/80 font-mono text-[10px]">3.0.0Beta</span>
                 </div>
               </div>
             </div>
@@ -2404,7 +2728,7 @@ export default function App() {
                   rel="noopener noreferrer"
                   className="w-full flex flex-col group transition-all text-left"
                 >
-                  <div className="flex items-center justify-between text-xs text-white/40 group-hover:text-amber-400 transition-colors">
+                  <div className="flex items-center justify-between text-xs text-white/40 group-hover:text-primary-400 transition-colors">
                     <span className="font-semibold">Donate to Alan Cha</span>
                     <ExternalLink size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
@@ -2590,18 +2914,44 @@ export default function App() {
                         </h2>
                         <p className="text-white/40 leading-relaxed mt-2">Configure the layout engine with precise CLI arguments. Every change here updates the underlying command string.</p>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); setIsPdfPresetsOpen(true); }} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0">
+                      <button onClick={(e) => { e.stopPropagation(); setIsPdfPresetsOpen(true); }} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 cursor-pointer" title="CLI Print Options Presets">
                          <Settings2 size={16} /> Presets
                       </button>
                     </div>
                   </div>
 
-
-                       <div className="space-y-8 pt-4">
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        {/* General Settings */}
+                  <div className="space-y-8 pt-4">
+                    <div className="flex flex-col gap-4">
+                      <div 
+                        className="flex items-center gap-2 cursor-pointer select-none group w-fit"
+                        onClick={() => setIsPdfGeneratorCollapsed(!isPdfGeneratorCollapsed)}
+                      >
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400 group-hover:text-primary-300 transition-colors">General Settings & Rendering</h4>
+                        <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isPdfGeneratorCollapsed && "rotate-180")} />
+                      </div>
+                      
+                      <AnimatePresence>
+                        {!isPdfGeneratorCollapsed && (
+                          <motion.div 
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                          >
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* General Settings */}
                         <div className="space-y-4">
-                      <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400">General Settings</h4>
+                      <SelectGroup 
+                        label="Specialty Layout" 
+                        value={cmdOptions.specialty || 'none'} 
+                        onChange={(v) => setCmdOptions(p => ({...p, specialty: v}))}
+                        options={['none', 'letter-commander', 'a4-commander']} 
+                      />
+                      {cmdOptions.specialty && cmdOptions.specialty !== 'none' && (
+                        <p className="text-[10px] text-primary-300 bg-primary-500/10 border border-primary-500/20 rounded-lg p-2 leading-relaxed">
+                          Specialty layout active: 100-card Commander micro-deck on a single sheet. Overrides Card Size, Paper Size, and Registration.
+                        </p>
+                      )}
                       <SelectGroup 
                         label="Card Size" 
                         value={cmdOptions.card_size} 
@@ -2612,7 +2962,7 @@ export default function App() {
                         label="Paper Size" 
                         value={cmdOptions.paper_size} 
                         onChange={(v) => setCmdOptions(p => ({...p, paper_size: v}))}
-                        options={['letter', 'tabloid', 'a4', 'a3', 'arch_b']} 
+                        options={['letter', 'legal', 'tabloid', 'a4', 'a3', 'arch_b']} 
                       />
                       <SelectGroup 
                         label="Registration" 
@@ -2620,11 +2970,16 @@ export default function App() {
                         onChange={(v) => setCmdOptions(p => ({...p, registration: v}))}
                         options={['3', '4']} 
                       />
+                      <SelectGroup 
+                        label="Reg. Mark Orientation" 
+                        value={cmdOptions.registration_orientation || 'default'} 
+                        onChange={(v) => setCmdOptions(p => ({...p, registration_orientation: v}))}
+                        options={['default', 'portrait', 'landscape']} 
+                      />
                     </div>
 
                     {/* Rendering Settings */}
                     <div className="space-y-4">
-                      <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400">Rendering</h4>
                       <SelectGroup 
                         label="Fit Strategy" 
                         value={cmdOptions.fit} 
@@ -2637,7 +2992,7 @@ export default function App() {
                           <input 
                             type="number" 
                             value={cmdOptions.ppi} 
-                            onChange={(e) => setCmdOptions(p => ({...p, ppi: parseInt(e.target.value) || 300}))}
+                            onChange={(e) => setCmdOptions(p => ({...p, ppi: parseInt(e.target.value) || 1200}))}
                             className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono"
                           />
                         </div>
@@ -2650,7 +3005,12 @@ export default function App() {
                             className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono"
                           />
                         </div>
-                      </div>
+                        </div>
+                        </div>
+                        </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
 
                     {/* Advanced Options */}
@@ -2671,50 +3031,113 @@ export default function App() {
                             exit={{ height: 0, opacity: 0 }}
                             className="overflow-hidden"
                           >
-                             <div className="grid grid-cols-2 lg:grid-cols-10 gap-x-4 gap-y-4 pb-2 px-1 text-left">
-                                <div className="space-y-1.5 col-span-1 lg:col-span-2">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block overflow-hidden text-ellipsis">Crop Fronts</label>
+                             <div className="space-y-4 pb-2 px-1 text-left">
+                                {/* Bleed & Edge Overrides Group */}
+                                <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
+                                  {/* Title removed per request */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Crop Fronts</label>
+                                      <input 
+                                        type="text" 
+                                        placeholder="e.g. 3mm" 
+                                        value={cmdOptions.crop} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, crop: e.target.value}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Crop Backs</label>
+                                      <input 
+                                        type="text" 
+                                        placeholder="e.g. 3mm" 
+                                        value={cmdOptions.crop_backs} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, crop_backs: e.target.value}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Outer Bleed Fronts</label>
+                                      <input 
+                                        type="text" 
+                                        placeholder="e.g. 2mm" 
+                                        value={cmdOptions.extend_bleed} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, extend_bleed: e.target.value}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Outer Bleed Backs</label>
+                                      <input 
+                                        type="text" 
+                                        placeholder="e.g. 2mm" 
+                                        value={cmdOptions.extend_bleed_backs} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, extend_bleed_backs: e.target.value}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Edges Fronts</label>
+                                      <input 
+                                        type="text" 
+                                        placeholder="e.g. 3mm" 
+                                        value={cmdOptions.extend_edges} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, extend_edges: e.target.value}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Edges Backs</label>
+                                      <input 
+                                        type="text" 
+                                        placeholder="e.g. 3mm" 
+                                        value={cmdOptions.extend_edges_backs} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, extend_edges_backs: e.target.value}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Corners Fronts</label>
+                                      <input 
+                                        type="number" 
+                                        placeholder="0" 
+                                        value={cmdOptions.extend_corners} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, extend_corners: parseInt(e.target.value) || 0}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Corners Backs</label>
+                                      <input 
+                                        type="text" 
+                                        placeholder="e.g. 3.5mm" 
+                                        value={cmdOptions.extend_corners_backs} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, extend_corners_backs: e.target.value}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Skip Card Number</label>
+                                      <input 
+                                        type="text" 
+                                        placeholder="e.g. 0, 4" 
+                                        value={cmdOptions.skip} 
+                                        onChange={(e) => setCmdOptions(p => ({...p, skip: e.target.value}))} 
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Label Group */}
+                                <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-2">
+                                  <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Page Margin Label</label>
                                   <input 
                                     type="text" 
-                                    value={cmdOptions.crop} 
-                                    onChange={(e) => setCmdOptions(p => ({...p, crop: e.target.value}))} 
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
-                                  />
-                                </div>
-                                <div className="space-y-1.5 col-span-1 lg:col-span-2">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block overflow-hidden text-ellipsis">Crop Backs</label>
-                                  <input 
-                                    type="text" 
-                                    value={cmdOptions.crop_backs} 
-                                    onChange={(e) => setCmdOptions(p => ({...p, crop_backs: e.target.value}))} 
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
-                                  />
-                                </div>
-                                <div className="space-y-1.5 col-span-1 lg:col-span-2">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block overflow-hidden text-ellipsis" title="Extend Corners (px)">Extend Corners</label>
-                                  <input 
-                                    type="number" 
-                                    value={cmdOptions.extend_corners} 
-                                    onChange={(e) => setCmdOptions(p => ({...p, extend_corners: parseInt(e.target.value) || 0}))} 
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
-                                  />
-                                </div>
-                                <div className="space-y-1.5 col-span-1 lg:col-span-1">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block overflow-hidden text-ellipsis">Skip</label>
-                                  <input 
-                                    type="number" 
-                                    value={cmdOptions.skip} 
-                                    onChange={(e) => setCmdOptions(p => ({...p, skip: e.target.value}))} 
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
-                                  />
-                                </div>
-                                <div className="space-y-1.5 col-span-2 lg:col-span-3">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 whitespace-nowrap block">Label</label>
-                                  <input 
-                                    type="text" 
+                                    placeholder="e.g. My Custom Proxy Set - Print 1" 
                                     value={cmdOptions.label} 
                                     onChange={(e) => setCmdOptions(p => ({...p, label: e.target.value}))} 
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono" 
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
                                   />
                                 </div>
                              </div>
@@ -2730,7 +3153,7 @@ export default function App() {
                       onClick={() => setIsCalibrationCollapsed(!isCalibrationCollapsed)}
                     >
                       <div className="space-y-1">
-                        <h4 className="font-bold text-amber-500 flex items-center gap-2 text-xl tracking-tight">
+                        <h4 className="font-bold text-primary-400 flex items-center gap-2 text-xl tracking-tight">
                           <Layers size={20} />
                           Calibration
                         </h4>
@@ -2763,7 +3186,7 @@ export default function App() {
                         {/* Step 1 */}
                         <div className="space-y-4">
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">1</div>
+                            <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">1</div>
                             <h5 className="text-xs font-bold text-white/60">Initial Print</h5>
                           </div>
                           <div className="space-y-1.5 w-full">
@@ -2796,7 +3219,7 @@ export default function App() {
                         {/* Step 2 */}
                         <div className="space-y-4">
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">2</div>
+                            <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">2</div>
                             <h5 className="text-xs font-bold text-white/60">Adjust Offsets</h5>
                           </div>
 
@@ -2807,7 +3230,7 @@ export default function App() {
                                 type="number" 
                                 value={calibration.x} 
                                 onChange={(e) => setCalibration(p => ({ ...p, x: e.target.value }))}
-                                className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
+                                className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
                               />
                             </div>
                             <div className="space-y-1.5 w-full">
@@ -2816,7 +3239,7 @@ export default function App() {
                                 type="number" 
                                 value={calibration.y} 
                                 onChange={(e) => setCalibration(p => ({ ...p, y: e.target.value }))}
-                                className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
+                                className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
                               />
                             </div>
                           </div>
@@ -2828,7 +3251,7 @@ export default function App() {
                               step="0.1"
                               value={calibration.angle} 
                               onChange={(e) => setCalibration(p => ({ ...p, angle: e.target.value }))}
-                              className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
+                              className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
                             />
                           </div>
                         </div>
@@ -2836,7 +3259,7 @@ export default function App() {
                         {/* Step 3 */}
                         <div className="space-y-4">
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-[10px] font-bold text-amber-500">3</div>
+                            <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">3</div>
                             <h5 className="text-xs font-bold text-white/60">Verify & Save</h5>
                           </div>
 
@@ -2893,60 +3316,80 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                     </div>
                 </div>
 
                 <div className="col-span-1 lg:col-span-2 space-y-6">
                   <div className="p-6 rounded-2xl bg-[#0f0f13] border border-white/5 sticky top-8">
-                    <h3 className="font-bold mb-6 flex items-center gap-2 text-primary-400">
-                      <Terminal size={18} />
-                      Live Command Build
-                    </h3>
-                    <div className="p-4 bg-primary-950/20 rounded-xl font-mono text-[11px] text-primary-300 leading-relaxed border border-primary-500/10 mb-4">
-                       python create_pdf.py <br />
-                       --card_size {cmdOptions.card_size} <br />
-                       --paper_size {cmdOptions.paper_size} <br />
-                       --registration {cmdOptions.registration} <br />
-                       --fit {cmdOptions.fit} <br />
-                       --ppi {cmdOptions.ppi} <br />
-                       --quality {cmdOptions.quality} <br />
-                       {cmdOptions.load_offset && "--load_offset"} <br />
-                       {cmdOptions.show_outline && "--show_outline"} <br />
-                       {cmdOptions.crop && `--crop ${cmdOptions.crop}`} <br />
-                       {cmdOptions.crop_backs && `--crop_backs ${cmdOptions.crop_backs}`} <br />
-                       {cmdOptions.label && `--label "${cmdOptions.label}"`} <br />
-                       {cmdOptions.skip && `--skip ${cmdOptions.skip}`} <br />
-                       {cmdOptions.extend_corners > 0 && `--extend_corners ${cmdOptions.extend_corners}`} <br />
-                       {cmdOptions.output_images && "--output_images"}
+                    <div 
+                      className="flex items-center justify-between mb-6 cursor-pointer group"
+                      onClick={() => setIsLiveCommandCollapsed(!isLiveCommandCollapsed)}
+                    >
+                      <h3 className="font-bold flex items-center gap-2 text-primary-400 group-hover:text-primary-300 transition-colors">
+                        <Terminal size={18} />
+                        Live Command Build
+                      </h3>
+                      <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isLiveCommandCollapsed && "rotate-180")} />
                     </div>
 
-                    <div className="mb-8 relative">
-                       <div className="flex justify-between items-center mb-2">
-                         <label className="text-[10px] font-bold uppercase tracking-widest text-primary-400/80">Raw Command</label>
-                         <button 
-                           onClick={() => {
-                             const rawCmd = `python create_pdf.py --card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}`;
-                             navigator.clipboard.writeText(rawCmd);
-                             setCommandCopied(true);
-                             setTimeout(() => setCommandCopied(false), 2000);
-                           }}
-                           className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider text-primary-400/60 hover:text-primary-300 transition-colors"
-                         >
-                           {commandCopied ? <CheckCircle size={12} className="text-green-400" /> : <Copy size={12} />}
-                           {commandCopied ? <span className="text-green-400">Copied!</span> : <span>Copy</span>}
-                         </button>
-                       </div>
-                       <textarea 
-                         readOnly
-                         value={`python create_pdf.py --card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}`}
-                         className="w-full bg-primary-950/10 border border-primary-500/20 rounded-xl px-3 py-2 text-[10px] text-primary-300/80 font-mono resize-none focus:outline-none focus:border-primary-500/50 transition-colors selection:bg-primary-500/30"
-                         rows={4}
-                         onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                       />
-                    </div>
+                    <AnimatePresence>
+                      {!isLiveCommandCollapsed && (
+                        <motion.div 
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="overflow-hidden mb-6"
+                        >
+                          <div className="p-4 bg-primary-950/20 rounded-xl font-mono text-[11px] text-primary-300 leading-relaxed border border-primary-500/10 mb-4">
+                             python create_pdf.py <br />
+                             --card_size {cmdOptions.card_size} <br />
+                             --paper_size {cmdOptions.paper_size} <br />
+                             --registration {cmdOptions.registration} <br />
+                             --fit {cmdOptions.fit} <br />
+                             --ppi {cmdOptions.ppi} <br />
+                             --quality {cmdOptions.quality} <br />
+                             {cmdOptions.load_offset && "--load_offset"} <br />
+                             {cmdOptions.show_outline && "--show_outline"} <br />
+                             {cmdOptions.crop && `--crop ${cmdOptions.crop}`} <br />
+                             {cmdOptions.crop_backs && `--crop_backs ${cmdOptions.crop_backs}`} <br />
+                             {cmdOptions.label && `--label "${cmdOptions.label}"`} <br />
+                             {cmdOptions.skip && `--skip ${cmdOptions.skip}`} <br />
+                             {cmdOptions.extend_corners > 0 && `--extend_corners ${cmdOptions.extend_corners}`} <br />
+                             {cmdOptions.output_images && "--output_images"}
+                          </div>
+
+                          <div className="relative">
+                             <div className="flex justify-between items-center mb-2">
+                               <label className="text-[10px] font-bold uppercase tracking-widest text-primary-400/80">Raw Command</label>
+                               <button 
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   const rawCmd = `python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`;
+                                   navigator.clipboard.writeText(rawCmd);
+                                   setCommandCopied(true);
+                                   setTimeout(() => setCommandCopied(false), 2000);
+                                 }}
+                                 className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider text-primary-400/60 hover:text-primary-300 transition-colors"
+                               >
+                                 {commandCopied ? <CheckCircle size={12} className="text-green-400" /> : <Copy size={12} />}
+                                 {commandCopied ? <span className="text-green-400">Copied!</span> : <span>Copy</span>}
+                               </button>
+                             </div>
+                             <textarea 
+                               readOnly
+                               value={`python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`}
+                               className="w-full bg-primary-950/10 border border-primary-500/20 rounded-xl px-3 py-2 text-[10px] text-primary-300/80 font-mono resize-none focus:outline-none focus:border-primary-500/50 transition-colors selection:bg-primary-500/30"
+                               rows={4}
+                               onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                             />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
 
                     <div className="space-y-4 mb-8">
+                      <ToggleItem label="Apply Saved Offsets" checked={cmdOptions.load_offset} onChange={(v) => setCmdOptions(p => ({...p, load_offset: v}))} />
                       <ToggleItem label="Show Cut Outline" checked={cmdOptions.show_outline} onChange={(v) => setCmdOptions(p => ({...p, show_outline: v}))} />
+                      <ToggleItem label="Borderless" checked={cmdOptions.borderless} onChange={(v) => setCmdOptions(p => ({...p, borderless: v}))} />
                       <ToggleItem label="Only Fronts" checked={cmdOptions.only_fronts} onChange={(v) => setCmdOptions(p => ({...p, only_fronts: v}))} />
                       <ToggleItem label="Output Images" checked={cmdOptions.output_images} onChange={(v) => setCmdOptions(p => ({...p, output_images: v}))} />
                     </div>
@@ -3007,15 +3450,9 @@ export default function App() {
                       <div className="flex gap-2">
                          <button 
                            onClick={() => handleDownloadTemplate('studio3')}
-                           className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white cursor-pointer"
+                           className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white cursor-pointer"
                          >
                            Download .studio3
-                         </button>
-                         <button 
-                           onClick={() => handleDownloadTemplate('dxf')}
-                           className="flex-1 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white cursor-pointer"
-                         >
-                           Download .dxf
                          </button>
                       </div>
                     </div>
@@ -3238,9 +3675,20 @@ export default function App() {
                         )}
                       </div>
 
+                      {assetViewMode === 'project' && (
+                        <button 
+                          onClick={() => setIsProjectPresetsOpen(true)}
+                          className="px-3.5 py-2 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                          title="Manage Saved Decks (Save, Load, Overwrite, Export, Import)"
+                        >
+                          <Package size={14} />
+                          <span>Saved Decks</span>
+                        </button>
+                      )}
+
                       <button 
                         onClick={fetchStatus}
-                        className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all shadow-inner shrink-0"
+                        className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all shadow-inner shrink-0 cursor-pointer"
                         title="Refresh Assets"
                       >
                         <RefreshCw size={16} className={cn(isRefreshing && "animate-spin")} />
@@ -3534,8 +3982,8 @@ export default function App() {
                                 <textarea 
                                   value={pluginState.decklist}
                                   onChange={(e) => setPluginState(prev => ({ ...prev, decklist: e.target.value }))}
-                                  placeholder={pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke' ? "Paste URL or Code here..." : "Paste decklist items here..."}
-                                  className="absolute inset-0 w-full h-full bg-transparent p-4 text-sm font-mono focus:outline-none transition-all resize-none"
+                                  placeholder=""
+                                  className="absolute inset-0 w-full h-full bg-transparent p-4 text-sm font-mono focus:outline-none transition-all resize-none placeholder-white/20"
                                 />
                                 <div className="absolute right-4 bottom-4 pointer-events-none opacity-20 group-hover:opacity-40 transition-opacity">
                                   <Upload size={24} />
@@ -3572,6 +4020,36 @@ export default function App() {
                               <div className="space-y-1">
                                 <span className="font-bold text-white/70 block uppercase tracking-wider text-[10px]">Format Guideline</span>
                                 <p className="leading-relaxed">{FORMAT_HINTS[pluginState.format]}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Direct Card & Backing Ingestion from MPC / Scryfall (Only for MTG) */}
+                          {pluginState.selectedPlugin.id === 'mtg' && (
+                            <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+                              <div className="space-y-0.5 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <Sparkles size={16} className="text-primary-400" />
+                                  <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
+                                </div>
+                                <p className="text-[11px] text-white/50">Search any card or backing by name and add directly into your project workspace without needing a decklist.</p>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setArtTargetCard(null);
+                                    setIsBacksOnlyModal(false);
+                                    setArtSourceTab('scryfall');
+                                    if (!artQuery) setArtQuery('Black Lotus');
+                                    setIsArtPickerOpen(true);
+                                    handleSearchArt(artQuery || 'Black Lotus');
+                                  }}
+                                  className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
+                                >
+                                  <PlusCircle size={15} /> Add Cards from Scryfall / MPC
+                                </button>
+
                               </div>
                             </div>
                           )}
@@ -3726,7 +4204,7 @@ export default function App() {
                       >
                         <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
                           <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({...s, backs: !s.backs}))}>
-                            <div className="p-2 bg-amber-500/20 rounded-lg text-amber-500 shadow-inner">
+                            <div className="p-2 bg-primary-600/20 rounded-lg text-primary-400 shadow-inner">
                               <ImageIcon size={18} />
                             </div>
                             <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
@@ -3736,9 +4214,12 @@ export default function App() {
                               </span>
                             </h3>
                           </div>
-                          <button onClick={() => setCollapsedSections(s => ({...s, backs: !s.backs}))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
-                              <ChevronDown size={18} className={cn("transition-transform", collapsedSections.backs && "-rotate-90")} />
-                          </button>
+                          <div className="flex items-center gap-2">
+
+                            <button onClick={() => setCollapsedSections(s => ({...s, backs: !s.backs}))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                                <ChevronDown size={18} className={cn("transition-transform", collapsedSections.backs && "-rotate-90")} />
+                            </button>
+                          </div>
                         </div>
                         
                         {!collapsedSections.backs && (
@@ -4519,10 +5000,10 @@ export default function App() {
                       className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group"
                     >
                       <div className="flex flex-col">
-                        <span className="text-sm text-white/60 group-hover:text-amber-400 font-medium transition-colors">Original SCM Engine</span>
+                        <span className="text-sm text-white/60 group-hover:text-primary-400 font-medium transition-colors">Original SCM Engine</span>
                         <span className="text-[10px] text-white/40">Python Backend Logic</span>
                       </div>
-                      <ExternalLink size={16} className="text-white/40 group-hover:text-amber-400 transition-colors" />
+                      <ExternalLink size={16} className="text-white/40 group-hover:text-primary-400 transition-colors" />
                     </a>
                     <a
                       href="https://github.com/TomatoMan280/SCM-UI"
@@ -4666,7 +5147,7 @@ export default function App() {
                         setShowThemeSettings(false);
                         startPythonSetup();
                       }}
-                      className="px-6 py-2.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-xl font-bold transition-all border border-indigo-500/30 flex items-center gap-2"
+                      className="px-6 py-2.5 bg-primary-500/20 hover:bg-primary-500/30 text-primary-300 rounded-xl font-bold transition-all border border-primary-500/30 flex items-center gap-2"
                     >
                       <RefreshCw size={16} /> Re-run Setup Process
                     </button>
@@ -4736,6 +5217,49 @@ export default function App() {
             }}
             className="fixed z-[100] pointer-events-auto flex flex-col items-stretch gap-0.5 p-1.5 bg-[#1a1b23]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)] w-48 max-w-[200px]"
           >
+            {/* Proxxied-Style Select Art Options */}
+            {contextMenu.type !== 'back' ? (
+              <>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                    setContextMenu(null);
+                  }}
+                  className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+                  title="Change the front face artwork of this card"
+                >
+                  <Sparkles size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                  <span>Select Front Art</span>
+                </button>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
+                    setContextMenu(null);
+                  }}
+                  className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+                  title="Set back for this card (search any card or back pattern)"
+                >
+                  <Layers size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                  <span>Set Back</span>
+                </button>
+              </>
+            ) : (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openArtPickerForCard(contextMenu.name, 'back', 'back');
+                  setContextMenu(null);
+                }}
+                className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+                title="Change this back pattern"
+              >
+                <Sparkles size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                <span>Select Backing Art</span>
+              </button>
+            )}
+            <div className="h-[1px] w-full bg-white/10 my-1" />
             {(!contextMenu.type || contextMenu.type !== 'back') && (
               <button 
                 onClick={async (e) => {
@@ -5057,6 +5581,510 @@ export default function App() {
         renameProject={renameProject}
         triggerImport={() => importProjectRef.current?.click()}
       />
+
+      {/* Proxxied-Style Artwork & Cardbacks Selector Modal */}
+      <AnimatePresence>
+        {isArtPickerOpen && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-[#12131a] border border-white/10 rounded-3xl w-[95vw] max-w-[1600px] max-h-[95vh] flex flex-col shadow-2xl overflow-hidden text-left"
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-5 border-b border-white/10 bg-white/[0.02]">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-primary-600/20 text-primary-400 flex items-center justify-center border border-primary-500/30 shadow-inner">
+                    <Sparkles size={20} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-bold text-white">
+                        {artTargetCard?.targetMode === 'double_sided'
+                          ? `Set Back for: ${cleanCardName(artTargetCard.name)}`
+                          : isBacksOnlyModal 
+                            ? "Add Card Backing" 
+                            : "Select Cards"}
+                      </h3>
+                      {artTargetCard && (
+                        <span className="px-2 py-0.5 rounded-full bg-primary-600/30 text-primary-300 text-[10px] font-mono border border-primary-500/30">
+                          {artTargetCard.name} ({artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-white/50">
+                      {artTargetCard?.targetMode === 'double_sided'
+                        ? `Choose any card (e.g. Sol Ring, token) or back pattern to assign as the reverse face of ${cleanCardName(artTargetCard.name)}.`
+                        : isBacksOnlyModal
+                          ? "Search and add high-resolution card back patterns from MPC or Scryfall into your workspace."
+                          : "Browse alternative prints, showcase frames, and custom art (Proxxied style) with DPI sorting."}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {artSourceTab === 'mpcfill' ? (
+                    <a href="https://mpcfill.com" target="_blank" rel="noopener noreferrer" className="p-2 text-white/40 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer" title="Open MPCFill.com">
+                      <ExternalLink size={16} />
+                    </a>
+                  ) : (
+                    <a href="https://scryfall.com" target="_blank" rel="noopener noreferrer" className="p-2 text-white/40 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer" title="Open Scryfall.com">
+                      <ExternalLink size={16} />
+                    </a>
+                  )}
+                  <button 
+                    onClick={() => setIsArtPickerOpen(false)}
+                    className="p-2 text-white/40 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Source Tabs & Search Bar (Visible in ALL modes including Add Back and Set Back) */}
+              <div className="p-5 border-b border-white/10 bg-white/[0.01] space-y-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Category toggle if in Set Back mode (Fronts vs Backs) */}
+                  {artTargetCard?.targetMode === 'double_sided' ? (
+                    <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSetBackSearchCategory('cards');
+                          setIsBacksOnlyModal(false);
+                          if (artQuery) handleSearchArt(artQuery, undefined, artSourceTab);
+                        }}
+                        className={cn(
+                          "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                          setBackSearchCategory === 'cards' ? "bg-primary-600 text-white shadow-lg" : "text-white/50 hover:text-white"
+                        )}
+                      >
+                        <Layers size={13} /> Search Cards
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSetBackSearchCategory('backs');
+                          setIsBacksOnlyModal(true);
+                          handleSearchArt(artQuery, undefined, 'mpcfill');
+                        }}
+                        className={cn(
+                          "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                          setBackSearchCategory === 'backs' ? "bg-primary-600 text-white shadow-lg" : "text-white/50 hover:text-white"
+                        )}
+                      >
+                        <ImageIcon size={13} /> Search Backs
+                      </button>
+                    </div>
+                  ) : (
+                    /* Provider Tabs */
+                    <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArtSourceTab('scryfall');
+                          handleSearchArt(artQuery || (isBacksOnlyModal ? 'Cardback' : 'Sol Ring'), undefined, 'scryfall');
+                        }}
+                        className={cn(
+                          "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                          artSourceTab === 'scryfall' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                        )}
+                      >
+                        Scryfall
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArtSourceTab('mpcfill');
+                          handleSearchArt(artQuery || (isBacksOnlyModal ? 'Cardback' : 'Sol Ring'), undefined, 'mpcfill');
+                        }}
+                        className={cn(
+                          "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                          artSourceTab === 'mpcfill' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                        )}
+                      >
+                        MPC
+                      </button>
+                    </div>
+                  )}
+
+                  {artTargetCard && (
+                    <span className="text-xs text-white/40 font-mono">
+                      Target: <span className="text-primary-300 font-bold">{artTargetCard.name}</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Unified Search Input */}
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSearchArt(artQuery);
+                  }}
+                  className="flex gap-3"
+                >
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={16} />
+                    <input 
+                      type="text"
+                      value={artQuery}
+                      onChange={(e) => setArtQuery(e.target.value)}
+                      placeholder={isBacksOnlyModal ? "Search back patterns (e.g. Lotus, Retro, Japanese, Dark, Classic)..." : "Search card name (e.g. Black Lotus, Sol Ring, Mana Crypt, Lightning Bolt)..."}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-primary-500"
+                      autoFocus
+                    />
+                  </div>
+                  <button 
+                    type="submit"
+                    disabled={isSearchingArt}
+                    className="px-6 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-2 cursor-pointer shadow-lg shadow-primary-600/25"
+                  >
+                    {isSearchingArt ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
+                    Search
+                  </button>
+                </form>
+
+                {/* Filters Toolbar with DPI Sorting */}
+                {artSourceTab === 'scryfall' && !isBacksOnlyModal ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Frame Style</label>
+                      <select 
+                        value={scryfallFilters.frame} 
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, frame: e.target.value };
+                          setScryfallFilters(updated);
+                          handleSearchArt(artQuery, updated, 'scryfall');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Frames</option>
+                        <option value="borderless" className="bg-[#1a1a20]">Borderless</option>
+                        <option value="showcase" className="bg-[#1a1a20]">Showcase</option>
+                        <option value="retro" className="bg-[#1a1a20]">Retro / Old Border</option>
+                        <option value="extendedart" className="bg-[#1a1a20]">Extended Art</option>
+                        <option value="fullart" className="bg-[#1a1a20]">Full Art</option>
+                        <option value="etched" className="bg-[#1a1a20]">Etched Foil</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Card Type</label>
+                      <select 
+                        value={scryfallFilters.type} 
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, type: e.target.value };
+                          setScryfallFilters(updated);
+                          handleSearchArt(artQuery, updated, 'scryfall');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Types</option>
+                        <option value="creature" className="bg-[#1a1a20]">Creature</option>
+                        <option value="instant" className="bg-[#1a1a20]">Instant</option>
+                        <option value="sorcery" className="bg-[#1a1a20]">Sorcery</option>
+                        <option value="enchantment" className="bg-[#1a1a20]">Enchantment</option>
+                        <option value="artifact" className="bg-[#1a1a20]">Artifact</option>
+                        <option value="planeswalker" className="bg-[#1a1a20]">Planeswalker</option>
+                        <option value="land" className="bg-[#1a1a20]">Land</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Color</label>
+                      <select 
+                        value={scryfallFilters.color} 
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, color: e.target.value };
+                          setScryfallFilters(updated);
+                          handleSearchArt(artQuery, updated, 'scryfall');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Colors</option>
+                        <option value="w" className="bg-[#1a1a20]">White (W)</option>
+                        <option value="u" className="bg-[#1a1a20]">Blue (U)</option>
+                        <option value="b" className="bg-[#1a1a20]">Black (B)</option>
+                        <option value="r" className="bg-[#1a1a20]">Red (R)</option>
+                        <option value="g" className="bg-[#1a1a20]">Green (G)</option>
+                        <option value="c" className="bg-[#1a1a20]">Colorless (C)</option>
+                        <option value="m" className="bg-[#1a1a20]">Multicolor (M)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Rarity</label>
+                      <select 
+                        value={scryfallFilters.rarity} 
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, rarity: e.target.value };
+                          setScryfallFilters(updated);
+                          handleSearchArt(artQuery, updated, 'scryfall');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Rarities</option>
+                        <option value="mythic" className="bg-[#1a1a20]">Mythic Rare</option>
+                        <option value="rare" className="bg-[#1a1a20]">Rare</option>
+                        <option value="uncommon" className="bg-[#1a1a20]">Uncommon</option>
+                        <option value="common" className="bg-[#1a1a20]">Common</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By (DPI / Date)</label>
+                      <select 
+                        value={scryfallFilters.order} 
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, order: e.target.value };
+                          setScryfallFilters(updated);
+                          handleSearchArt(artQuery, updated, 'scryfall');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="released" className="bg-[#1a1a20]">Release Date (Newest)</option>
+                        <option value="dpi_desc" className="bg-[#1a1a20]">Highest DPI / Resolution</option>
+                        <option value="dpi_asc" className="bg-[#1a1a20]">Lowest DPI</option>
+                        <option value="name" className="bg-[#1a1a20]">Card Name (A-Z)</option>
+                        <option value="set" className="bg-[#1a1a20]">Set Code</option>
+                        <option value="edhrec" className="bg-[#1a1a20]">EDHREC Popularity</option>
+                        <option value="usd" className="bg-[#1a1a20]">USD Value</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">DPI Filter</label>
+                      <select 
+                        value={mpcFilters.dpi}
+                        onChange={(e) => {
+                          const updated = { ...mpcFilters, dpi: e.target.value };
+                          setMpcFilters(updated);
+                          handleSearchArt(artQuery, updated, 'mpcfill');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">Any DPI</option>
+                        <option value="1210" className="bg-[#1a1a20]">1210 DPI (Ultra Proxxied / MPC)</option>
+                        <option value="1200" className="bg-[#1a1a20]">1200+ DPI (Ultra Res)</option>
+                        <option value="1000" className="bg-[#1a1a20]">1000+ DPI</option>
+                        <option value="800" className="bg-[#1a1a20]">800+ DPI (High Res)</option>
+                        <option value="600" className="bg-[#1a1a20]">600+ DPI</option>
+                        <option value="300" className="bg-[#1a1a20]">300+ DPI</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
+                      <select 
+                        value={scryfallFilters.order}
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, order: e.target.value };
+                          setScryfallFilters(updated);
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="dpi_desc" className="bg-[#1a1a20]">DPI: High to Low</option>
+                        <option value="dpi_asc" className="bg-[#1a1a20]">DPI: Low to High</option>
+                        <option value="name" className="bg-[#1a1a20]">Name (A-Z)</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                {artDownloadMsg && (
+                  <div className="text-xs px-3.5 py-2 rounded-xl bg-primary-600/15 border border-primary-500/30 text-primary-300 font-medium">
+                    {artDownloadMsg}
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2">
+                  <button 
+                    onClick={() => {
+                      setScryfallFilters({ frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' });
+                      setMpcFilters({ dpi: 'all', tag: 'all', set: '' });
+                      handleSearchArt(artQuery, { frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' }, artSourceTab);
+                    }}
+                    className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors"
+                  >
+                    Clear Filters
+                  </button>
+                  
+                  <div className="flex items-center gap-3">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">Card Size</label>
+                    <input 
+                      type="range" 
+                      min="100" 
+                      max="300" 
+                      value={artCardSize} 
+                      onChange={(e) => setArtCardSize(parseInt(e.target.value))}
+                      className="w-24 accent-primary-500"
+                    />
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Body: Results Grid */}
+              <div className="flex-1 overflow-y-auto p-5">
+                {isSearchingArt ? (
+                  <div className="h-72 flex flex-col items-center justify-center gap-3 text-white/40">
+                    <Loader2 size={36} className="animate-spin text-primary-400" />
+                    <span className="text-xs">Fetching cards & printings from {artSourceTab === 'scryfall' ? 'Scryfall API' : 'MPCFill'}...</span>
+                  </div>
+                ) : artResults.length > 0 ? (
+                  <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${artCardSize}px, 1fr))` }}>
+                    {artResults
+                      .slice()
+                      .sort((a, b) => {
+                        const dpiA = a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 250);
+                        const dpiB = b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 250);
+                        if (scryfallFilters.order === 'dpi_desc') return dpiB - dpiA;
+                        if (scryfallFilters.order === 'dpi_asc') return dpiA - dpiB;
+                        return 0;
+                      })
+                      .map((card) => {
+                        const img = card.imageUrl || card.image_uris?.normal || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.normal;
+                        const frameEffects = card.frame_effects?.join(', ') || card.tags?.join(', ');
+                        const cardDpi = card.dpi || (card.image_uris?.png ? 300 : card.highres_image ? 300 : 250);
+
+                        return (
+                          <div key={card.id} className="bg-white/[0.03] border border-white/10 hover:border-primary-500/40 rounded-2xl p-2.5 flex flex-col justify-between transition-all group">
+                            <div>
+                              <div 
+                                onClick={() => img && setEnlargedImage(img)}
+                                className="relative aspect-[5/7] rounded-xl overflow-hidden bg-black/40 mb-2 cursor-pointer group/img"
+                                title="Click to enlarge"
+                              >
+                                {img ? (
+                                  <img src={img} alt={card.name} className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-xs text-white/30">No Image</div>
+                                )}
+                                <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none">
+                                  {card.set?.toUpperCase()} #{card.collector_number}
+                                </span>
+                                <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-primary-600/80 backdrop-blur-md text-[8px] font-mono font-bold text-white border border-white/10 pointer-events-none">
+                                  {cardDpi} DPI
+                                </span>
+                              </div>
+                              <h4 className="text-xs font-bold text-white truncate" title={card.name}>{card.name}</h4>
+                              <p className="text-[10px] text-white/40 truncate" title={card.set_name || card.source}>
+                                {card.set_name || card.source || 'Community'} {card.released_at ? `(${card.released_at.slice(0, 4)})` : ''}
+                              </p>
+                              {frameEffects && (
+                                <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-white/5 text-[9px] text-primary-300/80 capitalize truncate max-w-full">
+                                  {frameEffects}
+                                </span>
+                              )}
+                            </div>
+                            
+                            <div className="space-y-1.5 mt-3 pt-2 border-t border-white/5">
+                              {/* Primary Action Button: Replaces old Project & Library buttons */}
+                              {artTargetCard?.targetMode === 'double_sided' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
+                                    handleDownloadCardArt(card, targetMode, 'double_sided', artTargetCard.name);
+                                  }}
+                                  className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1"
+                                  title={`Pair this art as the reverse back of ${artTargetCard.name}`}
+                                >
+                                  <Layers size={12} />
+                                  <span>Set Back</span>
+                                </button>
+                              ) : artTargetCard?.type === 'back' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
+                                    handleDownloadCardArt(card, targetMode, 'back', artTargetCard.name);
+                                  }}
+                                  className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm"
+                                  title={`Replace ${artTargetCard.name} with this back`}
+                                >
+                                  Replace This Back
+                                </button>
+                              ) : artTargetCard?.targetMode === 'front' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
+                                    handleDownloadCardArt(card, targetMode, 'front', artTargetCard.name);
+                                  }}
+                                  className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm"
+                                  title={`Replace ${artTargetCard.name} with this art`}
+                                >
+                                  Replace Front Art
+                                </button>
+                              ) : isBacksOnlyModal ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
+                                    handleDownloadCardArt(card, targetMode, 'back');
+                                  }}
+                                  className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                                  title="Add this card backing to workspace"
+                                >
+                                  <PlusCircle size={12} />
+                                  <span>Add Back</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
+                                    handleDownloadCardArt(card, targetMode, 'front');
+                                  }}
+                                  className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
+                                  title="Add this card to your active workspace"
+                                >
+                                  <PlusCircle size={12} />
+                                  <span>Add Card</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                ) : (
+                  <div className="h-72 flex flex-col items-center justify-center gap-2 text-white/30 text-center px-4">
+                    <Sparkles size={32} className="opacity-40 text-primary-400" />
+                    <p className="text-sm font-semibold text-white/60">
+                      {isBacksOnlyModal ? "Type a search term above to find card back patterns." : "Type a card name above to browse printings."}
+                    </p>
+                    <p className="text-xs text-white/30 max-w-md">
+                      {isBacksOnlyModal ? "Search through community 800 and 1200 DPI card backs or official releases." : "Search MPCFill for 1200 DPI custom arts or Scryfall for all official printings."}
+                    </p>
+                  </div>
+                )}
+
+                {/* Proxxied Bottom Action Bar */}
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setArtQuery('');
+                      setArtTargetCard(null);
+                      setIsBacksOnlyModal(false);
+                      setArtResults([]);
+                    }}
+                    className="w-full py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95"
+                  >
+                    <Search size={14} />
+                    <span>Search for a different card or back...</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
      </div>
   );
 }
@@ -5290,7 +6318,8 @@ interface AssetItemProps {
 }
 
 const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onDragSelectStart, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken }) => {
-
+  // Define isDoubleSided at top-level component scope to prevent ReferenceError crashes
+  const isDoubleSided = type === 'double_sided' || (Array.isArray(allAssets?.double_sided) && allAssets.double_sided.some((d: string) => stripExt(d).toLowerCase() === stripExt(name).toLowerCase()));
   
   const getBaseUrl = () => {
     if (assetViewMode === 'library') return '/library';
@@ -5415,6 +6444,8 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
           "cursor-pointer lightbox-trigger"
         )}
         data-enlarge-src={enlargeSrc}
+        data-front-src={imgSrc}
+        data-back-src={backFace ? (uploadedImages?.[`${backFace.folder}_${backFace.name}`] || `${baseUrl}/${backFace.folder}/${encodeURIComponent(backFace.name)}`) : ''}
         data-lightbox-group={type}
         onClick={(e) => {
           if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -5431,8 +6462,13 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                 onToggleFlip(e);
               }
             }}
-            className="absolute top-2 right-2 z-30 w-7 h-7 rounded-full bg-black/60 border border-white/20 text-white flex items-center justify-center transition-all shadow-md active:scale-95 hover:bg-primary-600 hover:border-primary-400 group/flip opacity-0 group-hover:opacity-100"
-            title="Flip Card"
+            className={cn(
+              "absolute top-2 right-2 z-30 w-7 h-7 rounded-full border text-white flex items-center justify-center transition-all shadow-md active:scale-95 group/flip cursor-pointer",
+              isDoubleSided 
+                ? "bg-primary-600 border-primary-400 opacity-95 hover:opacity-100 shadow-lg shadow-primary-600/30 ring-1 ring-primary-400/50" 
+                : "bg-black/60 border-white/20 opacity-0 group-hover:opacity-100 hover:bg-primary-600 hover:border-primary-400"
+            )}
+            title="Flip Card (Inspect Front / Back)"
           >
             <RotateCcw size={14} className="group-hover/flip:-rotate-180 transition-transform duration-500" />
           </button>
@@ -5467,10 +6503,24 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
             </div>
             
              {type === 'back' && selected && (
-              <div className="absolute top-2 right-2 z-20 px-2 py-0.5 bg-amber-500 rounded-full shadow-lg border border-amber-400">
-                <span className="text-[8px] font-bold text-black uppercase tracking-tighter">Default</span>
+              <div className="absolute top-2 right-2 z-20 px-2 py-0.5 bg-primary-600 rounded-full shadow-lg border border-primary-500">
+                <span className="text-[8px] font-bold text-white uppercase tracking-tighter">Default Back</span>
               </div>
             )}
+
+            {(type === 'front' || type === 'double_sided') && isDoubleSided && (
+              <div className="absolute top-2 left-2 z-20 px-2 py-0.5 bg-primary-600/90 rounded-full shadow-lg border border-primary-400 flex items-center gap-1 backdrop-blur-md">
+                <RotateCcw size={10} className="text-white" />
+                <span className="text-[8px] font-bold text-white uppercase tracking-wider">Custom Back</span>
+              </div>
+            )}
+
+             {isDoubleSided && (
+               <div className="absolute bottom-2 left-2 z-20 px-2 py-0.5 bg-primary-600/90 text-white rounded-md text-[9px] font-bold shadow-md flex items-center gap-1 border border-primary-400/40">
+                 <Layers size={10} />
+                 <span>Double Sided</span>
+               </div>
+             )}
 
             {(type === 'front' || type === 'double_sided') && !selected && assetViewMode !== 'library' && (
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-3 text-center select-none">
@@ -5503,7 +6553,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
               </div>
             </div>
           )}
-        </motion.div>
+</motion.div>
         
         {/* Selection Button */}
         <button 

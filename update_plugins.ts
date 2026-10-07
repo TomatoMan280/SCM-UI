@@ -2,7 +2,7 @@ import fs from 'fs';
 import glob from 'glob';
 import path from 'path';
 
-const files = glob.sync('src/silhouette-card-maker-main/plugins/*/fetch.py');
+const files = glob.sync('src/silhouette-card-maker-3.0.0/plugins/*/fetch.py');
 for (const file of files) {
     let content = fs.readFileSync(file, 'utf8');
     

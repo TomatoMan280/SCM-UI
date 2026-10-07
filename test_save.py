@@ -2,7 +2,7 @@ import pypdfium2 as pdfium
 from PIL import Image, JpegImagePlugin
 
 def test():
-    pdf = pdfium.PdfDocument('src/silhouette-card-maker-main/calibration/letter-calibration.pdf')
+    pdf = pdfium.PdfDocument('src/silhouette-card-maker-3.0.0/calibration/letter-calibration.pdf')
     raw_images = []
     ppi = 300
     for page_number in range(len(pdf)):

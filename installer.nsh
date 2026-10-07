@@ -4,6 +4,7 @@
   Goto label_done
   label_skip_deletion:
   RMDir /r "$APPDATA\SCMUI\src\projects"
+  RMDir /r "$APPDATA\SCMUI\src\silhouette-card-maker-3.0.0"
   RMDir /r "$APPDATA\SCMUI\src\silhouette-card-maker-main"
   RMDir /r "$APPDATA\SCMUI\uploads"
   RMDir /r "$APPDATA\SCMUI\temp-uploads"
