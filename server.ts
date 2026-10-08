@@ -67,6 +67,76 @@ async function startServer() {
       }
     }
   };
+
+  const createTempPatchedPythonScript = (scriptPath: string): { tempPath: string; isTemp: boolean } => {
+    if (fs.existsSync(scriptPath) && scriptPath.endsWith('.py')) {
+      try {
+        let pyCode = fs.readFileSync(scriptPath, 'utf8');
+        let changed = false;
+
+        const scriptDir = path.dirname(scriptPath);
+        const realRepoRoot = scriptPath.startsWith(scmPath) ? scmPath : path.resolve(scriptDir, '..', '..');
+
+        // Always prepend sys.path and fix REPO_ROOT in out-of-tree temporary scripts
+        const sysPathSnippet = `import sys, os\nif r"${realRepoRoot}" not in sys.path:\n    sys.path.insert(0, r"${realRepoRoot}")\nif r"${scriptDir}" not in sys.path:\n    sys.path.insert(0, r"${scriptDir}")\n\n`;
+        pyCode = sysPathSnippet + pyCode;
+        
+        if (pyCode.includes('REPO_ROOT =')) {
+            pyCode = pyCode.replace(/REPO_ROOT\s*=\s*.*$/m, `REPO_ROOT = r"${realRepoRoot}"`);
+        }
+        changed = true;
+
+        // 1. MacOS SSL fix
+        if (!pyCode.includes('_create_unverified_context')) {
+            pyCode = `import ssl\ntry:\n    ssl._create_default_https_context = ssl._create_unverified_context\nexcept:\n    pass\n\n` + pyCode;
+        }
+        // 2. Scryfall User-Agent fix for urllib just in case
+        if (!pyCode.includes('urllib.request.build_opener')) {
+            pyCode = `import urllib.request\ntry:\n    _opener = urllib.request.build_opener()\n    _opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)')]\n    urllib.request.install_opener(_opener)\nexcept:\n    pass\n\n` + pyCode;
+        }
+        // 3. requests User-Agent fix just in case
+        if (pyCode.includes("kwargs['verify'] = False")) {
+           pyCode = pyCode.replace(/kwargs\['verify'\] = False/g, '');
+        }
+        if (!pyCode.includes('import certifi')) {
+           pyCode = `import os\ntry:\n    import certifi\n    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()\n    os.environ['SSL_CERT_FILE'] = certifi.where()\nexcept:\n    pass\n\n` + pyCode;
+        }
+        if (!pyCode.includes('_patched_request_v2')) {
+            pyCode = `try:\n    import urllib3\n    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\nexcept:\n    pass\ntry:\n    import requests\n    _orig_req_v2 = requests.Session.request\n    def _patched_request_v2(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_req_v2(self, *args, **kwargs)\n    requests.Session.request = _patched_request_v2\n    \n    _orig_get_v2 = requests.get\n    def _patched_get_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0'\n        return _orig_get_v2(*args, **kwargs)\n    requests.get = _patched_get_v2\n    \n    _orig_post_v2 = requests.post\n    def _patched_post_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_post_v2(*args, **kwargs)\n    requests.post = _patched_post_v2\nexcept:\n    pass\n\n` + pyCode;
+        }
+        if (/(?:os\.)?path\.join\(REPO_ROOT,\s*['"]game['"],\s*['"]front['"]\)/.test(pyCode)) {
+            pyCode = pyCode.replace(
+              /(?:os\.)?path\.join\(REPO_ROOT,\s*['"]game['"],\s*['"]front['"]\)/g,
+              "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), 'front')"
+            );
+        }
+        if (/(?:os\.)?path\.join\(REPO_ROOT,\s*['"]game['"],\s*['"]double_sided['"]\)/.test(pyCode)) {
+            pyCode = pyCode.replace(
+              /(?:os\.)?path\.join\(REPO_ROOT,\s*['"]game['"],\s*['"]double_sided['"]\)/g,
+              "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), 'double_sided')"
+            );
+        }
+        if (/(?:os\.)?path\.join\(REPO_ROOT,\s*['"]game['"],\s*['"]back['"]\)/.test(pyCode)) {
+            pyCode = pyCode.replace(
+              /(?:os\.)?path\.join\(REPO_ROOT,\s*['"]game['"],\s*['"]back['"]\)/g,
+              "os.path.join(os.environ.get('SCM_GAME_DIR', os.path.join(REPO_ROOT, 'game')), 'back')"
+            );
+        }
+
+        if (changed) {
+            const tempDir = path.join(baseDataPath, 'temp-uploads');
+            if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
+            }
+            const tempFileName = `exec_patch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}_${path.basename(scriptPath)}`;
+            const tempPath = path.join(tempDir, tempFileName);
+            fs.writeFileSync(tempPath, pyCode, 'utf8');
+            return { tempPath, isTemp: true };
+        }
+      } catch(e) {}
+    }
+    return { tempPath: scriptPath, isTemp: false };
+  };
   
   // Ensure all required directories exist (in writable location)
   const requiredPaths = [
@@ -2334,42 +2404,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
          );
       }
 
-      const patchPythonScript = (scriptPath: string) => {
-        if (fs.existsSync(scriptPath) && scriptPath.endsWith('.py')) {
-          try {
-            let pyCode = fs.readFileSync(scriptPath, 'utf8');
-            let changed = false;
-            // 1. MacOS SSL fix
-            if (!pyCode.includes('_create_unverified_context')) {
-                pyCode = `import ssl\ntry:\n    ssl._create_default_https_context = ssl._create_unverified_context\nexcept:\n    pass\n\n` + pyCode;
-                changed = true;
-            }
-            // 2. Scryfall User-Agent fix for urllib just in case
-            if (!pyCode.includes('urllib.request.build_opener')) {
-                pyCode = `import urllib.request\ntry:\n    _opener = urllib.request.build_opener()\n    _opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)')]\n    urllib.request.install_opener(_opener)\nexcept:\n    pass\n\n` + pyCode;
-                changed = true;
-            }
-            // 3. requests User-Agent fix just in case
-            if (pyCode.includes("kwargs['verify'] = False")) {
-               pyCode = pyCode.replace(/kwargs\['verify'\] = False/g, '');
-               changed = true;
-            }
-            if (!pyCode.includes('import certifi')) {
-               pyCode = `import os\ntry:\n    import certifi\n    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()\n    os.environ['SSL_CERT_FILE'] = certifi.where()\nexcept:\n    pass\n\n` + pyCode;
-               changed = true;
-            }
-            if (!pyCode.includes('_patched_request_v2')) {
-                pyCode = `try:\n    import urllib3\n    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\nexcept:\n    pass\ntry:\n    import requests\n    _orig_req_v2 = requests.Session.request\n    def _patched_request_v2(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_req_v2(self, *args, **kwargs)\n    requests.Session.request = _patched_request_v2\n    \n    _orig_get_v2 = requests.get\n    def _patched_get_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_get_v2(*args, **kwargs)\n    requests.get = _patched_get_v2\n    \n    _orig_post_v2 = requests.post\n    def _patched_post_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_post_v2(*args, **kwargs)\n    requests.post = _patched_post_v2\nexcept:\n    pass\n\n` + pyCode;
-                changed = true;
-            }
-            if (changed) {
-                fs.writeFileSync(scriptPath, pyCode);
-            }
-          } catch(e) {}
-        }
-      };
-
-      patchPythonScript(spawnCommand);
+      const { tempPath: scriptToExecute, isTemp: isTempScript } = createTempPatchedPythonScript(spawnCommand);
       
       const gameDir = customEnv.SCM_GAME_DIR || path.join(scmPath, 'game');
       const dirsToRename = [path.join(gameDir, 'front'), path.join(gameDir, 'double_sided')];
@@ -2407,7 +2442,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
           const executeChild = () => {
               return new Promise<number>((resolve, reject) => {
-                  const child = spawn(pythonExecutable, [spawnCommand, ...finalArgs], { cwd: spawnCwd, env: customEnv });
+                  const child = spawn(pythonExecutable, [scriptToExecute, ...finalArgs], { cwd: spawnCwd, env: customEnv });
                   
                   const pingInterval = setInterval(() => {
                       sendEvent('ping', { time: Date.now() });
@@ -2490,6 +2525,10 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           }
           sendEvent('close', { code: 1, hasError: true });
       } finally {
+          if (isTempScript && fs.existsSync(scriptToExecute)) {
+              try { fs.unlinkSync(scriptToExecute); } catch (e) {}
+          }
+
           for (const { original, temp } of fileRenames) {
               try {
                   if (fs.existsSync(temp)) {
@@ -2514,17 +2553,23 @@ app.get("/api/moxfield-proxy", async (req, res) => {
              autoPairCustomTokens(customEnv.SCM_GAME_DIR || tempBase, path.join(tempBase, 'game', 'decklist'));
              autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
              const getFiles = (dir: string) => {
-                try {
-                  const pathWithGame = path.join(customEnv.SCM_GAME_DIR, 'game', dir);
-                  const pathWithoutGame = path.join(customEnv.SCM_GAME_DIR, dir);
-                  if (fs.existsSync(pathWithGame)) {
-                    return fs.readdirSync(pathWithGame).filter(f => !f.startsWith('.'));
+                const filesSet = new Set<string>();
+                const searchDirs = [
+                  customEnv.SCM_GAME_DIR ? path.join(customEnv.SCM_GAME_DIR, dir) : null,
+                  customEnv.SCM_GAME_DIR ? path.join(customEnv.SCM_GAME_DIR, 'game', dir) : null,
+                  path.join(tempBase, dir),
+                  path.join(tempBase, 'game', dir)
+                ].filter(Boolean) as string[];
+                for (const searchDir of searchDirs) {
+                  if (fs.existsSync(searchDir)) {
+                    try {
+                      fs.readdirSync(searchDir).forEach(f => {
+                         if (!f.startsWith('.')) filesSet.add(f);
+                      });
+                    } catch(e) {}
                   }
-                  if (fs.existsSync(pathWithoutGame)) {
-                    return fs.readdirSync(pathWithoutGame).filter(f => !f.startsWith('.'));
-                  }
-                  return [];
-                } catch(e) { return []; }
+                }
+                return Array.from(filesSet);
              };
              const fetchedFiles = {
                fronts: getFiles('front'),
@@ -2709,7 +2754,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         }
       }
       
-      let execCommand = `"${pythonExecutable}" "${scriptAbsPath}" ${argStringUpdated}`;
+      const { tempPath: scriptToExecuteRunCmd, isTemp: isTempScriptRunCmd } = createTempPatchedPythonScript(scriptAbsPath);
+      let execCommand = `"${pythonExecutable}" "${scriptToExecuteRunCmd}" ${argStringUpdated}`;
 
       console.log(`[System] Executing: ${execCommand} in ${execCwd}`);
       
@@ -2728,40 +2774,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         } catch(e) {}
         return res.json({ output: [`$ ${fullCommand}`, errorMsg] });
       }
-
-      const patchPythonScriptRunCmd = (scriptPath: string) => {
-        if (fs.existsSync(scriptPath) && scriptPath.endsWith('.py')) {
-          try {
-            let pyCode = fs.readFileSync(scriptPath, 'utf8');
-            let changed = false;
-            if (!pyCode.includes('_create_unverified_context')) {
-                pyCode = `import ssl\ntry:\n    ssl._create_default_https_context = ssl._create_unverified_context\nexcept:\n    pass\n\n` + pyCode;
-                changed = true;
-            }
-            if (!pyCode.includes('urllib.request.build_opener')) {
-                pyCode = `import urllib.request\ntry:\n    _opener = urllib.request.build_opener()\n    _opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64 AppleWebKit/537.36)')]\n    urllib.request.install_opener(_opener)\nexcept:\n    pass\n\n` + pyCode;
-                changed = true;
-            }
-            if (pyCode.includes("kwargs['verify'] = False")) {
-               pyCode = pyCode.replace(/kwargs\['verify'\] = False/g, '');
-               changed = true;
-            }
-            if (!pyCode.includes('import certifi')) {
-               pyCode = `import os\ntry:\n    import certifi\n    os.environ['REQUESTS_CA_BUNDLE'] = certifi.where()\n    os.environ['SSL_CERT_FILE'] = certifi.where()\nexcept:\n    pass\n\n` + pyCode;
-               changed = true;
-            }
-            if (!pyCode.includes('_patched_request_v2')) {
-                pyCode = `try:\n    import urllib3\n    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)\nexcept:\n    pass\ntry:\n    import requests\n    _orig_req_v2 = requests.Session.request\n    def _patched_request_v2(self, *args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'\n        return _orig_req_v2(self, *args, **kwargs)\n    requests.Session.request = _patched_request_v2\n    _orig_get_v2 = requests.get\n    def _patched_get_v2(*args, **kwargs):\n        kwargs.setdefault('headers', {})['User-Agent'] = 'Mozilla/5.0'\n        return _orig_get_v2(*args, **kwargs)\n    requests.get = _patched_get_v2\nexcept:\n    pass\n\n` + pyCode;
-                changed = true;
-            }
-            if (changed) {
-                fs.writeFileSync(scriptPath, pyCode);
-            }
-          } catch(e) {}
-        }
-      };
-      
-      patchPythonScriptRunCmd(scriptAbsPath);
 
       const gameDir = customEnv.SCM_GAME_DIR || path.join(scmPath, 'game');
       const dirsToRename = [path.join(gameDir, 'front'), path.join(gameDir, 'double_sided')];
@@ -2843,6 +2855,9 @@ app.get("/api/moxfield-proxy", async (req, res) => {
             }
           }
       } finally {
+          if (isTempScriptRunCmd && fs.existsSync(scriptToExecuteRunCmd)) {
+              try { fs.unlinkSync(scriptToExecuteRunCmd); } catch (e) {}
+          }
           for (const { original, temp } of fileRenames) {
               try {
                   if (fs.existsSync(temp)) {
@@ -2870,16 +2885,27 @@ app.get("/api/moxfield-proxy", async (req, res) => {
          autoPairCustomTokens(customEnv.SCM_GAME_DIR || tempBase, path.join(tempBase, 'game', 'decklist'));
          autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
          const getFiles = (dir: string) => {
-           try {
-             if (fs.existsSync(dir)) {
-               return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
-             }
-           } catch (e) { }
-           return [];
+            const filesSet = new Set<string>();
+            const searchDirs = [
+              customEnv.SCM_GAME_DIR ? path.join(customEnv.SCM_GAME_DIR, dir) : null,
+              customEnv.SCM_GAME_DIR ? path.join(customEnv.SCM_GAME_DIR, 'game', dir) : null,
+              path.join(tempBase, dir),
+              path.join(tempBase, 'game', dir)
+            ].filter(Boolean) as string[];
+            for (const searchDir of searchDirs) {
+              if (fs.existsSync(searchDir)) {
+                try {
+                  fs.readdirSync(searchDir).forEach(f => {
+                     if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) filesSet.add(f);
+                  });
+                } catch(e) {}
+              }
+            }
+            return Array.from(filesSet);
          };
-         fetchedFiles.fronts = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'front'));
-         fetchedFiles.backs = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'back'));
-         fetchedFiles.double_sided = getFiles(path.join(customEnv.SCM_GAME_DIR, 'game', 'double_sided'));
+         fetchedFiles.fronts = getFiles('front');
+         fetchedFiles.backs = getFiles('back');
+         fetchedFiles.double_sided = getFiles('double_sided');
       } else if (command.startsWith('plugins/') || req.body.isPluginFetch) {
          autoPairCustomTokens(customEnv.SCM_GAME_DIR || pluginsPath, path.join(pluginsPath, 'game', 'decklist'));
          autoPairCustomTokens(pluginsPath, path.join(scmPath, 'game', 'decklist'));
