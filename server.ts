@@ -68,6 +68,41 @@ async function startServer() {
     }
   };
 
+  const upscaleImageFile = async (filePath: string, scaleFactor = 2): Promise<boolean> => {
+    if (!fs.existsSync(filePath)) return false;
+    try {
+      const { Jimp } = await import('jimp');
+      const image = await Jimp.read(filePath);
+      const curW = image.width;
+      const curH = image.height;
+      if (curW > 0 && curH > 0) {
+         image.resize({ w: Math.round(curW * scaleFactor), h: Math.round(curH * scaleFactor) });
+         await image.write(filePath as any);
+         console.log(`[Upscale] ${path.basename(filePath)} (${curW}x${curH} -> ${image.width}x${image.height})`);
+         return true;
+      }
+    } catch(e: any) {
+      console.error(`[Upscale Error] Failed to upscale ${filePath}:`, e?.message || e);
+    }
+    return false;
+  };
+
+  const upscaleDirectoryImages = async (dirPath: string, scaleFactor = 2) => {
+    if (!fs.existsSync(dirPath)) return 0;
+    try {
+      const files = fs.readdirSync(dirPath).filter(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+      let count = 0;
+      for (const f of files) {
+        const full = path.join(dirPath, f);
+        const ok = await upscaleImageFile(full, scaleFactor);
+        if (ok) count++;
+      }
+      return count;
+    } catch(e) {
+      return 0;
+    }
+  };
+
   const createTempPatchedPythonScript = (scriptPath: string): { tempPath: string; isTemp: boolean } => {
     if (fs.existsSync(scriptPath) && scriptPath.endsWith('.py')) {
       try {
@@ -2552,6 +2587,17 @@ app.get("/api/moxfield-proxy", async (req, res) => {
              const tempBase = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
              autoPairCustomTokens(customEnv.SCM_GAME_DIR || tempBase, path.join(tempBase, 'game', 'decklist'));
              autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
+
+             if (req.body.autoUpscale) {
+                const gameDir = customEnv.SCM_GAME_DIR || tempBase;
+                await upscaleDirectoryImages(path.join(gameDir, 'front'));
+                await upscaleDirectoryImages(path.join(gameDir, 'back'));
+                await upscaleDirectoryImages(path.join(gameDir, 'double_sided'));
+                await upscaleDirectoryImages(path.join(tempBase, 'front'));
+                await upscaleDirectoryImages(path.join(tempBase, 'back'));
+                await upscaleDirectoryImages(path.join(tempBase, 'double_sided'));
+             }
+
              const getFiles = (dir: string) => {
                 const filesSet = new Set<string>();
                 const searchDirs = [
@@ -2884,6 +2930,17 @@ app.get("/api/moxfield-proxy", async (req, res) => {
          const tempBase = path.join(libraryPath, `Temp_Fetch_${req.body.tempDirId}`);
          autoPairCustomTokens(customEnv.SCM_GAME_DIR || tempBase, path.join(tempBase, 'game', 'decklist'));
          autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
+
+         if (req.body.autoUpscale) {
+            const gameDir = customEnv.SCM_GAME_DIR || tempBase;
+            await upscaleDirectoryImages(path.join(gameDir, 'front'));
+            await upscaleDirectoryImages(path.join(gameDir, 'back'));
+            await upscaleDirectoryImages(path.join(gameDir, 'double_sided'));
+            await upscaleDirectoryImages(path.join(tempBase, 'front'));
+            await upscaleDirectoryImages(path.join(tempBase, 'back'));
+            await upscaleDirectoryImages(path.join(tempBase, 'double_sided'));
+         }
+
          const getFiles = (dir: string) => {
             const filesSet = new Set<string>();
             const searchDirs = [
@@ -2928,6 +2985,62 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }).catch(err => {
       res.json({ output: [`[System Error] Failed to load child_process: ${err}`] });
     });
+  });
+
+  app.post("/api/upscale", async (req, res) => {
+    try {
+      const { identities, assetViewMode, allInView, scaleFactor = 2 } = req.body;
+      let targetPaths: string[] = [];
+
+      let basePath = scmPath;
+      if (assetViewMode === 'library') basePath = libraryPath;
+      else if (assetViewMode === 'plugins') basePath = pluginsPath;
+
+      if (allInView) {
+        ['front', 'back', 'double_sided'].forEach(subDir => {
+          const dir = path.join(basePath, subDir);
+          const dirGame = path.join(basePath, 'game', subDir);
+          [dir, dirGame].forEach(d => {
+            if (fs.existsSync(d)) {
+              fs.readdirSync(d).forEach(f => {
+                if (!f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'))) {
+                  targetPaths.push(path.join(d, f));
+                }
+              });
+            }
+          });
+        });
+      } else if (Array.isArray(identities) && identities.length > 0) {
+        for (const identity of identities) {
+          let type = 'front';
+          let filename = identity;
+          if (identity.includes(':')) {
+            const parts = identity.split(':');
+            type = parts[0];
+            filename = parts.slice(1).join(':');
+          }
+          const p1 = path.join(basePath, type, filename);
+          const p2 = path.join(basePath, 'game', type, filename);
+          if (fs.existsSync(p1)) targetPaths.push(p1);
+          else if (fs.existsSync(p2)) targetPaths.push(p2);
+        }
+      }
+
+      if (targetPaths.length === 0) {
+        return res.json({ success: false, message: 'No valid card images found to upscale.' });
+      }
+
+      let count = 0;
+      for (const p of targetPaths) {
+        const ok = await upscaleImageFile(p, scaleFactor);
+        if (ok) count++;
+      }
+
+      return res.json({ success: true, count, total: targetPaths.length });
+    } catch(e: any) {
+      console.error("[Upscale Error]", e);
+      return res.status(500).json({ success: false, error: e?.message || 'Upscaling failed' });
+    }
   });
 
   app.post("/api/plugin/fetch-commit", (req, res) => {

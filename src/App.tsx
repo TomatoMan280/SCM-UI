@@ -996,6 +996,54 @@ export default function App() {
   const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'|'keep_both'} | null>(null);
   const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'>} | null>(null);
 
+  const [autoUpscaleImport, setAutoUpscaleImport] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('scm_auto_upscale');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch(e) {
+      return true;
+    }
+  });
+
+  const toggleAutoUpscaleImport = (val: boolean) => {
+    setAutoUpscaleImport(val);
+    try {
+      localStorage.setItem('scm_auto_upscale', JSON.stringify(val));
+    } catch(e) {}
+  };
+
+  const handleUpscale = async (identities?: string[], allInView = false) => {
+    try {
+      const label = allInView ? 'all deck / view cards' : `${identities?.length || 1} card${(identities?.length || 1) === 1 ? '' : 's'}`;
+      setTaskProgress({ current: 1, total: 100, message: `Upscaling ${label} (2x HD)...` });
+      addLog(`[Action: Upscale] Initiating 2x high resolution upscaling for ${label}...`);
+
+      const res = await fetch('/api/upscale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identities,
+          allInView,
+          assetViewMode,
+          scaleFactor: 2
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        addLog(`[Action: Upscale] Successfully upscaled ${data.count} card image(s) to 2x high resolution.`);
+        setTaskProgress({ current: 100, total: 100, message: `Upscaled ${data.count} card image(s) (2x HD)!` });
+        await fetchStatus();
+      } else {
+        addLog(`[Error: Upscale] ${data.message || data.error || 'Failed to upscale card images.'}`);
+        setTaskProgress({ current: 0, total: 100, message: `Upscale failed.` });
+      }
+    } catch(err: any) {
+      addLog(`[Error: Upscale] ${err?.message || err}`);
+    } finally {
+      setTimeout(() => setTaskProgress(null), 2000);
+    }
+  };
+
   useEffect(() => {
     setCurrentTheme(getTheme());
     const handleGlobalClick = () => setContextMenu(null);
@@ -1743,7 +1791,7 @@ export default function App() {
     addLog("[Plugins] Exported configuration to JSON file.");
   };
 
-  const runCommand = async (command: string, args?: string[], options?: { isPluginFetch?: boolean, startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string } }) => {
+  const runCommand = async (command: string, args?: string[], options?: { isPluginFetch?: boolean, startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string }, autoUpscale?: boolean }) => {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     const abortController = new AbortController();
@@ -1760,7 +1808,8 @@ export default function App() {
           uploadedPluginFilePath: options?.uploadedPluginFilePath, 
           pythonPath, 
           crop: options?.crop,
-          calibration: options?.calibration
+          calibration: options?.calibration,
+          autoUpscale: options?.autoUpscale
         }),
         signal: abortController.signal
       });
@@ -4054,6 +4103,26 @@ export default function App() {
                             </div>
                           )}
 
+                          {/* Auto-Upscale Option Toggle */}
+                          <div className="mb-4 flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-2xl p-4 transition-all hover:border-white/20">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-400">
+                                <Sparkles size={18} />
+                              </div>
+                              <div>
+                                <span className="text-xs font-bold text-white block">Auto-Upscale Card Images (2x HD)</span>
+                                <span className="text-[11px] text-white/50 block">Automatically enhances low-res card images to crisp 2x resolution during import</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleAutoUpscaleImport(!autoUpscaleImport)}
+                              className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${autoUpscaleImport ? 'bg-primary-500' : 'bg-white/20'}`}
+                            >
+                              <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${autoUpscaleImport ? 'left-7' : 'left-1'}`} />
+                            </button>
+                          </div>
+
                           <button 
                             onClick={async () => {
                               if (pluginState.selectedPlugin.id === 'custom_script_upload' && (!pluginState.format || pluginState.format === 'script')) {
@@ -4141,7 +4210,8 @@ export default function App() {
                                 startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
                                 hideProgressOnComplete: true,
                                 tempDirId,
-                                uploadedPluginFilePath
+                                uploadedPluginFilePath,
+                                autoUpscale: autoUpscaleImport
                               });
                               
                               if (result && result.fetchedFiles) {
@@ -5367,9 +5437,34 @@ export default function App() {
               </>
             )}
 
-            {true && (
-              <div className="h-[1px] w-full bg-white/10 my-1" />
-            )}
+            <div className="h-[1px] w-full bg-white/10 my-1" />
+            <button 
+              onClick={async (e) => {
+                e.stopPropagation();
+                const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                setContextMenu(null);
+                await handleUpscale(targets, false);
+              }}
+              className="w-full h-9 px-3 hover:bg-amber-500/15 text-amber-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+              title="Upscale selected card image(s) to 2x high resolution"
+            >
+              <Sparkles size={15} className="text-amber-400 group-hover:text-amber-300 shrink-0" />
+              <span>Upscale Card (2x HD)</span>
+            </button>
+
+            <button 
+              onClick={async (e) => {
+                e.stopPropagation();
+                setContextMenu(null);
+                await handleUpscale(undefined, true);
+              }}
+              className="w-full h-9 px-3 hover:bg-amber-500/15 text-amber-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+              title="Upscale all card images in current view to 2x high resolution"
+            >
+              <Zap size={15} className="text-amber-400 group-hover:text-amber-300 shrink-0" />
+              <span>Upscale Entire View</span>
+            </button>
 
             <button 
               onClick={(e) => {
