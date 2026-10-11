@@ -518,8 +518,16 @@ const LightboxGallery = ({
 
   const displaySrc = isFlipped && backSrc ? backSrc : currentImage;
 
+  const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    setDimensions(null);
+  }, [displaySrc]);
+
+  const originalCache = useRef<Record<string, { hasOriginal: boolean; originalUrl?: string; originalSize?: number; currentSize?: number }>>({});
+
   // Check if original backup exists for active image
-  const checkOriginal = useCallback(async (targetSrc: string) => {
+  const checkOriginal = useCallback(async (targetSrc: string, forceFresh = false) => {
     if (!targetSrc || targetSrc.startsWith('data:') || targetSrc.startsWith('blob:')) {
       setHasOriginal(false);
       setOriginalSrc(null);
@@ -527,9 +535,25 @@ const LightboxGallery = ({
       return;
     }
 
+    if (!forceFresh && originalCache.current[targetSrc]) {
+      const data = originalCache.current[targetSrc];
+      if (data.hasOriginal) {
+        setHasOriginal(true);
+        setOriginalSrc(`${data.originalUrl}&t=${Date.now()}`);
+        setImageStats({ origSize: data.originalSize, currentSize: data.currentSize });
+        setIsComparing(true);
+      } else {
+        setHasOriginal(false);
+        setOriginalSrc(null);
+        setImageStats(null);
+      }
+      return;
+    }
+
     try {
       const res = await fetch(`/api/asset/has-original?url=${encodeURIComponent(targetSrc)}`);
       const data = await res.json();
+      originalCache.current[targetSrc] = data;
       if (data.hasOriginal) {
         setHasOriginal(true);
         setOriginalSrc(`${data.originalUrl}&t=${Date.now()}`);
@@ -659,7 +683,7 @@ const LightboxGallery = ({
         const newSrc = `${cleanBase}?t=${Date.now()}`;
         if (isFlipped && backSrc) setBackSrc(newSrc);
         else setCurrentImage(newSrc);
-        await checkOriginal(newSrc);
+        await checkOriginal(newSrc, true);
       }
     } finally {
       setIsUpscalingSingle(false);
@@ -681,7 +705,7 @@ const LightboxGallery = ({
         const newSrc = `${cleanBase}?t=${Date.now()}`;
         if (isFlipped && backSrc) setBackSrc(newSrc);
         else setCurrentImage(newSrc);
-        await checkOriginal(newSrc);
+        await checkOriginal(newSrc, true);
       }
     } catch {}
   };
@@ -796,6 +820,12 @@ const LightboxGallery = ({
             <img 
               src={displaySrc} 
               alt="Upscaled asset" 
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                if (img.naturalWidth && img.naturalHeight) {
+                  setDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+                }
+              }}
               className={cn(
                 "max-h-[82vh] max-w-full object-contain block pointer-events-none select-none",
                 isFlipped && "[transform:scaleX(-1)]"
@@ -864,21 +894,18 @@ const LightboxGallery = ({
               <span className="w-2 h-2 rounded-full bg-emerald-400" />
               <span className="text-[10px] font-black uppercase tracking-wider">After (Upscayl AI HD)</span>
             </div>
-
-            {/* File Size & Detail Stats Badge */}
-            {imageStats?.origSize && imageStats?.currentSize && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-white/90 text-[10px] font-mono pointer-events-none flex items-center gap-2.5 shadow-xl">
-                <span>Original: {(imageStats.origSize / 1024).toFixed(0)} KB</span>
-                <span className="text-white/30">•</span>
-                <span className="text-primary-400 font-bold">Upscaled HD: {(imageStats.currentSize / 1024).toFixed(0)} KB ({((imageStats.currentSize / imageStats.origSize)).toFixed(1)}x detail)</span>
-              </div>
-            )}
           </div>
         ) : (
           /* STANDARD ENLARGED IMAGE */
           <img 
             src={displaySrc} 
             alt="Enlarged asset" 
+            onLoad={(e) => {
+              const img = e.currentTarget;
+              if (img.naturalWidth && img.naturalHeight) {
+                setDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+              }
+            }}
             className={cn(
               "max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl pointer-events-auto transition-transform duration-300",
               isFlipped && "[transform:scaleX(-1)]"
@@ -888,6 +915,25 @@ const LightboxGallery = ({
               if (backSrc) toggleFlip(e);
             }}
           />
+        )}
+
+        {/* Resolution & File Size Stats Badge - Outside card frame so it NEVER blocks card image */}
+        {(dimensions || (imageStats?.origSize && imageStats?.currentSize)) && (
+          <div className="mt-3.5 px-4 py-1.5 rounded-full bg-[#121318]/90 backdrop-blur-md border border-white/15 text-white/90 text-xs font-mono pointer-events-none flex items-center gap-2.5 shadow-2xl z-30 select-none">
+            {dimensions && (
+              <span className="text-white font-semibold">{dimensions.width} × {dimensions.height} px</span>
+            )}
+            {dimensions && imageStats?.origSize && imageStats?.currentSize && (
+              <span className="text-white/20">•</span>
+            )}
+            {imageStats?.origSize && imageStats?.currentSize && (
+              <>
+                <span className="text-white/60">Orig: <strong className="text-white font-semibold">{(imageStats.origSize / 1024).toFixed(0)} KB</strong></span>
+                <span className="text-white/20">•</span>
+                <span className="text-primary-400 font-bold">Upscaled HD: {(imageStats.currentSize / 1024).toFixed(0)} KB ({((imageStats.currentSize / imageStats.origSize)).toFixed(1)}x detail)</span>
+              </>
+            )}
+          </div>
         )}
       </motion.div>
 
@@ -1188,7 +1234,7 @@ export default function App() {
   const [flippedAssets, setFlippedAssets] = useState<Set<string>>(new Set());
   const [uploadedImages, setUploadedImages] = useState<Record<string, string>>({});
   const [cacheBusts, setCacheBusts] = useState<Record<string, number>>({});
-  const [globalCacheBust, setGlobalCacheBust] = useState<number>(Date.now());
+  const [globalCacheBust, setGlobalCacheBust] = useState<number>(0);
   const [localAssets, setLocalAssets] = useState<Array<{name: string, type: 'front' | 'back' | 'double_sided', view: 'project' | 'library' | 'plugins'}>>([]);
   const [isReplaceBackDialogOpen, setIsReplaceBackDialogOpen] = useState(false);
   const [pendingBackFile, setPendingBackFile] = useState<File | null>(null);
@@ -4571,143 +4617,152 @@ export default function App() {
 
                             {/* Subsection Expanded Body */}
                             {upscaleSectionExpanded && (
-                              <div className="p-4 border-t border-white/5 bg-black/20 space-y-4">
-                                {/* Scale Factor Selector */}
-                                <div>
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
-                                    Upscayl Output Scale Multiplier
-                                  </label>
-                                  <div className="grid grid-cols-3 gap-2">
-                                    {([2, 3, 4] as const).map(scale => (
-                                      <button
-                                        key={scale}
-                                        type="button"
-                                        onClick={() => updateUpscaleConfig({ scaleFactor: scale })}
-                                        className={cn(
-                                          "py-2 px-3 rounded-xl text-xs font-bold transition-all border flex flex-col items-center justify-center gap-0.5 cursor-pointer",
-                                          upscaleConfig.scaleFactor === scale
-                                            ? "bg-primary-600 text-white border-primary-400 shadow-md shadow-primary-600/30"
-                                            : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10 border-white/10"
-                                        )}
-                                      >
-                                        <span>{scale}x AI Scale</span>
-                                        <span className="text-[9px] opacity-75 font-normal">
-                                          {scale === 2 ? 'Fast 2x HD' : scale === 3 ? '3x Quad HD' : '4x Extreme HD'}
+                              <div className="p-4 border-t border-white/5 bg-black/25 space-y-3.5">
+                                {/* 2-Column Responsive Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                  {/* Column 1: Output Scale & Model */}
+                                  <div className="space-y-3">
+                                    <div>
+                                      <div className="flex items-center justify-between mb-1.5">
+                                        <label className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+                                          Output Scale Multiplier
+                                        </label>
+                                        <span className="text-[10px] font-mono text-primary-400 font-bold">
+                                          {upscaleConfig.scaleFactor === 2 ? '2x HD' : upscaleConfig.scaleFactor === 3 ? '3x Quad HD' : '4x Ultra HD'}
                                         </span>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* Upscayl AI Model Selector */}
-                                <div>
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
-                                    Upscayl Neural Model Architecture
-                                  </label>
-                                  <div className="relative">
-                                    <select
-                                      value={upscaleConfig.model}
-                                      onChange={(e) => updateUpscaleConfig({ model: e.target.value as any })}
-                                      className="w-full bg-[#14151b] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors"
-                                    >
-                                      <option value="high-fidelity-4x" className="bg-[#14151b]">High Fidelity 4x (Recommended: Cards, Text & Borders)</option>
-                                      <option value="digital-art-4x" className="bg-[#14151b]">Digital Art 4x (Anime, Illustrations & Lineart)</option>
-                                      <option value="ultrasharp-4x" className="bg-[#14151b]">UltraSharp 4x (Maximum Crispness & Sharp Edges)</option>
-                                      <option value="remacri-4x" className="bg-[#14151b]">Remacri 4x (Ultra-Realistic Textures & Depth)</option>
-                                      <option value="ultramix-balanced-4x" className="bg-[#14151b]">UltraMix Balanced 4x (Smooth Blend & Detail)</option>
-                                      <option value="upscayl-standard-4x" className="bg-[#14151b]">Upscayl Standard 4x (General AI Model)</option>
-                                      <option value="upscayl-lite-4x" className="bg-[#14151b]">Upscayl Lite 4x (Fast Inference)</option>
-                                    </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
-                                  </div>
-                                </div>
-
-                                {/* Processing Scope */}
-                                <div>
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
-                                    Card Target Scope
-                                  </label>
-                                  <div className="relative">
-                                    <select
-                                      value={upscaleConfig.scope}
-                                      onChange={(e) => updateUpscaleConfig({ scope: e.target.value as any })}
-                                      className="w-full bg-[#14151b] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors"
-                                    >
-                                      <option value="all" className="bg-[#14151b]">All Staged Cards (Fronts, Backs & Double-Sided)</option>
-                                      <option value="front" className="bg-[#14151b]">Front Faces Only</option>
-                                      <option value="back" className="bg-[#14151b]">Back Patterns Only</option>
-                                      <option value="double_sided" className="bg-[#14151b]">Double-Sided Only</option>
-                                      <option value="selected" className="bg-[#14151b]">Currently Selected Cards ({selectedAssets.size} selected)</option>
-                                    </select>
-                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
-                                  </div>
-                                </div>
-
-                                {/* Upscayl AI Pipeline Toggles */}
-                                <div className="space-y-2 pt-1">
-                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1">
-                                    Upscayl Neural Parameters
-                                  </label>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {/* TTA Mode Toggle */}
-                                    <div 
-                                      onClick={() => updateUpscaleConfig({ tta: !upscaleConfig.tta })}
-                                      className={cn(
-                                        "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
-                                        upscaleConfig.tta ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
-                                      )}
-                                    >
-                                      <div className="pr-2">
-                                        <span className="text-xs font-semibold block">TTA Mode (Enhanced Quality)</span>
-                                        <span className="text-[10px] opacity-60 block">8x rotational passes to eliminate artifacts</span>
                                       </div>
-                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.tta ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
-                                        {upscaleConfig.tta && <Check size={12} />}
+                                      <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#121318] border border-white/10 rounded-xl">
+                                        {([2, 3, 4] as const).map(scale => (
+                                          <button
+                                            key={scale}
+                                            type="button"
+                                            onClick={() => updateUpscaleConfig({ scaleFactor: scale })}
+                                            className={cn(
+                                              "py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none",
+                                              upscaleConfig.scaleFactor === scale
+                                                ? "bg-primary-600 text-white shadow-md shadow-primary-600/30"
+                                                : "text-white/60 hover:text-white hover:bg-white/5"
+                                            )}
+                                          >
+                                            <span>{scale}x AI Scale</span>
+                                          </button>
+                                        ))}
                                       </div>
                                     </div>
 
-                                    {/* Memory Safety Clamp */}
-                                    <div 
-                                      onClick={() => updateUpscaleConfig({ maxDimension: upscaleConfig.maxDimension === 4096 ? 8192 : 4096 })}
-                                      className={cn(
-                                        "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
-                                        upscaleConfig.maxDimension === 4096 ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
-                                      )}
-                                    >
-                                      <div className="pr-2">
-                                        <span className="text-xs font-semibold block">Max Dimension Clamp ({upscaleConfig.maxDimension}px)</span>
-                                        <span className="text-[10px] opacity-60 block">Prevents memory overflow on huge sheets</span>
+                                    <div>
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1.5">
+                                        Neural Model Architecture
+                                      </label>
+                                      <div className="relative">
+                                        <select
+                                          value={upscaleConfig.model}
+                                          onChange={(e) => updateUpscaleConfig({ model: e.target.value as any })}
+                                          className="w-full bg-[#121318] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors cursor-pointer"
+                                        >
+                                          <option value="high-fidelity-4x" className="bg-[#14151b]">High Fidelity 4x (Cards, Text & Borders)</option>
+                                          <option value="digital-art-4x" className="bg-[#14151b]">Digital Art 4x (Anime & Illustrations)</option>
+                                          <option value="ultrasharp-4x" className="bg-[#14151b]">UltraSharp 4x (Maximum Crispness)</option>
+                                          <option value="remacri-4x" className="bg-[#14151b]">Remacri 4x (Photoreal Textures)</option>
+                                          <option value="ultramix-balanced-4x" className="bg-[#14151b]">UltraMix Balanced 4x (Smooth Blend)</option>
+                                          <option value="upscayl-standard-4x" className="bg-[#14151b]">Upscayl Standard 4x (General AI)</option>
+                                          <option value="upscayl-lite-4x" className="bg-[#14151b]">Upscayl Lite 4x (Fast Inference)</option>
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
                                       </div>
-                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.maxDimension === 4096 ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
-                                        {upscaleConfig.maxDimension === 4096 && <Check size={12} />}
+                                    </div>
+                                  </div>
+
+                                  {/* Column 2: Scope & Parameters */}
+                                  <div className="space-y-3">
+                                    <div>
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1.5">
+                                        Target Scope
+                                      </label>
+                                      <div className="relative">
+                                        <select
+                                          value={upscaleConfig.scope}
+                                          onChange={(e) => updateUpscaleConfig({ scope: e.target.value as any })}
+                                          className="w-full bg-[#121318] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors cursor-pointer"
+                                        >
+                                          <option value="all" className="bg-[#14151b]">All Staged Cards (Fronts, Backs & Double-Sided)</option>
+                                          <option value="front" className="bg-[#14151b]">Front Faces Only</option>
+                                          <option value="back" className="bg-[#14151b]">Back Patterns Only</option>
+                                          <option value="double_sided" className="bg-[#14151b]">Double-Sided Only</option>
+                                          <option value="selected" className="bg-[#14151b]">Currently Selected Cards ({selectedAssets.size} selected)</option>
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1.5">
+                                        Neural Parameters
+                                      </label>
+                                      <div className="grid grid-cols-2 gap-2">
+                                        {/* TTA Mode */}
+                                        <div 
+                                          onClick={() => updateUpscaleConfig({ tta: !upscaleConfig.tta })}
+                                          className={cn(
+                                            "p-2 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
+                                            upscaleConfig.tta ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-[#121318] border-white/10 text-white/60 hover:border-white/20"
+                                          )}
+                                          title="8x rotational passes to eliminate AI artifacts"
+                                        >
+                                          <div className="min-w-0 pr-1">
+                                            <span className="text-xs font-semibold block truncate">TTA Quality</span>
+                                            <span className="text-[9px] opacity-60 block truncate">8x anti-artifact pass</span>
+                                          </div>
+                                          <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.tta ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
+                                            {upscaleConfig.tta && <Check size={12} />}
+                                          </div>
+                                        </div>
+
+                                        {/* Max Dimension Clamp */}
+                                        <div 
+                                          onClick={() => updateUpscaleConfig({ maxDimension: upscaleConfig.maxDimension === 4096 ? 8192 : 4096 })}
+                                          className={cn(
+                                            "p-2 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
+                                            upscaleConfig.maxDimension === 4096 ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-[#121318] border-white/10 text-white/60 hover:border-white/20"
+                                          )}
+                                          title="Limits output dimension to prevent GPU VRAM overflow"
+                                        >
+                                          <div className="min-w-0 pr-1">
+                                            <span className="text-xs font-semibold block truncate">VRAM Clamp</span>
+                                            <span className="text-[9px] opacity-60 block truncate">{upscaleConfig.maxDimension}px limit</span>
+                                          </div>
+                                          <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.maxDimension === 4096 ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
+                                            {upscaleConfig.maxDimension === 4096 && <Check size={12} />}
+                                          </div>
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
                                 </div>
 
-                                {/* Direct Trigger Buttons */}
-                                <div className="pt-2 flex flex-col sm:flex-row items-center gap-2 border-t border-white/5">
+                                {/* Direct Trigger Buttons - Balanced 50/50 layout */}
+                                <div className="pt-2.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 border-t border-white/5">
                                   <button
                                     type="button"
                                     onClick={() => handleUpscale(undefined, true)}
-                                    className="w-full sm:flex-1 py-2.5 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 cursor-pointer"
+                                    className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/25 active:scale-[0.98] cursor-pointer whitespace-nowrap min-w-0"
                                   >
-                                    <Maximize2 size={14} />
-                                    <span>Upscayl All Cards Now ({upscaleConfig.scaleFactor}x HD)</span>
+                                    <Maximize2 size={15} className="shrink-0" />
+                                    <span className="truncate">Upscayl All Cards Now ({upscaleConfig.scaleFactor}x HD)</span>
                                   </button>
                                   <button
                                     type="button"
                                     disabled={selectedAssets.size === 0}
                                     onClick={() => handleUpscale(Array.from(selectedAssets), false)}
                                     className={cn(
-                                      "w-full sm:flex-initial py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border",
+                                      "flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border whitespace-nowrap min-w-0",
                                       selectedAssets.size > 0
-                                        ? "bg-white/10 hover:bg-white/15 text-white border-white/20 active:scale-95 cursor-pointer"
+                                        ? "bg-white/10 hover:bg-white/15 text-white border-white/20 active:scale-[0.98] cursor-pointer"
                                         : "bg-white/[0.02] text-white/30 border-white/5 cursor-not-allowed"
                                     )}
                                   >
-                                    <CheckSquare size={14} />
-                                    <span>Upscayl Selected ({selectedAssets.size})</span>
+                                    <CheckSquare size={15} className="shrink-0" />
+                                    <span className="truncate">Upscayl Selected ({selectedAssets.size})</span>
                                   </button>
                                 </div>
                               </div>
@@ -7021,43 +7076,59 @@ interface AssetItemProps {
   cacheBustToken?: number;
 }
 
-const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextMenu, selected, onSelect, onDragSelectStart, onEnlarge, isFlipped, onToggleFlip, uploadedImages, addLog, assetViewMode, cardDimming = 'tint', cacheBustToken }) => {
-  // Define isDoubleSided at top-level component scope to prevent ReferenceError crashes
-  const isDoubleSided = type === 'double_sided' || (Array.isArray(allAssets?.double_sided) && allAssets.double_sided.some((d: string) => stripExt(d).toLowerCase() === stripExt(name).toLowerCase()));
+const _AssetItem: React.FC<AssetItemProps> = ({ 
+  name, 
+  type, 
+  allAssets, 
+  onContextMenu, 
+  selected, 
+  onSelect, 
+  onDragSelectStart, 
+  onEnlarge, 
+  isFlipped, 
+  onToggleFlip, 
+  uploadedImages, 
+  addLog, 
+  assetViewMode, 
+  cardDimming = 'tint', 
+  cacheBustToken 
+}) => {
+  const cleanName = useMemo(() => stripExt(name).toLowerCase(), [name]);
+
+  const isDoubleSided = useMemo(() => {
+    if (type === 'double_sided') return true;
+    if (!Array.isArray(allAssets?.double_sided)) return false;
+    return allAssets.double_sided.some((d: string) => stripExt(d).toLowerCase() === cleanName);
+  }, [type, allAssets?.double_sided, cleanName]);
   
-  const getBaseUrl = () => {
+  const baseUrl = useMemo(() => {
     if (assetViewMode === 'library') return '/library';
     if (assetViewMode === 'plugins') return '/plugins_staging';
     return '/game';
-  };
+  }, [assetViewMode]);
 
-  const getImgSrc = () => {
-    // Determine the logical face we want to display on the front of this component
+  const appendBust = useCallback((url: string) => {
+    return (cacheBustToken && cacheBustToken > 0) ? `${url}?t=${cacheBustToken}` : url;
+  }, [cacheBustToken]);
+
+  const imgSrc = useMemo(() => {
     const logicalType = type === 'double_sided' ? 'front' : type;
 
-    // 1. If we have a blob URL from a recent upload, use it.
     if (uploadedImages?.[`${logicalType}_${name}`]) {
       addLog?.(`AssetItem Debug: ${name} FOUND in uploadedImages for ${logicalType}.`);
       return uploadedImages[`${logicalType}_${name}`];
     }
     
-    // Fallback check
     if ((type === 'front' || type === 'double_sided') && uploadedImages?.[`front_${name}`]) {
        return uploadedImages[`front_${name}`];
     }
     
-    const baseUrl = getBaseUrl();
-    const appendBust = (url: string) => cacheBustToken ? `${url}?t=${cacheBustToken}` : url;
-
-    // 2. Determine base path based on type/double-sided status
     if (type === 'back') {
       return appendBust(`${baseUrl}/back/${encodeURIComponent(name)}`);
     }
     
-    // 3. For front faces & double-sided faces, verify where the front face image is
-    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.some(d => stripExt(d).toLowerCase() === stripExt(name).toLowerCase());
     if (isDoubleSided) {
-      const exactFront = allAssets?.fronts?.find(f => stripExt(f).toLowerCase() === stripExt(name).toLowerCase());
+      const exactFront = allAssets?.fronts?.find(f => stripExt(f).toLowerCase() === cleanName);
       if (exactFront) {
         return appendBust(`${baseUrl}/front/${encodeURIComponent(exactFront)}`);
       } else {
@@ -7065,24 +7136,18 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
       }
     }
     
-    // 4. Default to front
     return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
-  };
+  }, [type, name, uploadedImages, addLog, baseUrl, appendBust, isDoubleSided, allAssets?.fronts, cleanName]);
 
-  const imgSrc = getImgSrc();
-
-  const getBackFace = () => {
+  const backFace = useMemo(() => {
     if (type === 'back') return null;
     
-    // Check if double sided
-    const isDoubleSided = type === 'double_sided' || allAssets?.double_sided?.some(d => stripExt(d).toLowerCase() === stripExt(name).toLowerCase());
     if (isDoubleSided) {
-      const exactDoubleSided = allAssets?.double_sided?.find(d => stripExt(d).toLowerCase() === stripExt(name).toLowerCase());
+      const exactDoubleSided = allAssets?.double_sided?.find(d => stripExt(d).toLowerCase() === cleanName);
       const hasDoubleSidedOnDisk = !!exactDoubleSided || type === 'double_sided';
-      if (hasDoubleSidedOnDisk && (allAssets?.fronts?.some(f => stripExt(f).toLowerCase() === stripExt(name).toLowerCase()) || type === 'double_sided' || assetViewMode === 'library' || assetViewMode === 'plugins')) {
+      if (hasDoubleSidedOnDisk && (allAssets?.fronts?.some(f => stripExt(f).toLowerCase() === cleanName) || type === 'double_sided' || assetViewMode === 'library' || assetViewMode === 'plugins')) {
         return { name: exactDoubleSided || name, folder: 'double_sided' };
       }
-      // If we only have double_sided on disk and no fronts of same name, we fallback to standard backs
       if (allAssets?.backs && allAssets.backs.length > 0) {
         return { name: allAssets.backs[allAssets.backs.length - 1], folder: 'back' };
       }
@@ -7090,14 +7155,12 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     
     if (assetViewMode === 'library' || assetViewMode === 'plugins') return null;
     
-    // Fallback to first back pattern
     if (allAssets?.backs && allAssets.backs.length > 0) {
-      // Prioritize recently uploaded backs (the last one if multiple)
       return { name: allAssets.backs[allAssets.backs.length - 1], folder: 'back' };
     }
     
     return null;
-  };
+  }, [type, isDoubleSided, allAssets?.double_sided, allAssets?.fronts, allAssets?.backs, cleanName, name, assetViewMode]);
 
   const timerRef = React.useRef<NodeJS.Timeout | null>(null);
 
@@ -7119,13 +7182,20 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     }
   };
 
-  const backFace = getBackFace();
+  const backFaceSrc = useMemo(() => {
+    if (!backFace) return '';
+    if (uploadedImages?.[`${backFace.folder}_${backFace.name}`]) {
+      return uploadedImages[`${backFace.folder}_${backFace.name}`];
+    }
+    return appendBust(`${baseUrl}/${backFace.folder}/${encodeURIComponent(backFace.name)}`);
+  }, [backFace, uploadedImages, appendBust, baseUrl]);
 
-  const baseUrl = getBaseUrl();
-  const backFaceFolder = getBackFace()?.folder;
-  const enlargeSrc = isFlipped && getBackFace() 
-    ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${encodeURIComponent(getBackFace()!.name)}${cacheBustToken ? `?t=${cacheBustToken}` : ''}`) 
-    : imgSrc;
+  const enlargeSrc = useMemo(() => {
+    if (isFlipped && backFace) {
+      return backFaceSrc;
+    }
+    return imgSrc;
+  }, [isFlipped, backFace, backFaceSrc, imgSrc]);
 
   return (
     <div 
@@ -7149,7 +7219,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
         )}
         data-enlarge-src={enlargeSrc}
         data-front-src={imgSrc}
-        data-back-src={backFace ? (uploadedImages?.[`${backFace.folder}_${backFace.name}`] || `${baseUrl}/${backFace.folder}/${encodeURIComponent(backFace.name)}`) : ''}
+        data-back-src={backFaceSrc}
         data-lightbox-group={type}
         onClick={(e) => {
           if (e.shiftKey || e.ctrlKey || e.metaKey) {
@@ -7194,6 +7264,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
                  src={imgSrc} 
                  alt={name}
                  loading="lazy"
+                 decoding="async"
                   className={cn(
                     "w-full h-full object-cover transition-opacity duration-300",
                     cardDimming === 'dark' 
@@ -7243,9 +7314,10 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                 {backFace ? (
                   <img 
-                    src={uploadedImages?.[`${backFace.folder}_${backFace.name}`] || (cacheBustToken ? `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}?t=${cacheBustToken}` : `${getBaseUrl()}/${backFace.folder}/${encodeURIComponent(backFace.name)}`)}
+                    src={backFaceSrc}
                     alt={backFace.name}
                     loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover opacity-100"
                   />
                 ) : (
@@ -7257,7 +7329,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
               </div>
             </div>
           )}
-</motion.div>
+        </motion.div>
         
         {/* Selection Button */}
         <button 
@@ -7289,3 +7361,17 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
     </div>
   );
 };
+
+const AssetItem = React.memo<AssetItemProps>(_AssetItem, (prev, next) => {
+  return (
+    prev.name === next.name &&
+    prev.type === next.type &&
+    prev.selected === next.selected &&
+    prev.isFlipped === next.isFlipped &&
+    prev.cacheBustToken === next.cacheBustToken &&
+    prev.cardDimming === next.cardDimming &&
+    prev.assetViewMode === next.assetViewMode &&
+    prev.allAssets === next.allAssets &&
+    prev.uploadedImages === next.uploadedImages
+  );
+});
