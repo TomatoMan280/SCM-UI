@@ -4566,38 +4566,14 @@ export default function App() {
                               onClick={() => toggleUpscaleSectionExpanded(!upscaleSectionExpanded)}
                               className="p-4 flex items-center justify-between cursor-pointer select-none group"
                             >
-                              <div className="flex items-center gap-3">
-                                <div className="p-2.5 bg-primary-500/10 rounded-xl text-primary-400 group-hover:bg-primary-500/20 transition-colors">
-                                  <Maximize2 size={18} />
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-xs font-bold text-white block">UPSCAYL AI Engine</span>
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary-500/20 text-primary-300 border border-primary-500/30">
-                                      {upscaleConfig.scaleFactor}x HD
-                                    </span>
-                                    {upscaylStatus?.available ? (
-                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                        Upscayl Vulkan Active
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-white/10 text-white/50 border border-white/10">
-                                        Upscayl Ready
-                                      </span>
-                                    )}
-                                    {autoUpscaleImport && (
-                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-primary-500/20 text-primary-300 border border-primary-500/30">
-                                        Auto-Upscayl
-                                      </span>
-                                    )}
-                                  </div>
-                                  <span className="text-[11px] text-white/50 block">
-                                    GPU-accelerated super-resolution using native Upscayl AI neural models
-                                  </span>
-                                </div>
+                              <div>
+                                <span className="text-xs font-bold text-white block">Upscayl AI Engine</span>
+                                <span className="text-[11px] text-white/50 block">
+                                  GPU-accelerated super-resolution using native Upscayl AI neural models
+                                </span>
                               </div>
                               <div className="flex items-center gap-3">
+                                <span className="text-xs text-white/50 hidden sm:inline">Auto-Upscale on Import</span>
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -4674,38 +4650,18 @@ export default function App() {
                                     </div>
                                   </div>
 
-                                  {/* Column 2: Scope & Parameters */}
+                                  {/* Column 2: Parameters */}
                                   <div className="space-y-3">
-                                    <div>
-                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1.5">
-                                        Target Scope
-                                      </label>
-                                      <div className="relative">
-                                        <select
-                                          value={upscaleConfig.scope}
-                                          onChange={(e) => updateUpscaleConfig({ scope: e.target.value as any })}
-                                          className="w-full bg-[#121318] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors cursor-pointer"
-                                        >
-                                          <option value="all" className="bg-[#14151b]">All Staged Cards (Fronts, Backs & Double-Sided)</option>
-                                          <option value="front" className="bg-[#14151b]">Front Faces Only</option>
-                                          <option value="back" className="bg-[#14151b]">Back Patterns Only</option>
-                                          <option value="double_sided" className="bg-[#14151b]">Double-Sided Only</option>
-                                          <option value="selected" className="bg-[#14151b]">Currently Selected Cards ({selectedAssets.size} selected)</option>
-                                        </select>
-                                        <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
-                                      </div>
-                                    </div>
-
                                     <div>
                                       <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1.5">
                                         Neural Parameters
                                       </label>
-                                      <div className="grid grid-cols-2 gap-2">
+                                      <div className="grid grid-cols-1 gap-2">
                                         {/* TTA Mode */}
                                         <div 
                                           onClick={() => updateUpscaleConfig({ tta: !upscaleConfig.tta })}
                                           className={cn(
-                                            "p-2 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
+                                            "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
                                             upscaleConfig.tta ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-[#121318] border-white/10 text-white/60 hover:border-white/20"
                                           )}
                                           title="8x rotational passes to eliminate AI artifacts"
@@ -4723,7 +4679,7 @@ export default function App() {
                                         <div 
                                           onClick={() => updateUpscaleConfig({ maxDimension: upscaleConfig.maxDimension === 4096 ? 8192 : 4096 })}
                                           className={cn(
-                                            "p-2 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
+                                            "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
                                             upscaleConfig.maxDimension === 4096 ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-[#121318] border-white/10 text-white/60 hover:border-white/20"
                                           )}
                                           title="Limits output dimension to prevent GPU VRAM overflow"
