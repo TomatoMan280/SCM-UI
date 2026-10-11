@@ -149,6 +149,56 @@ async function startServer() {
       console.warn(`[Upscayl Backup Warning] Could not backup original for ${targetFilePath}:`, err?.message || err);
     }
   };
+  const resolvePythonExecutable = (pythonOverride?: string): string => {
+    let pythonExecutable = pythonOverride ? pythonOverride.trim() : "";
+    if (pythonExecutable) {
+      try {
+        if (fs.existsSync(pythonExecutable) && fs.statSync(pythonExecutable).isDirectory()) {
+          if (process.platform === 'win32') {
+            const winExe = path.join(pythonExecutable, 'python.exe');
+            const winExe2 = path.join(pythonExecutable, 'Scripts', 'python.exe');
+            if (fs.existsSync(winExe)) return winExe;
+            if (fs.existsSync(winExe2)) return winExe2;
+          } else {
+            const macExe = path.join(pythonExecutable, 'bin', 'python3');
+            if (fs.existsSync(macExe)) return macExe;
+          }
+        } else if (fs.existsSync(pythonExecutable)) {
+          return pythonExecutable;
+        }
+      } catch (_) {}
+    }
+
+    // 1. Check venv under scmPath
+    const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+    const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
+    if (fs.existsSync(venvPythonPath)) return venvPythonPath;
+    if (fs.existsSync(venvPythonPathFallback)) return venvPythonPathFallback;
+
+    // 2. Common Windows AppData Python locations
+    if (process.platform === 'win32') {
+      const appData = path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python');
+      if (fs.existsSync(appData)) {
+        const candidates = ['Python311', 'Python312', 'Python310', 'Python313', 'Python39'];
+        for (const cand of candidates) {
+          const candExe = path.join(appData, cand, 'python.exe');
+          if (fs.existsSync(candExe)) return candExe;
+        }
+      }
+    }
+
+    // 3. Fallback to system PATH
+    try {
+      const { spawnSync } = require('child_process');
+      const cmds = process.platform === 'win32' ? ['python', 'py', 'python3'] : ['python3', 'python'];
+      for (const cmd of cmds) {
+        const check = spawnSync(cmd, ['--version']);
+        if (check.status === 0) return cmd;
+      }
+    } catch (_) {}
+
+    return "";
+  };
 
   const upscaleImageFile = async (filePath: string, optionsOrScale: number | UpscaleOptions = 2): Promise<boolean> => {
     if (!fs.existsSync(filePath)) return false;
@@ -189,8 +239,13 @@ async function startServer() {
           args.push('-w', maxDimension.toString());
         }
 
-        const { execFileSync } = await import('child_process');
-        execFileSync(upscayl.binPath, args, { encoding: 'utf8', stdio: 'pipe' });
+        const { execFile } = await import('child_process');
+        await new Promise<void>((resolve, reject) => {
+          execFile(upscayl.binPath, args, { timeout: 120000, encoding: 'utf8' }, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
 
         if (fs.existsSync(tempOut) && fs.statSync(tempOut).size > 0) {
           fs.copyFileSync(tempOut, filePath);
@@ -260,8 +315,13 @@ async function startServer() {
         ];
         if (opts.tta) args.push('-x');
 
-        const { execFileSync } = await import('child_process');
-        execFileSync(upscayl.binPath, args, { encoding: 'utf8', stdio: 'pipe' });
+        const { execFile } = await import('child_process');
+        await new Promise<void>((resolve, reject) => {
+          execFile(upscayl.binPath, args, { timeout: 300000, encoding: 'utf8' }, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
 
         let count = 0;
         const outFiles = fs.readdirSync(tempOutDir);
@@ -2489,43 +2549,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         return finalArg.toString().includes(' ') ? `"${finalArg}"` : finalArg;
     }).join(" ");
     
-    import('child_process').then(async ({ spawn, spawnSync }) => {
-      let pythonExecutable = pythonPath || "";
-
-      if (!pythonPath) {
-        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
-        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
-        
-        if (fs.existsSync(venvPythonPath)) {
-           pythonExecutable = venvPythonPath;
-        } else if (fs.existsSync(venvPythonPathFallback)) {
-           pythonExecutable = venvPythonPathFallback;
-        } else {
-           pythonExecutable = "";
-        }
-      } else {
-        try {
-          if (fs.existsSync(pythonExecutable) && fs.statSync(pythonExecutable).isDirectory()) {
-            if (process.platform === 'win32') {
-               const winExe = path.join(pythonExecutable, 'python.exe');
-               const winExe2 = path.join(pythonExecutable, 'Scripts', 'python.exe');
-               if (fs.existsSync(winExe)) pythonExecutable = winExe;
-               else if (fs.existsSync(winExe2)) pythonExecutable = winExe2;
-            } else {
-               const macExe = path.join(pythonExecutable, 'bin', 'python3');
-               if (fs.existsSync(macExe)) pythonExecutable = macExe;
-            }
-          }
-        } catch(e) {}
-        
-        // Soft check override
-        try {
-          const check = spawnSync(pythonExecutable, ["--version"]);
-          if (check.status !== 0 && check.error) {
-            console.warn("Override python path seems invalid:", pythonExecutable);
-          }
-        } catch (e) {}
-      }
+    import('child_process').then(async ({ spawn }) => {
+      const pythonExecutable = resolvePythonExecutable(pythonPath);
 
       if (!pythonExecutable) {
           const fullCommand = `python3 ${command} ${argString}`;
@@ -2775,17 +2800,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
              autoPairCustomTokens(customEnv.SCM_GAME_DIR || tempBase, path.join(tempBase, 'game', 'decklist'));
              autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
 
-             if (req.body.autoUpscale) {
-                const upscaleOpts = req.body.upscaleOptions || { scaleFactor: 2 };
-                const gameDir = customEnv.SCM_GAME_DIR || tempBase;
-                await upscaleDirectoryImages(path.join(gameDir, 'front'), upscaleOpts);
-                await upscaleDirectoryImages(path.join(gameDir, 'back'), upscaleOpts);
-                await upscaleDirectoryImages(path.join(gameDir, 'double_sided'), upscaleOpts);
-                await upscaleDirectoryImages(path.join(tempBase, 'front'), upscaleOpts);
-                await upscaleDirectoryImages(path.join(tempBase, 'back'), upscaleOpts);
-                await upscaleDirectoryImages(path.join(tempBase, 'double_sided'), upscaleOpts);
-             }
-
              const getFiles = (dir: string) => {
                 const filesSet = new Set<string>();
                 const searchDirs = [
@@ -2849,43 +2863,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }).join(" ");
     
     // Check if python is available and run the child process based on it.
-    import('child_process').then(async ({ exec, spawnSync }) => {
-      // Find whether to use python3 or python or none
-      let pythonExecutable = pythonPath || "";
-
-      if (!pythonPath) {
-        const venvPythonPath = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
-        const venvPythonPathFallback = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', 'python');
-        
-        if (fs.existsSync(venvPythonPath)) {
-           pythonExecutable = venvPythonPath;
-        } else if (fs.existsSync(venvPythonPathFallback)) {
-           pythonExecutable = venvPythonPathFallback;
-        } else {
-           pythonExecutable = "";
-        }
-      } else {
-        try {
-          if (fs.existsSync(pythonExecutable) && fs.statSync(pythonExecutable).isDirectory()) {
-            if (process.platform === 'win32') {
-               const winExe = path.join(pythonExecutable, 'python.exe');
-               const winExe2 = path.join(pythonExecutable, 'Scripts', 'python.exe');
-               if (fs.existsSync(winExe)) pythonExecutable = winExe;
-               else if (fs.existsSync(winExe2)) pythonExecutable = winExe2;
-            } else {
-               const macExe = path.join(pythonExecutable, 'bin', 'python3');
-               if (fs.existsSync(macExe)) pythonExecutable = macExe;
-            }
-          }
-        } catch(e) {}
-        
-        try {
-          const check = spawnSync(pythonExecutable, ["--version"]);
-          if (check.status !== 0 && check.error) {
-            console.warn("Override python path seems invalid:", pythonExecutable);
-          }
-        } catch (e) {}
-      }
+    import('child_process').then(async ({ exec }) => {
+      const pythonExecutable = resolvePythonExecutable(pythonPath);
 
       if (!pythonExecutable) {
           const fullCommand = `python3 ${command} ${argString}`;
@@ -3119,17 +3098,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
          autoPairCustomTokens(customEnv.SCM_GAME_DIR || tempBase, path.join(tempBase, 'game', 'decklist'));
          autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
 
-         if (req.body.autoUpscale) {
-            const upscaleOpts = req.body.upscaleOptions || { scaleFactor: 2 };
-            const gameDir = customEnv.SCM_GAME_DIR || tempBase;
-            await upscaleDirectoryImages(path.join(gameDir, 'front'), upscaleOpts);
-            await upscaleDirectoryImages(path.join(gameDir, 'back'), upscaleOpts);
-            await upscaleDirectoryImages(path.join(gameDir, 'double_sided'), upscaleOpts);
-            await upscaleDirectoryImages(path.join(tempBase, 'front'), upscaleOpts);
-            await upscaleDirectoryImages(path.join(tempBase, 'back'), upscaleOpts);
-            await upscaleDirectoryImages(path.join(tempBase, 'double_sided'), upscaleOpts);
-         }
-
          const getFiles = (dir: string) => {
             const filesSet = new Set<string>();
             const searchDirs = [
@@ -3318,8 +3286,19 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     };
 
     let clientDisconnected = false;
+    let pingInterval: NodeJS.Timeout | null = null;
+    if (isStream) {
+      pingInterval = setInterval(() => {
+        if (!clientDisconnected) {
+          res.write(': ping\n\n');
+          if (typeof (res as any).flush === 'function') (res as any).flush();
+        }
+      }, 5000);
+    }
+
     req.on('close', () => {
       clientDisconnected = true;
+      if (pingInterval) clearInterval(pingInterval);
     });
 
     try {
@@ -3440,6 +3419,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       }
 
       if (isStream) {
+        if (pingInterval) clearInterval(pingInterval);
         sendEvent('done', {
           success: true,
           count,

@@ -544,9 +544,9 @@ const LightboxGallery = ({
     };
   }, []);
 
-  // Mouse drag panning when zoomed in
+  // Mouse drag panning when enlarged / zoomed
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (zoom > 1 && e.button === 0) {
+    if (e.button === 0) {
       e.stopPropagation();
       setIsPanning(true);
       hasPannedRef.current = false;
@@ -583,7 +583,7 @@ const LightboxGallery = ({
   }, [isPanning, pan.x, pan.y]);
 
   const handleTouchStartOnZoom = (e: React.TouchEvent) => {
-    if (zoom > 1 && e.touches.length === 1) {
+    if (e.touches.length === 1) {
       setIsPanning(true);
       hasPannedRef.current = false;
       panStartRef.current = {
@@ -1033,7 +1033,7 @@ const LightboxGallery = ({
           onDoubleClick={handleDoubleClick}
           className={cn(
             "relative transition-transform duration-75 select-none flex items-center justify-center max-h-[82vh] max-w-full",
-            zoom > 1 ? (isPanning ? "cursor-grabbing" : "cursor-grab") : ""
+            zoom > 1 || pan.x !== 0 || pan.y !== 0 ? (isPanning ? "cursor-grabbing" : "cursor-grab") : "cursor-grab"
           )}
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
@@ -1044,14 +1044,7 @@ const LightboxGallery = ({
             /* INTERACTIVE REAL-TIME BEFORE / AFTER COMPARISON SLIDER */
             <div 
               ref={containerRef}
-              className="relative max-h-[82vh] max-w-full select-none cursor-ew-resize group/compare overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/15"
-              onMouseDown={handleStartDrag}
-              onTouchStart={handleStartDrag}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (hasPannedRef.current) return;
-                updateSliderFromClientX(e.clientX);
-              }}
+              className="relative max-h-[82vh] max-w-full select-none group/compare overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/15"
             >
               {/* Base Layer: After (Upscaled HD) */}
               <img 
@@ -1093,7 +1086,14 @@ const LightboxGallery = ({
                 className="absolute top-0 bottom-0 pointer-events-none z-20"
                 style={{ left: `${sliderPos.toFixed(2)}%` }}
               >
-                <div className="absolute top-0 bottom-0 -left-[1.5px] w-[3px] bg-white shadow-[0_0_12px_rgba(0,0,0,0.85)]" />
+                <div className="absolute top-0 bottom-0 -left-[1.5px] w-[3px] bg-white shadow-[0_0_12px_rgba(0,0,0,0.85)] pointer-events-none" />
+                {/* Dedicated Interactive Hit Area for the Divider Line */}
+                <div 
+                  className="absolute top-0 bottom-0 -left-3 w-6 pointer-events-auto cursor-ew-resize"
+                  onMouseDown={handleStartDrag}
+                  onTouchStart={handleStartDrag}
+                  title="Drag left/right to compare Before and After"
+                />
                 <div 
                   className={cn(
                     "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-primary-600 text-white shadow-2xl flex items-center justify-center border-2 border-white pointer-events-auto cursor-ew-resize transition-transform duration-100",
@@ -1631,22 +1631,6 @@ export default function App() {
   const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check'|'keep'|'replace'} | null>(null);
   const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'|'keep_both'} | null>(null);
   const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'>} | null>(null);
-
-  const [autoUpscaleImport, setAutoUpscaleImport] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('scm_auto_upscale');
-      return saved !== null ? JSON.parse(saved) : true;
-    } catch(e) {
-      return true;
-    }
-  });
-
-  const toggleAutoUpscaleImport = (val: boolean) => {
-    setAutoUpscaleImport(val);
-    try {
-      localStorage.setItem('scm_auto_upscale', JSON.stringify(val));
-    } catch(e) {}
-  };
 
   const [upscaylStatus, setUpscaylStatus] = useState<{ available: boolean; binPath: string; models: string[] } | null>(null);
 
@@ -2562,7 +2546,7 @@ export default function App() {
     addLog("[Plugins] Exported configuration to JSON file.");
   };
 
-  const runCommand = async (command: string, args?: string[], options?: { isPluginFetch?: boolean, startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string }, autoUpscale?: boolean, upscaleOptions?: UpscaleConfig }) => {
+  const runCommand = async (command: string, args?: string[], options?: { isPluginFetch?: boolean, startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string }, upscaleOptions?: UpscaleConfig }) => {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     const abortController = new AbortController();
@@ -2580,7 +2564,6 @@ export default function App() {
           pythonPath, 
           crop: options?.crop,
           calibration: options?.calibration,
-          autoUpscale: options?.autoUpscale,
           upscaleOptions: options?.upscaleOptions || upscaleConfig
         }),
         signal: abortController.signal
@@ -2629,12 +2612,54 @@ export default function App() {
           }
           if (eventData !== null) {
              if (eventType === 'stdout') {
-                 output.push(eventData as string);
-                 addLog(`[Console] ${eventData}`);
-                 const match = (eventData as string).match(/^Image (\d+):/);
-                 if (match) {
-                     currentCard = parseInt(match[1]);
-                     setTaskProgress({ current: currentCard, total: totalCards > 0 ? totalCards : currentCard + 1, message: `Processing card ${currentCard}${totalCards > 0 ? ` of ${totalCards}` : ''}...` });
+                 const text = String(eventData);
+                 output.push(text);
+                 addLog(`[Console] ${text}`);
+
+                 // Detect total card count reported in output
+                 const totalMatch = text.match(/(?:Parsed|Found|Total(?:\s+cards)?[:\s]+)\s*(\d+)\s*(?:cards|unique entries)?/i);
+                 if (totalMatch) {
+                     const parsedTotal = parseInt(totalMatch[1]);
+                     if (parsedTotal > 0) totalCards = parsedTotal;
+                 }
+
+                 // Detect current progress indices (Image 1 of 50, Index: 1, Slot 1, 1/50, etc.)
+                 let matchedIndex = false;
+                 const idxOfTotalMatch = text.match(/(?:Image|Card|Processing|Downloading|Fetching)\s*#?(\d+)\s*(?:of|\/)\s*(\d+)/i) || text.match(/^(\d+)\s*\/\s*(\d+)/);
+                 if (idxOfTotalMatch) {
+                     currentCard = parseInt(idxOfTotalMatch[1]);
+                     totalCards = parseInt(idxOfTotalMatch[2]);
+                     matchedIndex = true;
+                 } else {
+                     const singleIdxMatch = text.match(/^(?:Image\s+(\d+):|Index:\s*(\d+)|Slot\s*(\d+):?)/i);
+                     if (singleIdxMatch) {
+                         const val = singleIdxMatch[1] || singleIdxMatch[2] || singleIdxMatch[3];
+                         if (val) {
+                             currentCard = parseInt(val);
+                             matchedIndex = true;
+                         }
+                     }
+                 }
+
+                 // Extract human card title if available
+                 let cardName = '';
+                 const nameMatch = text.match(/name:\s*([^,\r\n]+)/i) || text.match(/Slot \d+:\s*([^/\r\n]+)/i) || text.match(/(?:Downloading|Fetching)\s+([^.\r\n]+?)(?:\.\.\.|$)/i);
+                 if (nameMatch && nameMatch[1]) {
+                     cardName = nameMatch[1].trim();
+                 }
+
+                 if (matchedIndex) {
+                     const dispTotal = totalCards > 0 ? totalCards : Math.max(currentCard, 1);
+                     const msg = cardName 
+                         ? `${cardName} (${currentCard}/${dispTotal})` 
+                         : `Card ${currentCard}${totalCards > 0 ? ` of ${totalCards}` : ''}...`;
+                     setTaskProgress({ current: currentCard, total: dispTotal, message: msg });
+                 } else if (cardName) {
+                     setTaskProgress(prev => ({
+                         current: prev?.current ?? currentCard,
+                         total: prev?.total ?? (totalCards > 0 ? totalCards : 1),
+                         message: `Fetching ${cardName}...`
+                     }));
                  }
              } else if (eventType === 'stderr') {
                  output.push(`[Error] ${eventData}`);
@@ -4901,18 +4926,6 @@ export default function App() {
                                 </span>
                               </div>
                               <div className="flex items-center gap-3">
-                                <span className="text-xs text-white/50 hidden sm:inline">Auto-Upscale on Import</span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleAutoUpscaleImport(!autoUpscaleImport);
-                                  }}
-                                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${autoUpscaleImport ? 'bg-primary-500' : 'bg-white/20'}`}
-                                  title={autoUpscaleImport ? "Auto-upscaling enabled for plugin imports" : "Auto-upscaling disabled"}
-                                >
-                                  <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${autoUpscaleImport ? 'left-6' : 'left-1'}`} />
-                                </button>
                                 <ChevronDown 
                                   size={18} 
                                   className={cn("text-white/40 group-hover:text-white transition-transform duration-300", upscaleSectionExpanded && "rotate-180")} 
@@ -5062,13 +5075,19 @@ export default function App() {
                                   return;
                               }
 
+                              const isUrlFormat = pluginState.format === 'url' || pluginState.format.includes('url');
+                              const isDirectInput = isUrlFormat || pluginState.format === 'elestrals' || pluginState.format === 'ydke';
+
                               let targetInput = '';
                               let uploadedPluginFilePath: string | undefined = undefined;
 
-                              if (pluginFile) {
-                                  addLog(`[System] Uploading plugin file ${pluginFile.name}...`);
+                              // If URL format is selected, ignore any previously staged pluginFile
+                              const effectivePluginFile = isUrlFormat ? null : pluginFile;
+
+                              if (effectivePluginFile) {
+                                  addLog(`[System] Uploading plugin file ${effectivePluginFile.name}...`);
                                   const fd = new FormData();
-                                  fd.append('file', pluginFile);
+                                  fd.append('file', effectivePluginFile);
                                   try {
                                       const uploadRes = await fetch('/api/plugin/upload-file', {
                                           method: 'POST',
@@ -5087,21 +5106,35 @@ export default function App() {
                                       return;
                                   }
                               } else {
-                                  // 1. Save decklist
-                                  addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
-                                  try {
-                                    await fetch('/api/project/save-decklist', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ content: pluginState.decklist })
-                                    });
-                                  } catch (err) {
-                                    addLog(`[Error] Failed to stage decklist: ${err}`);
-                                    return;
+                                  const rawInput = (pluginState.decklist || '').trim();
+
+                                  // Validate URL format input before executing
+                                  if (isUrlFormat) {
+                                    if (!rawInput) {
+                                      addLog(`[Error] Please enter a valid decklist URL (e.g. Moxfield, Archidekt, Scryfall) in the input area first.`);
+                                      setTaskProgress({ current: 0, total: 1, message: 'Please enter a URL first.' });
+                                      setTimeout(() => setTaskProgress(null), 2500);
+                                      return;
+                                    }
+                                    // Extract clean first line URL without quotes or whitespace
+                                    const cleanUrl = rawInput.split(/[\r\n]+/)[0].trim().replace(/^["']|["']$/g, '');
+                                    targetInput = cleanUrl;
+                                  } else {
+                                    // 1. Save decklist
+                                    addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
+                                    try {
+                                      await fetch('/api/project/save-decklist', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ content: pluginState.decklist })
+                                      });
+                                    } catch (err) {
+                                      addLog(`[Error] Failed to stage decklist: ${err}`);
+                                      return;
+                                    }
+
+                                    targetInput = isDirectInput ? rawInput : `game/decklist/current.txt`;
                                   }
-    
-                                  const isDirectInput = pluginState.format === 'url' || pluginState.format.includes('url') || pluginState.format === 'elestrals' || pluginState.format === 'ydke';
-                                  targetInput = isDirectInput ? pluginState.decklist.trim() : `game/decklist/current.txt`;
                               }
 
                               // 2. Build and run command
@@ -5142,7 +5175,6 @@ export default function App() {
                                 hideProgressOnComplete: true,
                                 tempDirId,
                                 uploadedPluginFilePath,
-                                autoUpscale: autoUpscaleImport,
                                 upscaleOptions: upscaleConfig
                               });
                               
@@ -5151,7 +5183,15 @@ export default function App() {
                                   const fronts = Array.isArray(result.fetchedFiles.fronts) ? result.fetchedFiles.fronts : [];
                                   const backs = Array.isArray(result.fetchedFiles.backs) ? result.fetchedFiles.backs : [];
                                   const double_sided = Array.isArray(result.fetchedFiles.double_sided) ? result.fetchedFiles.double_sided : [];
-                                  
+                                  const totalFetched = fronts.length + backs.length + double_sided.length;
+
+                                  if (totalFetched === 0) {
+                                      addLog(`[Warning] No cards were found or fetched. Please verify that the deck/URL is public and valid.`);
+                                      setTaskProgress({ current: 0, total: 1, message: 'No cards found.' });
+                                      setTimeout(() => setTaskProgress(null), 2500);
+                                      return;
+                                  }
+
                                   const targetFronts = status?.plugins?.fronts || [];
                                   const targetBacks = status?.plugins?.backs || [];
                                   const targetDob = status?.plugins?.double_sided || [];
@@ -5164,14 +5204,16 @@ export default function App() {
                                       setTaskProgress(null);
                                       setFetchConflictData({ tempDirId, collisions, resolutions: {} });
                                   } else {
-                                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                                      setTaskProgress({ current: totalFetched, total: totalFetched, message: `Committing ${totalFetched} card(s)...` });
                                       await fetch('/api/plugin/fetch-commit', {
                                           method: 'POST',
                                           headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ tempDirId, resolutions: {}, autoUpscale: autoUpscaleImport, upscaleOptions: upscaleConfig })
+                                          body: JSON.stringify({ tempDirId, resolutions: {}, upscaleOptions: upscaleConfig })
                                       });
                                       await fetchStatus();
-                                      setTaskProgress(null);
+                                      addLog(`[System] Successfully imported ${totalFetched} card image(s).`);
+                                      setTaskProgress({ current: totalFetched, total: totalFetched, message: `Imported ${totalFetched} card(s)!` });
+                                      setTimeout(() => setTaskProgress(null), 1500);
                                   }
                               } else {
                                 setTaskProgress(null);
