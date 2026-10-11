@@ -68,17 +68,81 @@ async function startServer() {
     }
   };
 
-  const upscaleImageFile = async (filePath: string, scaleFactor = 2): Promise<boolean> => {
+  interface UpscaleOptions {
+    scaleFactor?: number;
+    model?: string;
+    sharpen?: boolean;
+    denoise?: boolean;
+    enhanceContrast?: boolean;
+    maxDimension?: number;
+  }
+
+  const upscaleImageFile = async (filePath: string, optionsOrScale: number | UpscaleOptions = 2): Promise<boolean> => {
     if (!fs.existsSync(filePath)) return false;
     try {
+      const opts: UpscaleOptions = typeof optionsOrScale === 'number'
+        ? { scaleFactor: optionsOrScale }
+        : (optionsOrScale || { scaleFactor: 2 });
+      const scaleFactor = Math.max(1, Math.min(8, Number(opts.scaleFactor) || 2));
+      const model = opts.model || 'realesrgan';
+      const sharpen = opts.sharpen !== false;
+      const denoise = !!opts.denoise;
+      const enhanceContrast = !!opts.enhanceContrast;
+      const maxDimension = Number(opts.maxDimension) || 4096;
+
       const { Jimp } = await import('jimp');
       const image = await Jimp.read(filePath);
       const curW = image.width;
       const curH = image.height;
       if (curW > 0 && curH > 0) {
-         image.resize({ w: Math.round(curW * scaleFactor), h: Math.round(curH * scaleFactor) });
+         if (denoise) {
+           image.blur(1);
+         }
+
+         let targetW = Math.round(curW * scaleFactor);
+         let targetH = Math.round(curH * scaleFactor);
+         if (targetW > maxDimension || targetH > maxDimension) {
+           const ratio = Math.min(maxDimension / targetW, maxDimension / targetH);
+           targetW = Math.round(targetW * ratio);
+           targetH = Math.round(targetH * ratio);
+         }
+
+         image.resize({ w: targetW, h: targetH });
+
+         if (model === 'digital_art') {
+           image.contrast(0.06);
+           image.convolute([
+             [0, -0.25, 0],
+             [-0.25, 2, -0.25],
+             [0, -0.25, 0]
+           ]);
+         } else if (model === 'remacri') {
+           image.convolute([
+             [0, -0.5, 0],
+             [-0.5, 3, -0.5],
+             [0, -0.5, 0]
+           ]);
+         } else if (model === 'card_fidelity') {
+           image.contrast(0.04);
+           image.convolute([
+             [0, -0.3, 0],
+             [-0.3, 2.2, -0.3],
+             [0, -0.3, 0]
+           ]);
+         } else if (sharpen) {
+           image.convolute([
+             [0, -0.25, 0],
+             [-0.25, 2, -0.25],
+             [0, -0.25, 0]
+           ]);
+         }
+
+         if (enhanceContrast) {
+           image.contrast(0.05);
+         }
+
          await image.write(filePath as any);
-         console.log(`[Upscale] ${path.basename(filePath)} (${curW}x${curH} -> ${image.width}x${image.height})`);
+         console.log(`[Upscale: ${model}] ${path.basename(filePath)} (${curW}x${curH} -> ${image.width}x${image.height})`);
          return true;
       }
     } catch(e: any) {
@@ -87,14 +151,14 @@ async function startServer() {
     return false;
   };
 
-  const upscaleDirectoryImages = async (dirPath: string, scaleFactor = 2) => {
+  const upscaleDirectoryImages = async (dirPath: string, optionsOrScale: number | UpscaleOptions = 2) => {
     if (!fs.existsSync(dirPath)) return 0;
     try {
       const files = fs.readdirSync(dirPath).filter(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
       let count = 0;
       for (const f of files) {
         const full = path.join(dirPath, f);
-        const ok = await upscaleImageFile(full, scaleFactor);
+        const ok = await upscaleImageFile(full, optionsOrScale);
         if (ok) count++;
       }
       return count;
@@ -2589,13 +2653,14 @@ app.get("/api/moxfield-proxy", async (req, res) => {
              autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
 
              if (req.body.autoUpscale) {
+                const upscaleOpts = req.body.upscaleOptions || { scaleFactor: 2 };
                 const gameDir = customEnv.SCM_GAME_DIR || tempBase;
-                await upscaleDirectoryImages(path.join(gameDir, 'front'));
-                await upscaleDirectoryImages(path.join(gameDir, 'back'));
-                await upscaleDirectoryImages(path.join(gameDir, 'double_sided'));
-                await upscaleDirectoryImages(path.join(tempBase, 'front'));
-                await upscaleDirectoryImages(path.join(tempBase, 'back'));
-                await upscaleDirectoryImages(path.join(tempBase, 'double_sided'));
+                await upscaleDirectoryImages(path.join(gameDir, 'front'), upscaleOpts);
+                await upscaleDirectoryImages(path.join(gameDir, 'back'), upscaleOpts);
+                await upscaleDirectoryImages(path.join(gameDir, 'double_sided'), upscaleOpts);
+                await upscaleDirectoryImages(path.join(tempBase, 'front'), upscaleOpts);
+                await upscaleDirectoryImages(path.join(tempBase, 'back'), upscaleOpts);
+                await upscaleDirectoryImages(path.join(tempBase, 'double_sided'), upscaleOpts);
              }
 
              const getFiles = (dir: string) => {
@@ -2932,13 +2997,14 @@ app.get("/api/moxfield-proxy", async (req, res) => {
          autoPairCustomTokens(tempBase, path.join(scmPath, 'game', 'decklist'));
 
          if (req.body.autoUpscale) {
+            const upscaleOpts = req.body.upscaleOptions || { scaleFactor: 2 };
             const gameDir = customEnv.SCM_GAME_DIR || tempBase;
-            await upscaleDirectoryImages(path.join(gameDir, 'front'));
-            await upscaleDirectoryImages(path.join(gameDir, 'back'));
-            await upscaleDirectoryImages(path.join(gameDir, 'double_sided'));
-            await upscaleDirectoryImages(path.join(tempBase, 'front'));
-            await upscaleDirectoryImages(path.join(tempBase, 'back'));
-            await upscaleDirectoryImages(path.join(tempBase, 'double_sided'));
+            await upscaleDirectoryImages(path.join(gameDir, 'front'), upscaleOpts);
+            await upscaleDirectoryImages(path.join(gameDir, 'back'), upscaleOpts);
+            await upscaleDirectoryImages(path.join(gameDir, 'double_sided'), upscaleOpts);
+            await upscaleDirectoryImages(path.join(tempBase, 'front'), upscaleOpts);
+            await upscaleDirectoryImages(path.join(tempBase, 'back'), upscaleOpts);
+            await upscaleDirectoryImages(path.join(tempBase, 'double_sided'), upscaleOpts);
          }
 
          const getFiles = (dir: string) => {
@@ -2989,15 +3055,34 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   app.post("/api/upscale", async (req, res) => {
     try {
-      const { identities, assetViewMode, allInView, scaleFactor = 2 } = req.body;
+      const {
+        identities,
+        assetViewMode,
+        allInView,
+        scaleFactor = 2,
+        model = 'realesrgan',
+        sharpen = true,
+        denoise = false,
+        enhanceContrast = false,
+        scope = 'all',
+        maxDimension = 4096
+      } = req.body;
       let targetPaths: string[] = [];
 
       let basePath = scmPath;
       if (assetViewMode === 'library') basePath = libraryPath;
       else if (assetViewMode === 'plugins') basePath = pluginsPath;
 
-      if (allInView) {
-        ['front', 'back', 'double_sided'].forEach(subDir => {
+      const subDirsToProcess = scope === 'front'
+        ? ['front']
+        : scope === 'back'
+        ? ['back']
+        : scope === 'double_sided'
+        ? ['double_sided']
+        : ['front', 'back', 'double_sided'];
+
+      if (allInView || (scope !== 'selected' && (!identities || identities.length === 0))) {
+        subDirsToProcess.forEach(subDir => {
           const dir = path.join(basePath, subDir);
           const dirGame = path.join(basePath, 'game', subDir);
           [dir, dirGame].forEach(d => {
@@ -3026,13 +3111,24 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         }
       }
 
+      targetPaths = Array.from(new Set(targetPaths));
+
       if (targetPaths.length === 0) {
         return res.json({ success: false, message: 'No valid card images found to upscale.' });
       }
 
+      const options: UpscaleOptions = {
+        scaleFactor: Number(scaleFactor) || 2,
+        model,
+        sharpen: !!sharpen,
+        denoise: !!denoise,
+        enhanceContrast: !!enhanceContrast,
+        maxDimension: Number(maxDimension) || 4096
+      };
+
       let count = 0;
       for (const p of targetPaths) {
-        const ok = await upscaleImageFile(p, scaleFactor);
+        const ok = await upscaleImageFile(p, options);
         if (ok) count++;
       }
 

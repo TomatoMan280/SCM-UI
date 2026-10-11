@@ -37,14 +37,67 @@ import {
   Upload,
   Settings2,
   Check,
-  Sparkles,
-  Search
+  Search,
+  Zap,
+  Maximize2,
+  SlidersHorizontal,
+  ZoomIn
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { Theme, setTheme, getTheme } from './lib/theme';
 import PresetManager from './components/PresetManager';
 import ProjectManager from './components/ProjectManager';
+
+export interface UpscaleConfig {
+  scaleFactor: 2 | 3 | 4;
+  model: 'realesrgan' | 'digital_art' | 'remacri' | 'card_fidelity' | 'bicubic_crisp';
+  sharpen: boolean;
+  denoise: boolean;
+  enhanceContrast: boolean;
+  scope: 'all' | 'front' | 'back' | 'double_sided' | 'selected';
+  maxDimension: number;
+}
+
+export const defaultUpscaleConfig: UpscaleConfig = {
+  scaleFactor: 2,
+  model: 'realesrgan',
+  sharpen: true,
+  denoise: true,
+  enhanceContrast: false,
+  scope: 'all',
+  maxDimension: 4096
+};
+
+export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("[UI Crash Prevented by ErrorBoundary]:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 m-4 bg-red-950/40 border border-red-500/30 rounded-2xl text-red-200 text-sm flex flex-col items-center gap-3">
+          <p className="font-bold">An unexpected interface error occurred, but the app was prevented from crashing.</p>
+          <p className="text-xs text-red-300/80 font-mono">{this.state.error?.message}</p>
+          <button 
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-xl text-xs font-bold text-red-100 transition-colors cursor-pointer"
+          >
+            Dismiss & Recover
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const stripExt = (filename?: string | null) => {
   if (!filename || typeof filename !== 'string') return '';
@@ -1012,11 +1065,42 @@ export default function App() {
     } catch(e) {}
   };
 
-  const handleUpscale = async (identities?: string[], allInView = false) => {
+  const [upscaleConfig, setUpscaleConfig] = useState<UpscaleConfig>(() => {
     try {
+      const saved = localStorage.getItem('scm_upscale_config');
+      if (saved) return { ...defaultUpscaleConfig, ...JSON.parse(saved) };
+    } catch(e) {}
+    return defaultUpscaleConfig;
+  });
+
+  const [upscaleSectionExpanded, setUpscaleSectionExpanded] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('scm_upscale_expanded');
+      return saved === 'true';
+    } catch(e) {
+      return false;
+    }
+  });
+
+  const toggleUpscaleSectionExpanded = (val: boolean) => {
+    setUpscaleSectionExpanded(val);
+    try { localStorage.setItem('scm_upscale_expanded', String(val)); } catch(e) {}
+  };
+
+  const updateUpscaleConfig = (updates: Partial<UpscaleConfig>) => {
+    setUpscaleConfig(prev => {
+      const next = { ...prev, ...updates };
+      try { localStorage.setItem('scm_upscale_config', JSON.stringify(next)); } catch(e) {}
+      return next;
+    });
+  };
+
+  const handleUpscale = async (identities?: string[], allInView = false, customConfig?: Partial<UpscaleConfig>) => {
+    try {
+      const cfg = { ...upscaleConfig, ...(customConfig || {}) };
       const label = allInView ? 'all deck / view cards' : `${identities?.length || 1} card${(identities?.length || 1) === 1 ? '' : 's'}`;
-      setTaskProgress({ current: 1, total: 100, message: `Upscaling ${label} (2x HD)...` });
-      addLog(`[Action: Upscale] Initiating 2x high resolution upscaling for ${label}...`);
+      setTaskProgress({ current: 1, total: 100, message: `Upscaling ${label} (${cfg.scaleFactor}x HD)...` });
+      addLog(`[Action: Upscale] Initiating ${cfg.scaleFactor}x resolution upscaling (${cfg.model}) for ${label}...`);
 
       const res = await fetch('/api/upscale', {
         method: 'POST',
@@ -1025,13 +1109,19 @@ export default function App() {
           identities,
           allInView,
           assetViewMode,
-          scaleFactor: 2
+          scaleFactor: cfg.scaleFactor,
+          model: cfg.model,
+          sharpen: cfg.sharpen,
+          denoise: cfg.denoise,
+          enhanceContrast: cfg.enhanceContrast,
+          scope: allInView ? cfg.scope : (identities ? 'selected' : cfg.scope),
+          maxDimension: cfg.maxDimension
         })
       });
       const data = await res.json();
       if (data.success) {
-        addLog(`[Action: Upscale] Successfully upscaled ${data.count} card image(s) to 2x high resolution.`);
-        setTaskProgress({ current: 100, total: 100, message: `Upscaled ${data.count} card image(s) (2x HD)!` });
+        addLog(`[Action: Upscale] Successfully upscaled ${data.count} card image(s) to ${cfg.scaleFactor}x high resolution.`);
+        setTaskProgress({ current: 100, total: 100, message: `Upscaled ${data.count} card image(s) (${cfg.scaleFactor}x HD)!` });
         await fetchStatus();
       } else {
         addLog(`[Error: Upscale] ${data.message || data.error || 'Failed to upscale card images.'}`);
@@ -1791,7 +1881,7 @@ export default function App() {
     addLog("[Plugins] Exported configuration to JSON file.");
   };
 
-  const runCommand = async (command: string, args?: string[], options?: { isPluginFetch?: boolean, startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string }, autoUpscale?: boolean }) => {
+  const runCommand = async (command: string, args?: string[], options?: { isPluginFetch?: boolean, startMessage?: string, hideProgressOnComplete?: boolean, tempDirId?: string, uploadedPluginFilePath?: string, crop?: string, calibration?: { x: number | string, y: number | string, angle: number | string }, autoUpscale?: boolean, upscaleOptions?: UpscaleConfig }) => {
     setTaskProgress({ current: 0, total: 1, message: options?.startMessage || `Running task...` });
     addLog(`[Console] Executing: ${command} ${args?.join(' ') || ''}`);
     const abortController = new AbortController();
@@ -1809,7 +1899,8 @@ export default function App() {
           pythonPath, 
           crop: options?.crop,
           calibration: options?.calibration,
-          autoUpscale: options?.autoUpscale
+          autoUpscale: options?.autoUpscale,
+          upscaleOptions: options?.upscaleOptions || upscaleConfig
         }),
         signal: abortController.signal
       });
@@ -4078,7 +4169,7 @@ export default function App() {
                             <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
                               <div className="space-y-0.5 flex-1">
                                 <div className="flex items-center gap-2">
-                                  <Sparkles size={16} className="text-primary-400" />
+                                  <PlusCircle size={16} className="text-primary-400" />
                                   <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
                                 </div>
                                 <p className="text-[11px] text-white/50">Search any card or backing by name and add directly into your project workspace without needing a decklist.</p>
@@ -4103,24 +4194,228 @@ export default function App() {
                             </div>
                           )}
 
-                          {/* Auto-Upscale Option Toggle */}
-                          <div className="mb-4 flex items-center justify-between bg-white/[0.03] border border-white/10 rounded-2xl p-4 transition-all hover:border-white/20">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-400">
-                                <Sparkles size={18} />
+                          {/* Image Upscaling & Resolution Engine Subsection */}
+                          <div className="mb-4 bg-white/[0.03] border border-white/10 hover:border-primary-500/30 rounded-2xl overflow-hidden transition-all shadow-lg">
+                            {/* Subsection Header */}
+                            <div 
+                              onClick={() => toggleUpscaleSectionExpanded(!upscaleSectionExpanded)}
+                              className="p-4 flex items-center justify-between cursor-pointer select-none group"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-primary-500/10 rounded-xl text-primary-400 group-hover:bg-primary-500/20 transition-colors">
+                                  <Maximize2 size={18} />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-white block">Image Upscaling Engine</span>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary-500/20 text-primary-300 border border-primary-500/30">
+                                      {upscaleConfig.scaleFactor}x HD
+                                    </span>
+                                    {autoUpscaleImport && (
+                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                        Auto-Active
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-white/50 block">
+                                    Resolution multiplier, AI models, unsharp mask & artifact reduction
+                                  </span>
+                                </div>
                               </div>
-                              <div>
-                                <span className="text-xs font-bold text-white block">Auto-Upscale Card Images (2x HD)</span>
-                                <span className="text-[11px] text-white/50 block">Automatically enhances low-res card images to crisp 2x resolution during import</span>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleAutoUpscaleImport(!autoUpscaleImport);
+                                  }}
+                                  className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${autoUpscaleImport ? 'bg-primary-500' : 'bg-white/20'}`}
+                                  title={autoUpscaleImport ? "Auto-upscaling enabled for plugin fetches" : "Auto-upscaling disabled"}
+                                >
+                                  <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${autoUpscaleImport ? 'left-6' : 'left-1'}`} />
+                                </button>
+                                <ChevronDown 
+                                  size={18} 
+                                  className={cn("text-white/40 group-hover:text-white transition-transform duration-300", upscaleSectionExpanded && "rotate-180")} 
+                                />
                               </div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => toggleAutoUpscaleImport(!autoUpscaleImport)}
-                              className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${autoUpscaleImport ? 'bg-primary-500' : 'bg-white/20'}`}
-                            >
-                              <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${autoUpscaleImport ? 'left-7' : 'left-1'}`} />
-                            </button>
+
+                            {/* Subsection Expanded Body */}
+                            {upscaleSectionExpanded && (
+                              <div className="p-4 border-t border-white/5 bg-black/20 space-y-4">
+                                {/* Scale Factor Selector */}
+                                <div>
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
+                                    Resolution Scale Multiplier
+                                  </label>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {([2, 3, 4] as const).map(scale => (
+                                      <button
+                                        key={scale}
+                                        type="button"
+                                        onClick={() => updateUpscaleConfig({ scaleFactor: scale })}
+                                        className={cn(
+                                          "py-2 px-3 rounded-xl text-xs font-bold transition-all border flex flex-col items-center justify-center gap-0.5 cursor-pointer",
+                                          upscaleConfig.scaleFactor === scale
+                                            ? "bg-primary-600 text-white border-primary-400 shadow-md shadow-primary-600/30"
+                                            : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10 border-white/10"
+                                        )}
+                                      >
+                                        <span>{scale}x Resolution</span>
+                                        <span className="text-[9px] opacity-75 font-normal">
+                                          {scale === 2 ? 'Fast HD (200%)' : scale === 3 ? 'Super HD (300%)' : 'Ultra HD (400%)'}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Model / Profile Selector */}
+                                <div>
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
+                                    Upscaling Profile & Model
+                                  </label>
+                                  <div className="relative">
+                                    <select
+                                      value={upscaleConfig.model}
+                                      onChange={(e) => updateUpscaleConfig({ model: e.target.value as any })}
+                                      className="w-full bg-[#14151b] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors"
+                                    >
+                                      <option value="realesrgan" className="bg-[#14151b]">Real-ESRGAN (General / Card Art Balanced)</option>
+                                      <option value="digital_art" className="bg-[#14151b]">Digital Art & Anime (High Vibrancy & Sharp Lines)</option>
+                                      <option value="remacri" className="bg-[#14151b]">Remacri / Ultramix (Extreme Texture & Micro-Sharpening)</option>
+                                      <option value="card_fidelity" className="bg-[#14151b]">Card Art & Typography Fidelity (Crisp Text & Borders)</option>
+                                      <option value="bicubic_crisp" className="bg-[#14151b]">Bicubic Crisp (Lightweight Neural Interpolation)</option>
+                                    </select>
+                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+                                  </div>
+                                </div>
+
+                                {/* Processing Scope */}
+                                <div>
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
+                                    Card Target Scope
+                                  </label>
+                                  <div className="relative">
+                                    <select
+                                      value={upscaleConfig.scope}
+                                      onChange={(e) => updateUpscaleConfig({ scope: e.target.value as any })}
+                                      className="w-full bg-[#14151b] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors"
+                                    >
+                                      <option value="all" className="bg-[#14151b]">All Staged Cards (Fronts, Backs & Double-Sided)</option>
+                                      <option value="front" className="bg-[#14151b]">Front Faces Only</option>
+                                      <option value="back" className="bg-[#14151b]">Back Patterns Only</option>
+                                      <option value="double_sided" className="bg-[#14151b]">Double-Sided Only</option>
+                                      <option value="selected" className="bg-[#14151b]">Currently Selected Cards ({selectedAssets.size} selected)</option>
+                                    </select>
+                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+                                  </div>
+                                </div>
+
+                                {/* Filters and Enhancement Toggles */}
+                                <div className="space-y-2 pt-1">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1">
+                                    Quality & Pre/Post-Processing
+                                  </label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {/* Sharpening Toggle */}
+                                    <div 
+                                      onClick={() => updateUpscaleConfig({ sharpen: !upscaleConfig.sharpen })}
+                                      className={cn(
+                                        "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
+                                        upscaleConfig.sharpen ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
+                                      )}
+                                    >
+                                      <div className="pr-2">
+                                        <span className="text-xs font-semibold block">Edge & Text Sharpen</span>
+                                        <span className="text-[10px] opacity-60 block">Crisp text, numbers & borders</span>
+                                      </div>
+                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.sharpen ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
+                                        {upscaleConfig.sharpen && <Check size={12} />}
+                                      </div>
+                                    </div>
+
+                                    {/* Denoise Toggle */}
+                                    <div 
+                                      onClick={() => updateUpscaleConfig({ denoise: !upscaleConfig.denoise })}
+                                      className={cn(
+                                        "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
+                                        upscaleConfig.denoise ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
+                                      )}
+                                    >
+                                      <div className="pr-2">
+                                        <span className="text-xs font-semibold block">Artifact Reduction</span>
+                                        <span className="text-[10px] opacity-60 block">Remove web JPEG compression noise</span>
+                                      </div>
+                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.denoise ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
+                                        {upscaleConfig.denoise && <Check size={12} />}
+                                      </div>
+                                    </div>
+
+                                    {/* Contrast / Vibrancy Toggle */}
+                                    <div 
+                                      onClick={() => updateUpscaleConfig({ enhanceContrast: !upscaleConfig.enhanceContrast })}
+                                      className={cn(
+                                        "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
+                                        upscaleConfig.enhanceContrast ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
+                                      )}
+                                    >
+                                      <div className="pr-2">
+                                        <span className="text-xs font-semibold block">Color & Contrast Boost</span>
+                                        <span className="text-[10px] opacity-60 block">Vibrant saturation for physical print</span>
+                                      </div>
+                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.enhanceContrast ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
+                                        {upscaleConfig.enhanceContrast && <Check size={12} />}
+                                      </div>
+                                    </div>
+
+                                    {/* Max Resolution Clamp */}
+                                    <div 
+                                      onClick={() => updateUpscaleConfig({ maxDimension: upscaleConfig.maxDimension === 4096 ? 8192 : 4096 })}
+                                      className={cn(
+                                        "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
+                                        upscaleConfig.maxDimension === 4096 ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
+                                      )}
+                                    >
+                                      <div className="pr-2">
+                                        <span className="text-xs font-semibold block">Memory Clamp (4096px)</span>
+                                        <span className="text-[10px] opacity-60 block">Prevents memory exhaustion</span>
+                                      </div>
+                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.maxDimension === 4096 ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
+                                        {upscaleConfig.maxDimension === 4096 && <Check size={12} />}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Direct Trigger Buttons */}
+                                <div className="pt-2 flex flex-col sm:flex-row items-center gap-2 border-t border-white/5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUpscale(undefined, true)}
+                                    className="w-full sm:flex-1 py-2.5 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 cursor-pointer"
+                                  >
+                                    <Maximize2 size={14} />
+                                    <span>Upscale All Cards Now ({upscaleConfig.scaleFactor}x HD)</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={selectedAssets.size === 0}
+                                    onClick={() => handleUpscale(Array.from(selectedAssets), false)}
+                                    className={cn(
+                                      "w-full sm:flex-initial py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border",
+                                      selectedAssets.size > 0
+                                        ? "bg-white/10 hover:bg-white/15 text-white border-white/20 active:scale-95 cursor-pointer"
+                                        : "bg-white/[0.02] text-white/30 border-white/5 cursor-not-allowed"
+                                    )}
+                                  >
+                                    <CheckSquare size={14} />
+                                    <span>Upscale Selected ({selectedAssets.size})</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           <button 
@@ -4211,7 +4506,8 @@ export default function App() {
                                 hideProgressOnComplete: true,
                                 tempDirId,
                                 uploadedPluginFilePath,
-                                autoUpscale: autoUpscaleImport
+                                autoUpscale: autoUpscaleImport,
+                                upscaleOptions: upscaleConfig
                               });
                               
                               if (result && result.fetchedFiles) {
@@ -4234,7 +4530,7 @@ export default function App() {
                                       await fetch('/api/plugin/fetch-commit', {
                                           method: 'POST',
                                           headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ tempDirId, resolutions: {} })
+                                          body: JSON.stringify({ tempDirId, resolutions: {}, autoUpscale: autoUpscaleImport, upscaleOptions: upscaleConfig })
                                       });
                                       await fetchStatus();
                                       setTaskProgress(null);
@@ -5275,263 +5571,265 @@ export default function App() {
       <AnimatePresence>
       </AnimatePresence>
 
-      <AnimatePresence>
-        {contextMenu && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 10 }}
-            style={{ 
-              bottom: typeof window !== 'undefined' ? window.innerHeight - contextMenu.y : 0, 
-              right: typeof window !== 'undefined' ? window.innerWidth - contextMenu.x : 0,
-            }}
-            className="fixed z-[100] pointer-events-auto flex flex-col items-stretch gap-0.5 p-1.5 bg-[#1a1b23]/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)] w-48 max-w-[200px]"
-          >
-            {/* Proxxied-Style Select Art Options */}
-            {contextMenu.type !== 'back' ? (
-              <>
+      <ErrorBoundary>
+        <AnimatePresence>
+          {contextMenu && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              style={{ 
+                top: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerHeight - 440, contextMenu.y)) : 0, 
+                left: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerWidth - 220, contextMenu.x)) : 0,
+              }}
+              className="fixed z-[100] pointer-events-auto flex flex-col items-stretch gap-0.5 p-1.5 bg-[#1a1b23]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)] w-52 max-w-[220px]"
+            >
+              {/* Select Art Options */}
+              {contextMenu.type !== 'back' ? (
+                <>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                      setContextMenu(null);
+                    }}
+                    className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+                    title="Change the front face artwork of this card"
+                  >
+                    <ImageIcon size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                    <span>Select Front Art</span>
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
+                      setContextMenu(null);
+                    }}
+                    className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+                    title="Set back for this card (search any card or back pattern)"
+                  >
+                    <Layers size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                    <span>Set Back</span>
+                  </button>
+                </>
+              ) : (
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
-                    openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                    openArtPickerForCard(contextMenu.name, 'back', 'back');
                     setContextMenu(null);
                   }}
                   className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                  title="Change the front face artwork of this card"
+                  title="Change this back pattern"
                 >
-                  <Sparkles size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                  <span>Select Front Art</span>
+                  <ImageIcon size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                  <span>Select Backing Art</span>
                 </button>
+              )}
+              <div className="h-[1px] w-full bg-white/10 my-1" />
+              {(!contextMenu.type || contextMenu.type !== 'back') && (
                 <button 
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
+                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                    let allResults: any[] = [];
+                    for (let i = 0; i < targets.length; i++) {
+                      setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
+                      try {
+                        const res = await fetch('/api/duplicate', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ identity: targets[i], assetViewMode })
+                        });
+                        const data = await res.json();
+                        if (data.newName) {
+                          addLog(`[Action: Duplicate] ${targets[i]} -> ${data.newName} (Success)`);
+                          allResults.push(`${targets[i].split(':')[0]}:${data.newName}`);
+                        }
+                      } catch(err) {
+                        addLog(`[Error] Failed to duplicate: ${err}`);
+                      }
+                    }
+                    if (allResults.length > 0) {
+                       setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
+                    }
+                    setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} duplicated` });
+                    await fetchStatus();
+                    setTimeout(() => setTaskProgress(null), 1500);
                     setContextMenu(null);
                   }}
-                  className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                  title="Set back for this card (search any card or back pattern)"
+                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
                 >
-                  <Layers size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                  <span>Set Back</span>
+                  <Copy size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                  <span className="font-bold text-xs">Duplicate</span>
                 </button>
-              </>
-            ) : (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openArtPickerForCard(contextMenu.name, 'back', 'back');
-                  setContextMenu(null);
-                }}
-                className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                title="Change this back pattern"
-              >
-                <Sparkles size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                <span>Select Backing Art</span>
-              </button>
-            )}
-            <div className="h-[1px] w-full bg-white/10 my-1" />
-            {(!contextMenu.type || contextMenu.type !== 'back') && (
+              )}
+
+              {assetViewMode === 'library' && (
+                <>
+                  <div className="h-[1px] w-full bg-white/10 my-1" />
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                      await performMoveOrCopy(targets, 'project', 'library');
+                    }}
+                    className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
+                  >
+                    <PlusCircle size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                    <span className="font-bold text-xs">Add to Project</span>
+                  </button>
+                </>
+              )}
+
+              {assetViewMode === 'project' && (
+                <>
+                  <div className="h-[1px] w-full bg-white/10 my-1" />
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                      await performMoveOrCopy(targets, 'library', 'project');
+                    }}
+                    className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
+                  >
+                    <ImageIcon size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                    <span className="font-bold text-xs">Add to Library</span>
+                  </button>
+                </>
+              )}
+
+              {assetViewMode === 'plugins' && (
+                <>
+                  <div className="h-[1px] w-full bg-white/10 my-1" />
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                      await performMoveOrCopy(targets, 'project', 'plugins');
+                    }}
+                    className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
+                  >
+                    <PlusCircle size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                    <span className="font-bold text-xs">Add to Project</span>
+                  </button>
+
+                  <div className="h-[1px] w-full bg-white/10 my-1" />
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                      await performMoveOrCopy(targets, 'library', 'plugins');
+                    }}
+                    className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
+                  >
+                    <ImageIcon size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                    <span className="font-bold text-xs">Add to Library</span>
+                  </button>
+                </>
+              )}
+
+              <div className="h-[1px] w-full bg-white/10 my-1" />
               <button 
                 onClick={async (e) => {
                   e.stopPropagation();
                   const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
                   const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                  let allResults: any[] = [];
-                  for (let i = 0; i < targets.length; i++) {
-                    setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
-                    try {
-                      const res = await fetch('/api/duplicate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ identity: targets[i], assetViewMode })
-                      });
-                      const data = await res.json();
-                      if (data.newName) {
-                        addLog(`[Action: Duplicate] ${targets[i]} -> ${data.newName} (Success)`);
-                        allResults.push(`${targets[i].split(':')[0]}:${data.newName}`);
-                      }
-                    } catch(err) {
-                      addLog(`[Error] Failed to duplicate: ${err}`);
-                    }
-                  }
-                  if (allResults.length > 0) {
-                     setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
-                  }
-                  setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} duplicated` });
-                  await fetchStatus();
-                  setTimeout(() => setTaskProgress(null), 1500);
                   setContextMenu(null);
+                  await handleUpscale(targets, false);
+                }}
+                className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+                title={`Upscale selected card image(s) to ${upscaleConfig.scaleFactor}x HD`}
+              >
+                <Maximize2 size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                <span>Upscale Card ({upscaleConfig.scaleFactor}x HD)</span>
+              </button>
+
+              <button 
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  setContextMenu(null);
+                  await handleUpscale(undefined, true);
+                }}
+                className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
+                title={`Upscale all card images in current view to ${upscaleConfig.scaleFactor}x HD`}
+              >
+                <ZoomIn size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                <span>Upscale View ({upscaleConfig.scaleFactor}x HD)</span>
+              </button>
+
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const currentAssets = getCurrentAssets();
+                  const toSelect = new Set<string>();
+                  if (currentAssets?.fronts) {
+                    currentAssets.fronts.forEach(f => toSelect.add(`front:${f}`));
+                  }
+                  setSelectedAssets(toSelect);
+                  setContextMenu(null);
+                  addLog(`[System] Selected all front ${assetViewMode} assets.`);
                 }}
                 className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
               >
-                <Copy size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                <span className="font-bold text-xs">Duplicate</span>
+                <CheckSquare size={16} className="text-white/40 group-hover:text-white shrink-0" />
+                <span className="font-bold text-xs">Select All</span>
               </button>
-            )}
 
-            {assetViewMode === 'library' && (
-              <>
-                <div className="h-[1px] w-full bg-white/10 my-1" />
-                <button 
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                    await performMoveOrCopy(targets, 'project', 'library');
-                  }}
-                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                >
-                  <PlusCircle size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                  <span className="font-bold text-xs">Add to Project</span>
-                </button>
-              </>
-            )}
+              {true && (
+                <>
+                  <div className="h-[1px] w-full bg-white/10 my-1" />
 
-            {assetViewMode === 'project' && (
-              <>
-                <div className="h-[1px] w-full bg-white/10 my-1" />
-                <button 
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                    await performMoveOrCopy(targets, 'library', 'project');
-                  }}
-                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                >
-                  <ImageIcon size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                  <span className="font-bold text-xs">Add to Library</span>
-                </button>
-              </>
-            )}
-
-            {assetViewMode === 'plugins' && (
-              <>
-                <div className="h-[1px] w-full bg-white/10 my-1" />
-                <button 
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                    await performMoveOrCopy(targets, 'project', 'plugins');
-                  }}
-                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                >
-                  <PlusCircle size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                  <span className="font-bold text-xs">Add to Project</span>
-                </button>
-
-                <div className="h-[1px] w-full bg-white/10 my-1" />
-                <button 
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                    await performMoveOrCopy(targets, 'library', 'plugins');
-                  }}
-                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                >
-                  <ImageIcon size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                  <span className="font-bold text-xs">Add to Library</span>
-                </button>
-              </>
-            )}
-
-            <div className="h-[1px] w-full bg-white/10 my-1" />
-            <button 
-              onClick={async (e) => {
-                e.stopPropagation();
-                const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                setContextMenu(null);
-                await handleUpscale(targets, false);
-              }}
-              className="w-full h-9 px-3 hover:bg-amber-500/15 text-amber-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-              title="Upscale selected card image(s) to 2x high resolution"
-            >
-              <Sparkles size={15} className="text-amber-400 group-hover:text-amber-300 shrink-0" />
-              <span>Upscale Card (2x HD)</span>
-            </button>
-
-            <button 
-              onClick={async (e) => {
-                e.stopPropagation();
-                setContextMenu(null);
-                await handleUpscale(undefined, true);
-              }}
-              className="w-full h-9 px-3 hover:bg-amber-500/15 text-amber-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-              title="Upscale all card images in current view to 2x high resolution"
-            >
-              <Zap size={15} className="text-amber-400 group-hover:text-amber-300 shrink-0" />
-              <span>Upscale Entire View</span>
-            </button>
-
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                const currentAssets = getCurrentAssets();
-                const toSelect = new Set<string>();
-                if (currentAssets?.fronts) {
-                  currentAssets.fronts.forEach(f => toSelect.add(`front:${f}`));
-                }
-                setSelectedAssets(toSelect);
-                setContextMenu(null);
-                addLog(`[System] Selected all front ${assetViewMode} assets.`);
-              }}
-              className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-            >
-              <CheckSquare size={16} className="text-white/40 group-hover:text-white shrink-0" />
-              <span className="font-bold text-xs">Select All</span>
-            </button>
-
-            {true && (
-              <>
-                <div className="h-[1px] w-full bg-white/10 my-1" />
-
-                <button 
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                    
-                    let allResults: any[] = [];
-                    for (let i = 0; i < targets.length; i++) {
-                      setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
-                      try {
-                        const res = await fetch('/api/delete', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ identity: [targets[i]], assetViewMode })
-                        });
-                        const data = await res.json();
-                        if (data.results) {
-                          data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
-                          allResults = allResults.concat(data.results);
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+                      
+                      let allResults: any[] = [];
+                      for (let i = 0; i < targets.length; i++) {
+                        setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
+                        try {
+                          const res = await fetch('/api/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ identity: [targets[i]], assetViewMode })
+                          });
+                          const data = await res.json();
+                          if (data.results) {
+                            data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
+                            allResults = allResults.concat(data.results);
+                          }
+                        } catch(err) {
+                          addLog(`[Error] Failed to delete: ${err}`);
                         }
-                      } catch(err) {
-                        addLog(`[Error] Failed to delete: ${err}`);
                       }
-                    }
-                    if (allResults.length > 0) {
-                      setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
-                    }
-                    
-                    setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} deleted` });
-                    await fetchStatus();
-                    setTimeout(() => setTaskProgress(null), 1500);
-                    setContextMenu(null);
-                    setSelectedAssets(new Set());
-                  }}
-                  className="w-full h-9 px-3 hover:bg-rose-500/10 text-rose-400 rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                >
-                  <Trash2 size={16} className="text-rose-400/40 group-hover:text-rose-400 shrink-0" />
-                  <span className="font-bold text-xs">Delete</span>
-                </button>
-              </>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+                      if (allResults.length > 0) {
+                        setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
+                      }
+                      
+                      setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} deleted` });
+                      await fetchStatus();
+                      setTimeout(() => setTaskProgress(null), 1500);
+                      setContextMenu(null);
+                      setSelectedAssets(new Set());
+                    }}
+                    className="w-full h-9 px-3 hover:bg-rose-500/10 text-rose-400 rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
+                  >
+                    <Trash2 size={16} className="text-rose-400/40 group-hover:text-rose-400 shrink-0" />
+                    <span className="font-bold text-xs">Delete</span>
+                  </button>
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </ErrorBoundary>
       {activeTab === 'assets' && (assetViewMode === 'library' || assetViewMode === 'plugins') && selectedAssets.size > 0 && (
          <motion.div
            initial={{ opacity: 0, y: 50 }}
@@ -5691,7 +5989,7 @@ export default function App() {
               <div className="flex items-center justify-between p-5 border-b border-white/10 bg-white/[0.02]">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-primary-600/20 text-primary-400 flex items-center justify-center border border-primary-500/30 shadow-inner">
-                    <Sparkles size={20} />
+                    <ImageIcon size={20} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -6148,7 +6446,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="h-72 flex flex-col items-center justify-center gap-2 text-white/30 text-center px-4">
-                    <Sparkles size={32} className="opacity-40 text-primary-400" />
+                    <ImageIcon size={32} className="opacity-40 text-primary-400" />
                     <p className="text-sm font-semibold text-white/60">
                       {isBacksOnlyModal ? "Type a search term above to find card back patterns." : "Type a card name above to browse printings."}
                     </p>
