@@ -2129,7 +2129,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
     const isLibrary = assetViewMode === 'library';
     const isPlugins = assetViewMode === 'plugins';
-    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
+    if (isPlugins) return res.status(400).json({ error: "Moving sections is not supported in plugins" });
+    const targetBase = isLibrary ? libraryPath : path.join(scmPath, 'game');
 
     const items = Array.isArray(identities) ? identities : [identities];
     const moved: string[] = [];
@@ -2175,6 +2176,62 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
 
     res.json({ success: true, moved, message: `Moved ${moved.length} card(s) to ${targetSection}` });
+  });
+
+  app.post("/api/cards/download-zip", async (req, res) => {
+    const { identities, assetViewMode } = req.body;
+    if (!identities || !Array.isArray(identities) || identities.length === 0) {
+      return res.status(400).json({ error: "Missing or invalid identities" });
+    }
+
+    const isLibrary = assetViewMode === 'library';
+    const isPlugins = assetViewMode === 'plugins';
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
+
+    try {
+      const AdmZip = (await import('adm-zip')).default;
+      const zip = new AdmZip();
+      const addedNames = new Set<string>();
+
+      for (const id of identities) {
+        let type = 'front';
+        let name = id;
+        if (id.includes(':')) {
+          const parts = id.split(':');
+          type = parts[0];
+          name = parts.slice(1).join(':');
+        }
+
+        const filePath = path.join(targetBase, type, name);
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+          let entryName = name;
+          if (addedNames.has(entryName)) {
+            const ext = path.extname(name);
+            const base = path.basename(name, ext);
+            let counter = 1;
+            while (addedNames.has(`${base}_${counter}${ext}`)) {
+              counter++;
+            }
+            entryName = `${base}_${counter}${ext}`;
+          }
+          addedNames.add(entryName);
+          zip.addLocalFile(filePath, '', entryName);
+        }
+      }
+
+      if (addedNames.size === 0) {
+        return res.status(404).json({ error: "No matching card files found to download" });
+      }
+
+      const zipBuffer = zip.toBuffer();
+      const zipName = `SCMUI_Cards_${addedNames.size}_Images.zip`;
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+      res.send(zipBuffer);
+    } catch (err: any) {
+      console.error("[Download ZIP Error]", err);
+      res.status(500).json({ error: err.message || "Failed to create ZIP file" });
+    }
   });
 
   app.post("/api/delete", (req, res) => {

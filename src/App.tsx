@@ -5236,7 +5236,7 @@ export default function App() {
                             className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg"
                           >
                             <Download size={20} />
-                            {pluginState.selectedPlugin.id === 'custom_script_upload' ? "Run Script" : "Sync Artwork"}
+                            {pluginState.selectedPlugin.id === 'custom_script_upload' ? "Run Script" : "Fetch Images"}
                           </button>
                        </div>
                      </div>
@@ -6327,38 +6327,40 @@ export default function App() {
                         <Layers size={14} className="text-white/40 group-hover:text-white shrink-0" />
                         <span className="truncate">Set Back (Double-Sided)</span>
                       </button>
-                      <button 
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          setContextMenu(null);
-                          setTaskProgress({ current: 0, total: targets.length, message: `Moving to backs section...` });
-                          try {
-                            const res = await fetch('/api/card/move-section', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ identities: targets, targetSection: 'back', assetViewMode })
-                            });
-                            const data = await res.json();
-                            if (data.success) {
-                              addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to back section.`);
-                              setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to backs!` });
-                              await fetchStatus();
-                              setSelectedAssets(new Set());
+                      {assetViewMode !== 'plugins' && (
+                        <button 
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setContextMenu(null);
+                            setTaskProgress({ current: 0, total: targets.length, message: `Moving to backs section...` });
+                            try {
+                              const res = await fetch('/api/card/move-section', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ identities: targets, targetSection: 'back', assetViewMode })
+                              });
+                              const data = await res.json();
+                              if (data.success) {
+                                addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to back section.`);
+                                setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to backs!` });
+                                await fetchStatus();
+                                setSelectedAssets(new Set());
+                              }
+                            } catch (err: any) {
+                              addLog(`[Error] Failed to move card(s): ${err}`);
+                              setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
                             }
-                          } catch (err: any) {
-                            addLog(`[Error] Failed to move card(s): ${err}`);
-                            setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
-                          }
-                          setTimeout(() => setTaskProgress(null), 1500);
-                        }}
-                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                        title="Move this card into the Back Patterns section"
-                      >
-                        <FolderInput size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate">
-                          {isMultiSelected ? `Move ${targets.length} to Backs` : 'Move to Backs'}
-                        </span>
-                      </button>
+                            setTimeout(() => setTaskProgress(null), 1500);
+                          }}
+                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                          title="Move this card into the Back Patterns section"
+                        >
+                          <FolderInput size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                          <span className="truncate">
+                            {isMultiSelected ? `Move ${targets.length} to Backs` : 'Move to Backs'}
+                          </span>
+                        </button>
+                      )}
                     </>
                   ) : (
                     <>
@@ -6374,38 +6376,40 @@ export default function App() {
                         <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
                         <span className="truncate">Select Backing Art</span>
                       </button>
-                      <button 
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          setContextMenu(null);
-                          setTaskProgress({ current: 0, total: targets.length, message: `Moving to fronts section...` });
-                          try {
-                            const res = await fetch('/api/card/move-section', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ identities: targets, targetSection: 'front', assetViewMode })
-                            });
-                            const data = await res.json();
-                            if (data.success) {
-                              addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to front section.`);
-                              setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to fronts!` });
-                              await fetchStatus();
-                              setSelectedAssets(new Set());
+                      {assetViewMode !== 'plugins' && (
+                        <button 
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setContextMenu(null);
+                            setTaskProgress({ current: 0, total: targets.length, message: `Moving to fronts section...` });
+                            try {
+                              const res = await fetch('/api/card/move-section', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ identities: targets, targetSection: 'front', assetViewMode })
+                              });
+                              const data = await res.json();
+                              if (data.success) {
+                                addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to front section.`);
+                                setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to fronts!` });
+                                await fetchStatus();
+                                setSelectedAssets(new Set());
+                              }
+                            } catch (err: any) {
+                              addLog(`[Error] Failed to move card(s): ${err}`);
+                              setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
                             }
-                          } catch (err: any) {
-                            addLog(`[Error] Failed to move card(s): ${err}`);
-                            setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
-                          }
-                          setTimeout(() => setTaskProgress(null), 1500);
-                        }}
-                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                        title="Move this back pattern into the Front Face cards section"
-                      >
-                        <FolderOutput size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate">
-                          {isMultiSelected ? `Move ${targets.length} to Fronts` : 'Move to Fronts'}
-                        </span>
-                      </button>
+                            setTimeout(() => setTaskProgress(null), 1500);
+                          }}
+                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                          title="Move this back pattern into the Front Face cards section"
+                        >
+                          <FolderOutput size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                          <span className="truncate">
+                            {isMultiSelected ? `Move ${targets.length} to Fronts` : 'Move to Fronts'}
+                          </span>
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -6453,24 +6457,50 @@ export default function App() {
                 {/* 3. Actions Section */}
                 <div className="h-[1px] w-full bg-white/5 my-1" />
                 <div className="space-y-0.5">
-                  {/* Download Image */}
+                  {/* Download Image or ZIP */}
                   <button 
                     onClick={async (e) => {
                       e.stopPropagation();
                       setContextMenu(null);
                       const basePath = assetViewMode === 'library' ? '/library' : assetViewMode === 'plugins' ? '/plugins_staging' : '/game';
-                      for (const target of targets) {
+                      if (targets.length <= 1) {
+                        const target = targets[0];
                         const [t, n] = target.includes(':') ? target.split(':') : [contextMenu.type || 'front', target];
                         const url = `${basePath}/${t}/${encodeURIComponent(n)}`;
                         await downloadFile(url, n);
+                      } else {
+                        setTaskProgress({ current: 0, total: targets.length, message: `Archiving ${targets.length} cards into ZIP...` });
+                        try {
+                          const res = await fetch('/api/cards/download-zip', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ identities: targets, assetViewMode })
+                          });
+                          if (!res.ok) throw new Error(`Server returned status ${res.status}`);
+                          const blob = await res.blob();
+                          const downloadUrl = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = downloadUrl;
+                          a.download = `SCMUI_Cards_${targets.length}_Images.zip`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          window.URL.revokeObjectURL(downloadUrl);
+                          addLog(`[System] Downloaded ${targets.length} cards as a single ZIP archive.`);
+                          setTaskProgress({ current: targets.length, total: targets.length, message: `Downloaded ${targets.length} cards ZIP!` });
+                        } catch (err: any) {
+                          addLog(`[Error] Failed to download ZIP: ${err.message}`);
+                        } finally {
+                          setTimeout(() => setTaskProgress(null), 1500);
+                        }
                       }
                     }}
                     className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                    title="Download card image directly to your computer"
+                    title={isMultiSelected ? "Download all selected cards packed into a single ZIP file" : "Download card image directly to your computer"}
                   >
                     <Download size={14} className="text-white/40 group-hover:text-white shrink-0" />
                     <span className="truncate">
-                      {isMultiSelected ? `Download Images (${targets.length})` : 'Download Image'}
+                      {isMultiSelected ? `Download ZIP (${targets.length} Images)` : 'Download Image'}
                     </span>
                   </button>
 
