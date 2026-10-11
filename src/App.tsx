@@ -464,11 +464,29 @@ interface AppStatus {
   userDataPath?: string;
 }
 
-const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onClose: () => void }) => {
+const LightboxGallery = ({ 
+  initialImage, 
+  onClose,
+  onUpscaleSingle 
+}: { 
+  initialImage: string; 
+  onClose: () => void;
+  onUpscaleSingle?: (src: string) => Promise<void>;
+}) => {
   const [currentImage, setCurrentImage] = useState(initialImage);
   const [allImages, setAllImages] = useState<string[]>([]);
   const [isFlipped, setIsFlipped] = useState(false);
   const [backSrc, setBackSrc] = useState<string | null>(null);
+
+  // Before / After Comparison state
+  const [hasOriginal, setHasOriginal] = useState(false);
+  const [originalSrc, setOriginalSrc] = useState<string | null>(null);
+  const [isComparing, setIsComparing] = useState(true);
+  const [sliderPos, setSliderPos] = useState(50); // percentage 0 to 100
+  const [isDragging, setIsDragging] = useState(false);
+  const [imageStats, setImageStats] = useState<{ origSize?: number; currentSize?: number } | null>(null);
+  const [isUpscalingSingle, setIsUpscalingSingle] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const allElements = Array.from(document.querySelectorAll<HTMLElement>('.lightbox-trigger'));
@@ -497,6 +515,88 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
     setBackSrc(bSrc || null);
     setIsFlipped(false);
   }, [currentImage]);
+
+  const displaySrc = isFlipped && backSrc ? backSrc : currentImage;
+
+  // Check if original backup exists for active image
+  const checkOriginal = useCallback(async (targetSrc: string) => {
+    if (!targetSrc || targetSrc.startsWith('data:') || targetSrc.startsWith('blob:')) {
+      setHasOriginal(false);
+      setOriginalSrc(null);
+      setImageStats(null);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/asset/has-original?url=${encodeURIComponent(targetSrc)}`);
+      const data = await res.json();
+      if (data.hasOriginal) {
+        setHasOriginal(true);
+        setOriginalSrc(`${data.originalUrl}&t=${Date.now()}`);
+        setImageStats({ origSize: data.originalSize, currentSize: data.currentSize });
+        setIsComparing(true);
+      } else {
+        setHasOriginal(false);
+        setOriginalSrc(null);
+        setImageStats(null);
+      }
+    } catch {
+      setHasOriginal(false);
+      setOriginalSrc(null);
+      setImageStats(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkOriginal(displaySrc);
+  }, [displaySrc, checkOriginal]);
+
+  const updateSliderFromClientX = useCallback((clientX: number) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const offset = clientX - rect.left;
+    const pct = Math.max(0, Math.min(100, (offset / rect.width) * 100));
+    setSliderPos(pct);
+  }, []);
+
+  const handleStartDrag = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    setIsDragging(true);
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    updateSliderFromClientX(clientX);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const onMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      updateSliderFromClientX(e.clientX);
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches && e.touches.length > 0) {
+        updateSliderFromClientX(e.touches[0].clientX);
+      }
+    };
+
+    const onStopDrag = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onStopDrag);
+    window.addEventListener('touchmove', onTouchMove);
+    window.addEventListener('touchend', onStopDrag);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onStopDrag);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onStopDrag);
+    };
+  }, [isDragging, updateSliderFromClientX]);
 
   const goPrev = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
     e?.stopPropagation();
@@ -530,8 +630,12 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
   }, [goPrev, goNext, onClose, toggleFlip, backSrc]);
 
   const [touchStart, setTouchStart] = useState<number | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => setTouchStart(e.targetTouches[0].clientX);
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (hasOriginal && isComparing) return;
+    setTouchStart(e.targetTouches[0].clientX);
+  };
   const onTouchEnd = (e: React.TouchEvent) => {
+    if (hasOriginal && isComparing) return;
     if (touchStart === null) return;
     const touchEnd = e.changedTouches[0].clientX;
     const diff = touchStart - touchEnd;
@@ -544,66 +648,256 @@ const LightboxGallery = ({ initialImage, onClose }: { initialImage: string, onCl
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex !== -1 && currentIndex < allImages.length - 1;
 
-  const displaySrc = isFlipped && backSrc ? backSrc : currentImage;
+  const handleUpscaleCurrent = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isUpscalingSingle) return;
+    setIsUpscalingSingle(true);
+    try {
+      if (onUpscaleSingle) {
+        await onUpscaleSingle(displaySrc);
+        const cleanBase = displaySrc.split('?')[0];
+        const newSrc = `${cleanBase}?t=${Date.now()}`;
+        if (isFlipped && backSrc) setBackSrc(newSrc);
+        else setCurrentImage(newSrc);
+        await checkOriginal(newSrc);
+      }
+    } finally {
+      setIsUpscalingSingle(false);
+    }
+  };
+
+  const handleRestoreCurrent = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Revert this card to its original un-upscaled baseline?')) return;
+    try {
+      const res = await fetch('/api/asset/restore-original', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: displaySrc })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const cleanBase = displaySrc.split('?')[0];
+        const newSrc = `${cleanBase}?t=${Date.now()}`;
+        if (isFlipped && backSrc) setBackSrc(newSrc);
+        else setCurrentImage(newSrc);
+        await checkOriginal(newSrc);
+      }
+    } catch {}
+  };
 
   return (
     <div 
-      className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm p-4 md:p-8"
+      className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md p-4 md:p-8 select-none"
       onClick={onClose}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
+      {/* Top Controls Bar */}
       <div className="absolute top-6 right-6 flex items-center gap-3 z-30">
+        {hasOriginal && (
+          <button 
+            type="button"
+            className={cn(
+              "px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border cursor-pointer active:scale-95",
+              isComparing 
+                ? "bg-primary-600 border-primary-400 text-white shadow-lg shadow-primary-600/30" 
+                : "bg-white/10 border-white/20 text-white/70 hover:text-white hover:bg-white/15"
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsComparing(c => !c);
+            }}
+            title="Toggle interactive Before/After comparison slider"
+          >
+            <SlidersHorizontal size={14} />
+            <span>{isComparing ? 'Split Slider Active' : 'Enable Split Slider'}</span>
+          </button>
+        )}
+
+        {hasOriginal && (
+          <button 
+            type="button"
+            className="px-3 py-2 bg-white/10 hover:bg-white/15 text-white/70 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-white/10 active:scale-95 cursor-pointer"
+            onClick={handleRestoreCurrent}
+            title="Revert this card to original un-upscaled image"
+          >
+            <RotateCcw size={13} />
+            <span>Revert to Orig</span>
+          </button>
+        )}
+
+        {!hasOriginal && onUpscaleSingle && (
+          <button 
+            type="button"
+            className="px-3.5 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-primary-600/30 active:scale-95 cursor-pointer disabled:opacity-50"
+            disabled={isUpscalingSingle}
+            onClick={handleUpscaleCurrent}
+            title="Upscale this card now with Upscayl AI"
+          >
+            {isUpscalingSingle ? <Loader2 size={14} className="animate-spin" /> : <Maximize2 size={14} />}
+            <span>{isUpscalingSingle ? 'Upscaling Card...' : 'Upscale Card (HD)'}</span>
+          </button>
+        )}
+
         {backSrc && (
           <button 
-            className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-primary-600/30 active:scale-95 cursor-pointer"
+            type="button"
+            className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-white/20 active:scale-95 cursor-pointer"
             onClick={toggleFlip}
             title="Flip card (or press F / Space)"
           >
             <RotateCcw size={15} className={cn("transition-transform duration-300", isFlipped && "-rotate-180")} />
-            <span>Flip Card ({isFlipped ? 'Back' : 'Front'})</span>
+            <span>Flip ({isFlipped ? 'Back' : 'Front'})</span>
           </button>
         )}
+
         <button 
-          className="p-2 text-white/50 hover:text-white transition-colors bg-white/5 rounded-full hover:bg-white/10"
+          type="button"
+          className="p-2 text-white/50 hover:text-white transition-colors bg-white/5 rounded-full hover:bg-white/10 cursor-pointer"
           onClick={onClose}
+          title="Close (Esc)"
         >
           <X size={24} />
         </button>
       </div>
 
+      {/* Prev Navigation Button */}
       <button 
-        className={`absolute left-2 md:left-6 p-2 transition-colors z-20 ${hasPrev ? 'text-white/30 hover:text-white' : 'text-white/10 cursor-not-allowed'}`}
+        type="button"
+        className={`absolute left-2 md:left-6 p-2 transition-colors z-20 ${hasPrev ? 'text-white/30 hover:text-white cursor-pointer' : 'text-white/10 cursor-not-allowed'}`}
         onClick={goPrev}
         disabled={!hasPrev}
+        title="Previous card (Left Arrow)"
       >
         <ChevronLeft size={48} strokeWidth={1.5} />
       </button>
 
+      {/* Main Image Container */}
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1, rotateY: isFlipped ? 180 : 0 }}
         transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-        className="relative max-h-full max-w-full outline-none flex flex-col items-center justify-center pointer-events-none perspective-1000"
+        className="relative max-h-full max-w-full outline-none flex flex-col items-center justify-center perspective-1000"
       >
-        <img 
-          src={displaySrc} 
-          alt="Enlarged asset" 
-          className={cn(
-            "max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl pointer-events-auto transition-transform duration-300",
-            isFlipped && "[transform:scaleX(-1)]"
-          )}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (backSrc) toggleFlip(e);
-          }}
-        />
+        {hasOriginal && isComparing && originalSrc ? (
+          /* INTERACTIVE REAL-TIME BEFORE / AFTER COMPARISON SLIDER */
+          <div 
+            ref={containerRef}
+            className="relative max-h-[82vh] max-w-full select-none cursor-ew-resize group/compare overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/15"
+            onMouseDown={handleStartDrag}
+            onTouchStart={handleStartDrag}
+            onClick={(e) => {
+              e.stopPropagation();
+              updateSliderFromClientX(e.clientX);
+            }}
+          >
+            {/* Base Layer: After (Upscaled HD) */}
+            <img 
+              src={displaySrc} 
+              alt="Upscaled asset" 
+              className={cn(
+                "max-h-[82vh] max-w-full object-contain block pointer-events-none select-none",
+                isFlipped && "[transform:scaleX(-1)]"
+              )}
+              draggable={false}
+            />
+
+            {/* Overlaid Layer: Before (Original Pre-Upscale) clipped in real-time */}
+            <div 
+              className="absolute inset-0 overflow-hidden pointer-events-none select-none"
+              style={{
+                clipPath: `inset(0 ${(100 - sliderPos).toFixed(2)}% 0 0)`
+              }}
+            >
+              <img 
+                src={originalSrc} 
+                alt="Original asset" 
+                className={cn(
+                  "w-full h-full object-contain pointer-events-none select-none",
+                  isFlipped && "[transform:scaleX(-1)]"
+                )}
+                draggable={false}
+              />
+            </div>
+
+            {/* Draggable Divider Bar */}
+            <div 
+              className="absolute top-0 bottom-0 pointer-events-none z-20"
+              style={{ left: `${sliderPos.toFixed(2)}%` }}
+            >
+              <div className="absolute top-0 bottom-0 -left-[1.5px] w-[3px] bg-white shadow-[0_0_12px_rgba(0,0,0,0.85)]" />
+              <div 
+                className={cn(
+                  "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-primary-600 text-white shadow-2xl flex items-center justify-center border-2 border-white pointer-events-auto cursor-ew-resize transition-transform duration-100",
+                  isDragging ? "scale-115 shadow-primary-500/50 ring-4 ring-primary-500/40" : "hover:scale-110"
+                )}
+                onMouseDown={handleStartDrag}
+                onTouchStart={handleStartDrag}
+                title="Drag left/right to compare Before (Original) and After (Upscayl AI)"
+              >
+                <div className="flex items-center gap-0.5">
+                  <ChevronLeft size={14} className="stroke-[3] -mr-1" />
+                  <ChevronRight size={14} className="stroke-[3] -ml-1" />
+                </div>
+              </div>
+            </div>
+
+            {/* Before (Original) Floating Badge */}
+            <div 
+              className={cn(
+                "absolute top-4 left-4 z-20 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 text-white flex items-center gap-1.5 shadow-xl transition-opacity pointer-events-none",
+                sliderPos < 15 ? "opacity-20" : "opacity-95"
+              )}
+            >
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-[10px] font-black uppercase tracking-wider">Before (Original)</span>
+            </div>
+
+            {/* After (Upscayl AI) Floating Badge */}
+            <div 
+              className={cn(
+                "absolute top-4 right-4 z-20 px-3 py-1.5 rounded-full bg-primary-600/95 backdrop-blur-md border border-primary-400 text-white flex items-center gap-1.5 shadow-xl shadow-primary-600/30 transition-opacity pointer-events-none",
+                sliderPos > 85 ? "opacity-20" : "opacity-100"
+              )}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="text-[10px] font-black uppercase tracking-wider">After (Upscayl AI HD)</span>
+            </div>
+
+            {/* File Size & Detail Stats Badge */}
+            {imageStats?.origSize && imageStats?.currentSize && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-white/90 text-[10px] font-mono pointer-events-none flex items-center gap-2.5 shadow-xl">
+                <span>Original: {(imageStats.origSize / 1024).toFixed(0)} KB</span>
+                <span className="text-white/30">•</span>
+                <span className="text-primary-400 font-bold">Upscaled HD: {(imageStats.currentSize / 1024).toFixed(0)} KB ({((imageStats.currentSize / imageStats.origSize)).toFixed(1)}x detail)</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* STANDARD ENLARGED IMAGE */
+          <img 
+            src={displaySrc} 
+            alt="Enlarged asset" 
+            className={cn(
+              "max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl pointer-events-auto transition-transform duration-300",
+              isFlipped && "[transform:scaleX(-1)]"
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (backSrc) toggleFlip(e);
+            }}
+          />
+        )}
       </motion.div>
 
+      {/* Next Navigation Button */}
       <button 
-        className={`absolute right-2 md:right-6 p-2 transition-colors z-20 ${hasNext ? 'text-white/30 hover:text-white' : 'text-white/10 cursor-not-allowed'}`}
+        type="button"
+        className={`absolute right-2 md:right-6 p-2 transition-colors z-20 ${hasNext ? 'text-white/30 hover:text-white cursor-pointer' : 'text-white/10 cursor-not-allowed'}`}
         onClick={goNext}
         disabled={!hasNext}
+        title="Next card (Right Arrow)"
       >
          <ChevronRight size={48} strokeWidth={1.5} />
       </button>
@@ -893,6 +1187,8 @@ export default function App() {
   }, []);
   const [flippedAssets, setFlippedAssets] = useState<Set<string>>(new Set());
   const [uploadedImages, setUploadedImages] = useState<Record<string, string>>({});
+  const [cacheBusts, setCacheBusts] = useState<Record<string, number>>({});
+  const [globalCacheBust, setGlobalCacheBust] = useState<number>(Date.now());
   const [localAssets, setLocalAssets] = useState<Array<{name: string, type: 'front' | 'back' | 'double_sided', view: 'project' | 'library' | 'plugins'}>>([]);
   const [isReplaceBackDialogOpen, setIsReplaceBackDialogOpen] = useState(false);
   const [pendingBackFile, setPendingBackFile] = useState<File | null>(null);
@@ -1119,24 +1415,30 @@ export default function App() {
         addLog(`[Action: Upscayl AI] Successfully upscaled ${data.count} card image(s) to ${cfg.scaleFactor}x high resolution.`);
         setTaskProgress({ current: 100, total: 100, message: `Upscaled ${data.count} card image(s) with Upscayl (${cfg.scaleFactor}x HD)!` });
         
-        // Invalidate image cache so that the freshly upscaled images load immediately in the UI
-        const newBusts = { ...cacheBusts };
+        // Invalidate image cache and clear in-memory uploaded blobs so that freshly upscaled images load immediately in the UI
         const now = Date.now();
+        setUploadedImages({});
+        setGlobalCacheBust(now);
+
+        const newBusts: Record<string, number> = {};
+        const cur = getCurrentAssets();
+        cur?.fronts?.forEach(f => { newBusts[f] = now; });
+        cur?.backs?.forEach(b => { newBusts[b] = now; });
+        cur?.double_sided?.forEach(d => { newBusts[d] = now; });
         if (identities) {
           identities.forEach(item => {
             const name = item.includes(':') ? item.split(':')[1] : item;
             newBusts[name] = now;
           });
         }
-        if (allInView) {
-          const cur = getCurrentAssets();
-          cur?.fronts?.forEach(f => { newBusts[f] = now; });
-          cur?.backs?.forEach(b => { newBusts[b] = now; });
-          cur?.double_sided?.forEach(d => { newBusts[d] = now; });
-        }
         setCacheBusts(newBusts);
 
         await fetchStatus();
+
+        if (enlargedImage) {
+          const clean = enlargedImage.split('?')[0];
+          setEnlargedImage(`${clean}?t=${now}`);
+        }
       } else {
         addLog(`[Error: Upscayl AI] ${data.message || data.error || 'Failed to upscale card images.'}`);
         setTaskProgress({ current: 0, total: 100, message: `Upscale failed.` });
@@ -1683,8 +1985,6 @@ export default function App() {
   const [pythonSetupProgress, setPythonSetupProgress] = useState<{step: string, detail: string, percent?: number}>({ step: 'Initializing setup...', detail: '', percent: 10 });
   const [setupLogs, setSetupLogs] = useState<string[]>([]);
   const setupLogEndRef = useRef<HTMLDivElement>(null);
-
-  const [cacheBusts, setCacheBusts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (setupLogEndRef.current) {
@@ -4606,7 +4906,7 @@ export default function App() {
                               .map((img: string, i: number) => (
                                 <AssetItem 
                                   key={`back_${img}`} 
-                                  cacheBustToken={cacheBusts[img]}
+                                  cacheBustToken={cacheBusts[img] || globalCacheBust}
                                   name={img} 
                                   type="back" 
                                   allAssets={getCurrentAssets()} 
@@ -4682,7 +4982,7 @@ export default function App() {
                               .map((img: string, i: number) => (
                                 <AssetItem 
                                   key={`front_${img}`} 
-                                  cacheBustToken={cacheBusts[img]}
+                                  cacheBustToken={cacheBusts[img] || globalCacheBust}
                                   name={img} 
                                   type="front" 
                                   allAssets={getCurrentAssets()}
@@ -4760,7 +5060,7 @@ export default function App() {
                               .map((img: string, i: number) => (
                                 <AssetItem 
                                   key={`double_sided_${img}`} 
-                                  cacheBustToken={cacheBusts[img]}
+                                  cacheBustToken={cacheBusts[img] || globalCacheBust}
                                   name={img} 
                                   type="double_sided" 
                                   allAssets={getCurrentAssets()}
@@ -5857,6 +6157,21 @@ export default function App() {
           <LightboxGallery 
             initialImage={enlargedImage}
             onClose={() => setEnlargedImage(null)}
+            onUpscaleSingle={async (src: string) => {
+              try {
+                const cleanUrl = src.split('?')[0].split('#')[0];
+                const decoded = decodeURIComponent(cleanUrl);
+                let type = 'front';
+                if (decoded.includes('/back/')) type = 'back';
+                else if (decoded.includes('/double_sided/')) type = 'double_sided';
+                const filename = decoded.split('/').pop() || '';
+                if (filename) {
+                  await handleUpscale([`${type}:${filename}`], false);
+                }
+              } catch (e) {
+                console.error('Failed single card upscale:', e);
+              }
+            }}
           />
         )}
       </AnimatePresence>
@@ -6809,7 +7124,7 @@ const AssetItem: React.FC<AssetItemProps> = ({ name, type, allAssets, onContextM
   const baseUrl = getBaseUrl();
   const backFaceFolder = getBackFace()?.folder;
   const enlargeSrc = isFlipped && getBackFace() 
-    ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${encodeURIComponent(getBackFace()!.name)}`) 
+    ? (uploadedImages?.[`${backFaceFolder}_${getBackFace()!.name}`] || `${baseUrl}/${backFaceFolder}/${encodeURIComponent(getBackFace()!.name)}${cacheBustToken ? `?t=${cacheBustToken}` : ''}`) 
     : imgSrc;
 
   return (

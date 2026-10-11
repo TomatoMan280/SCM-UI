@@ -125,9 +125,35 @@ async function startServer() {
     maxDimension?: number;
   }
 
+  const getOriginalPath = (targetFilePath: string): string => {
+    const dir = path.dirname(targetFilePath);
+    const base = path.basename(targetFilePath);
+    const origDir = path.join(dir, '.originals');
+    return path.join(origDir, base);
+  };
+
+  const saveOriginalBackup = (targetFilePath: string): void => {
+    try {
+      if (!fs.existsSync(targetFilePath) || !fs.statSync(targetFilePath).isFile()) return;
+      const origPath = getOriginalPath(targetFilePath);
+      const origDir = path.dirname(origPath);
+      if (!fs.existsSync(origDir)) {
+        fs.mkdirSync(origDir, { recursive: true });
+      }
+      // Preserve first un-upscaled baseline
+      if (!fs.existsSync(origPath)) {
+        fs.copyFileSync(targetFilePath, origPath);
+        console.log(`[Upscayl Backup] Preserved original image: ${path.basename(targetFilePath)} -> ${origPath}`);
+      }
+    } catch (err: any) {
+      console.warn(`[Upscayl Backup Warning] Could not backup original for ${targetFilePath}:`, err?.message || err);
+    }
+  };
+
   const upscaleImageFile = async (filePath: string, optionsOrScale: number | UpscaleOptions = 2): Promise<boolean> => {
     if (!fs.existsSync(filePath)) return false;
     try {
+      saveOriginalBackup(filePath);
       const opts: UpscaleOptions = typeof optionsOrScale === 'number'
         ? { scaleFactor: optionsOrScale }
         : (optionsOrScale || { scaleFactor: 2 });
@@ -203,6 +229,7 @@ async function startServer() {
     try {
       const files = fs.readdirSync(dirPath).filter(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
       if (files.length === 0) return 0;
+      files.forEach(f => saveOriginalBackup(path.join(dirPath, f)));
 
       const opts: UpscaleOptions = typeof optionsOrScale === 'number'
         ? { scaleFactor: optionsOrScale }
@@ -3147,6 +3174,122 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }).catch(err => {
       res.json({ output: [`[System Error] Failed to load child_process: ${err}`] });
     });
+  });
+
+  const resolveImageDiskPath = (imageUrl: string): string | null => {
+    if (!imageUrl) return null;
+    try {
+      const cleanUrl = imageUrl.split('?')[0].split('#')[0];
+      const decodedUrl = decodeURIComponent(cleanUrl);
+
+      if (decodedUrl.startsWith('/game/')) {
+        const sub = decodedUrl.replace('/game/', '');
+        const p = path.join(scmPath, 'game', sub);
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
+      }
+      if (decodedUrl.startsWith('/library/')) {
+        const sub = decodedUrl.replace('/library/', '');
+        const p = path.join(libraryPath, sub);
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
+      }
+      if (decodedUrl.startsWith('/plugins_staging/')) {
+        const sub = decodedUrl.replace('/plugins_staging/', '');
+        const p = path.join(pluginsPath, sub);
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
+      }
+
+      const stripped = decodedUrl.replace(/^\/+/, '');
+      const candidates = [
+        path.join(scmPath, 'game', stripped),
+        path.join(libraryPath, stripped),
+        path.join(pluginsPath, stripped),
+        path.join(scmPath, stripped)
+      ];
+      for (const cand of candidates) {
+        if (fs.existsSync(cand) && fs.statSync(cand).isFile()) return cand;
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  app.get("/api/asset/has-original", (req, res) => {
+    const imageUrl = req.query.url as string;
+    if (!imageUrl) return res.json({ hasOriginal: false });
+
+    const diskPath = resolveImageDiskPath(imageUrl);
+    if (!diskPath) return res.json({ hasOriginal: false });
+
+    const origPath = getOriginalPath(diskPath);
+    const fallbackOrig = diskPath + '.orig';
+
+    const targetOrig = (fs.existsSync(origPath) && fs.statSync(origPath).size > 0)
+      ? origPath
+      : ((fs.existsSync(fallbackOrig) && fs.statSync(fallbackOrig).size > 0) ? fallbackOrig : null);
+
+    if (targetOrig) {
+      try {
+        const origStat = fs.statSync(targetOrig);
+        const currStat = fs.statSync(diskPath);
+        return res.json({
+          hasOriginal: true,
+          originalUrl: `/api/asset/original?url=${encodeURIComponent(imageUrl)}`,
+          originalSize: origStat.size,
+          currentSize: currStat.size
+        });
+      } catch (_) {}
+    }
+
+    return res.json({ hasOriginal: false });
+  });
+
+  app.get("/api/asset/original", (req, res) => {
+    const imageUrl = req.query.url as string;
+    if (!imageUrl) return res.status(400).send("url parameter required");
+
+    const diskPath = resolveImageDiskPath(imageUrl);
+    if (!diskPath) return res.status(404).send("Target asset not found");
+
+    const origPath = getOriginalPath(diskPath);
+    const fallbackOrig = diskPath + '.orig';
+    const targetOrig = (fs.existsSync(origPath) && fs.statSync(origPath).size > 0)
+      ? origPath
+      : ((fs.existsSync(fallbackOrig) && fs.statSync(fallbackOrig).size > 0) ? fallbackOrig : null);
+
+    if (!targetOrig) {
+      return res.status(404).send("Original backup not found");
+    }
+
+    const ext = path.extname(diskPath).toLowerCase();
+    const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : ext === '.webp' ? 'image/webp' : 'image/png';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    return res.sendFile(path.resolve(targetOrig));
+  });
+
+  app.post("/api/asset/restore-original", (req, res) => {
+    const { url: imageUrl } = req.body;
+    if (!imageUrl) return res.status(400).json({ success: false, error: "url required" });
+
+    const diskPath = resolveImageDiskPath(imageUrl);
+    if (!diskPath) return res.status(404).json({ success: false, error: "Target asset not found" });
+
+    const origPath = getOriginalPath(diskPath);
+    const fallbackOrig = diskPath + '.orig';
+    const targetOrig = (fs.existsSync(origPath) && fs.statSync(origPath).size > 0)
+      ? origPath
+      : ((fs.existsSync(fallbackOrig) && fs.statSync(fallbackOrig).size > 0) ? fallbackOrig : null);
+
+    if (!targetOrig) {
+      return res.status(404).json({ success: false, error: "No original backup exists to restore" });
+    }
+
+    try {
+      fs.copyFileSync(targetOrig, diskPath);
+      try { fs.unlinkSync(targetOrig); } catch (_) {}
+      return res.json({ success: true, message: `Restored original image: ${path.basename(diskPath)}` });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e?.message || 'Failed to restore original' });
+    }
   });
 
   app.get("/api/upscayl/status", (req, res) => {
