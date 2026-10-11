@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { 
@@ -3264,7 +3264,8 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col relative overflow-hidden pb-16 md:pb-0">
+      <ErrorBoundary>
+        <main className="flex-1 flex flex-col relative overflow-hidden pb-16 md:pb-0">
         {/* Header */}
         <header className="h-16 border-b border-white/5 px-4 md:px-8 flex items-center justify-between bg-[#0f0f13]/50 backdrop-blur-sm z-10 font-mono">
           <div className="flex items-center gap-4">
@@ -4862,8 +4863,10 @@ export default function App() {
                               });
                               
                               if (result && result.fetchedFiles) {
-                                  const collisions = [];
-                                  const { fronts, backs, double_sided } = result.fetchedFiles;
+                                  const collisions: string[] = [];
+                                  const fronts = Array.isArray(result.fetchedFiles.fronts) ? result.fetchedFiles.fronts : [];
+                                  const backs = Array.isArray(result.fetchedFiles.backs) ? result.fetchedFiles.backs : [];
+                                  const double_sided = Array.isArray(result.fetchedFiles.double_sided) ? result.fetchedFiles.double_sided : [];
                                   
                                   const targetFronts = status?.plugins?.fronts || [];
                                   const targetBacks = status?.plugins?.backs || [];
@@ -5142,6 +5145,7 @@ export default function App() {
           </AnimatePresence>
         </div>
       </main>
+      </ErrorBoundary>
 
       <AnimatePresence>
         {importConflictData && (
@@ -5306,10 +5310,11 @@ export default function App() {
               <div className="p-6 space-y-6">
                 <div className="bg-black/40 border border-white/5 rounded-xl p-4 max-h-[50vh] overflow-y-auto space-y-8">
                   {fetchConflictData.collisions.map((c, i) => {
-                    const type = c.split(':')[0];
-                    const name = c.split(':')[1];
-                    const ext = name.substring(name.lastIndexOf('.'));
-                    const baseName = name.substring(0, name.lastIndexOf('.'));
+                    const type = c?.includes(':') ? c.split(':')[0] : 'front';
+                    const name = c?.includes(':') ? c.split(':')[1] : (c || '');
+                    const dotIndex = name.lastIndexOf('.');
+                    const ext = dotIndex !== -1 ? name.substring(dotIndex) : '.png';
+                    const baseName = dotIndex !== -1 ? name.substring(0, dotIndex) : name;
                     
                     const existingList = type === 'back' 
                       ? status?.plugins?.backs 
@@ -5381,8 +5386,8 @@ export default function App() {
                       
                       const newBusts = { ...cacheBusts };
                       collisions.forEach(c => {
-                          const name = c.split(':')[1];
-                          newBusts[name] = Date.now();
+                          const name = c?.includes(':') ? c.split(':')[1] : c;
+                          if (name) newBusts[name] = Date.now();
                       });
                       setCacheBusts(newBusts);
                       
