@@ -3451,9 +3451,11 @@ export default function App() {
                     />
                   </svg>
                   <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
-                    {taskProgress.total === 100 
-                      ? `${Math.round(taskProgress.current)}%` 
-                      : `${taskProgress.current}/${taskProgress.total}`}
+                    {taskProgress.total > 0 && taskProgress.message && (taskProgress.message.toLowerCase().includes('card') || taskProgress.message.toLowerCase().includes('image') || taskProgress.message.toLowerCase().includes('of'))
+                      ? `${taskProgress.current}/${taskProgress.total}`
+                      : (taskProgress.total === 100 
+                          ? `${Math.round(taskProgress.current)}%` 
+                          : `${taskProgress.current}/${taskProgress.total}`)}
                   </span>
                 </div>
               )}

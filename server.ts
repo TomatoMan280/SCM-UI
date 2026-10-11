@@ -204,6 +204,9 @@ async function startServer() {
     if (!fs.existsSync(filePath)) return false;
     try {
       saveOriginalBackup(filePath);
+      const origPath = getOriginalPath(filePath);
+      const inputPath = (fs.existsSync(origPath) && fs.statSync(origPath).size > 0) ? origPath : filePath;
+
       const opts: UpscaleOptions = typeof optionsOrScale === 'number'
         ? { scaleFactor: optionsOrScale }
         : (optionsOrScale || { scaleFactor: 2 });
@@ -227,7 +230,7 @@ async function startServer() {
         const tempOut = path.join(os.tmpdir(), `upscayl_${Date.now()}_${Math.random().toString(36).substring(7)}.png`);
         
         const args = [
-          '-i', path.resolve(filePath),
+          '-i', path.resolve(inputPath),
           '-o', tempOut,
           '-s', scaleFactor.toString(),
           '-m', upscayl.modelsDir,
@@ -257,7 +260,7 @@ async function startServer() {
 
       // Fallback
       const { Jimp } = await import('jimp');
-      const image = await Jimp.read(filePath);
+      const image = await Jimp.read(inputPath);
       const curW = image.width;
       const curH = image.height;
       if (curW > 0 && curH > 0) {
@@ -3407,9 +3410,11 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       }, 5000);
     }
 
-    req.on('close', () => {
-      clientDisconnected = true;
-      if (pingInterval) clearInterval(pingInterval);
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        clientDisconnected = true;
+        if (pingInterval) clearInterval(pingInterval);
+      }
     });
 
     try {
