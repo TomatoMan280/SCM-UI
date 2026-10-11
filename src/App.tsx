@@ -1681,30 +1681,95 @@ export default function App() {
   };
 
   const handleUpscale = async (identities?: string[], allInView = false, customConfig?: Partial<UpscaleConfig>) => {
+    const abortController = new AbortController();
+    setActiveTaskController(abortController);
+
     try {
       const cfg = { ...upscaleConfig, ...(customConfig || {}) };
       const label = allInView ? 'all deck / view cards' : `${identities?.length || 1} card${(identities?.length || 1) === 1 ? '' : 's'}`;
-      setTaskProgress({ current: 1, total: 100, message: `Upscaling ${label} with Upscayl AI (${cfg.scaleFactor}x HD)...` });
+      const estimatedTotal = identities ? identities.length : 1;
+      setTaskProgress({ current: 0, total: estimatedTotal, message: `Starting Upscayl AI (${cfg.scaleFactor}x HD) for ${label}...` });
       addLog(`[Action: Upscayl AI] Initiating ${cfg.scaleFactor}x super-resolution upscaling (Model: ${cfg.model}${cfg.tta ? ', TTA Mode' : ''}) for ${label}...`);
 
       const res = await fetch('/api/upscale', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'
+        },
         body: JSON.stringify({
+          stream: true,
           identities,
           allInView,
           assetViewMode,
           scaleFactor: cfg.scaleFactor,
           model: cfg.model,
           tta: cfg.tta,
-          scope: allInView ? cfg.scope : (identities ? 'selected' : cfg.scope),
+          scope: allInView ? 'all' : (identities ? 'selected' : 'all'),
           maxDimension: cfg.maxDimension
-        })
+        }),
+        signal: abortController.signal
       });
-      const data = await res.json();
-      if (data.success) {
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
+      let data: any = null;
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let pending = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          pending += decoder.decode(value, { stream: true });
+          const parts = pending.split('\n\n');
+          pending = parts.pop() || '';
+
+          for (const part of parts) {
+            const lines = part.split('\n');
+            let eventType = '';
+            let eventData: any = null;
+            for (const line of lines) {
+              if (line.startsWith('event: ')) {
+                eventType = line.substring(7).trim();
+              } else if (line.startsWith('data: ')) {
+                try { eventData = JSON.parse(line.substring(6)); } catch (_) {}
+              }
+            }
+
+            if (eventType === 'start' && eventData) {
+              setTaskProgress({ 
+                current: 0, 
+                total: eventData.total || 1, 
+                message: `Preparing ${eventData.total} card image(s) for Upscayl AI...` 
+              });
+            } else if (eventType === 'progress' && eventData) {
+              setTaskProgress({
+                current: eventData.current,
+                total: eventData.total,
+                message: eventData.message || `Upscaling ${eventData.cardName || ''}...`
+              });
+              if (eventData.status === 'completed') {
+                addLog(`[Action: Upscayl AI] Finished ${eventData.cardName} (${eventData.current}/${eventData.total})`);
+              }
+            } else if (eventType === 'done' && eventData) {
+              data = eventData;
+            } else if (eventType === 'error' && eventData) {
+              throw new Error(eventData.message || eventData.error || 'Upscale failed');
+            }
+          }
+        }
+      } else {
+        data = await res.json();
+      }
+
+      if (data && data.success) {
         addLog(`[Action: Upscayl AI] Successfully upscaled ${data.count} card image(s) to ${cfg.scaleFactor}x high resolution.`);
-        setTaskProgress({ current: 100, total: 100, message: `Upscaled ${data.count} card image(s) with Upscayl (${cfg.scaleFactor}x HD)!` });
+        setTaskProgress({ current: data.count, total: data.total || data.count, message: `Upscaled ${data.count} card image(s) with Upscayl (${cfg.scaleFactor}x HD)!` });
         
         // Invalidate image cache and clear in-memory uploaded blobs so that freshly upscaled images load immediately in the UI
         const now = Date.now();
@@ -1730,13 +1795,20 @@ export default function App() {
           const clean = enlargedImage.split('?')[0];
           setEnlargedImage(`${clean}?t=${now}`);
         }
-      } else {
+      } else if (data) {
         addLog(`[Error: Upscayl AI] ${data.message || data.error || 'Failed to upscale card images.'}`);
-        setTaskProgress({ current: 0, total: 100, message: `Upscale failed.` });
+        setTaskProgress({ current: 0, total: 1, message: `Upscale failed.` });
       }
     } catch(err: any) {
-      addLog(`[Error: Upscayl AI] ${err?.message || err}`);
+      if (err?.name === 'AbortError') {
+        addLog(`[Action: Upscayl AI] Upscale canceled by user.`);
+        setTaskProgress({ current: 0, total: 1, message: 'Upscale canceled.' });
+      } else {
+        addLog(`[Error: Upscayl AI] ${err?.message || err}`);
+        setTaskProgress({ current: 0, total: 1, message: `Upscale error: ${err?.message || err}` });
+      }
     } finally {
+      setActiveTaskController(null);
       setTimeout(() => setTaskProgress(null), 2500);
     }
   };
@@ -3322,18 +3394,29 @@ export default function App() {
             className="fixed bottom-6 right-6 z-[1000] flex items-center gap-4 p-4 bg-[#0f0f13] rounded-2xl border border-primary-500/30 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] min-w-[300px]"
           >
               {taskProgress.total <= 1 && taskProgress.current === 0 ? (
-               <Loader2 className="w-10 h-10 text-primary-500 animate-spin flex-none" />
-             ) : (
-               <div className="relative">
-                 <svg className="w-10 h-10 transform -rotate-90">
-                   <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
-                   <circle cx="20" cy="20" r="18" className="stroke-primary-500 transition-all duration-300" strokeWidth="4" fill="none" strokeDasharray={113} strokeDashoffset={113 - (113 * ((taskProgress.total - taskProgress.current === 0 ? 1 : taskProgress.current) / (taskProgress.total === 0 ? 1 : taskProgress.total)))} />
-                 </svg>
-                 <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
-                   {taskProgress.current}/{taskProgress.total}
-                 </span>
-               </div>
-             )}
+                <Loader2 className="w-10 h-10 text-primary-500 animate-spin flex-none" />
+              ) : (
+                <div className="relative">
+                  <svg className="w-10 h-10 transform -rotate-90">
+                    <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
+                    <circle 
+                      cx="20" 
+                      cy="20" 
+                      r="18" 
+                      className="stroke-primary-500 transition-all duration-300" 
+                      strokeWidth="4" 
+                      fill="none" 
+                      strokeDasharray={113} 
+                      strokeDashoffset={113 - (113 * (taskProgress.total > 0 ? Math.min(1, Math.max(0, taskProgress.current / taskProgress.total)) : 0))} 
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                    {taskProgress.total === 100 
+                      ? `${Math.round(taskProgress.current)}%` 
+                      : `${taskProgress.current}/${taskProgress.total}`}
+                  </span>
+                </div>
+              )}
              <div className="flex flex-col flex-1 pl-2">
                <span className="text-sm font-bold text-white/90">{taskProgress.message}</span>
              </div>

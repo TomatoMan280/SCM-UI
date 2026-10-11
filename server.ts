@@ -3297,6 +3297,31 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   });
 
   app.post("/api/upscale", async (req, res) => {
+    const isStream = Boolean(req.headers.accept?.includes('text/event-stream') || req.body?.stream);
+
+    if (isStream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      if (typeof (res as any).flushHeaders === 'function') {
+        (res as any).flushHeaders();
+      }
+    }
+
+    const sendEvent = (type: string, data: any) => {
+      if (isStream) {
+        res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+        if (typeof (res as any).flush === 'function') {
+          (res as any).flush();
+        }
+      }
+    };
+
+    let clientDisconnected = false;
+    req.on('close', () => {
+      clientDisconnected = true;
+    });
+
     try {
       const {
         identities,
@@ -3358,6 +3383,10 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       targetPaths = Array.from(new Set(targetPaths));
 
       if (targetPaths.length === 0) {
+        if (isStream) {
+          sendEvent('error', { message: 'No valid card images found to upscale.' });
+          return res.end();
+        }
         return res.json({ success: false, message: 'No valid card images found to upscale.' });
       }
 
@@ -3372,10 +3401,53 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       };
 
       const upscayl = findUpscayl();
+      
+      sendEvent('start', { 
+        total: targetPaths.length, 
+        model: options.model, 
+        scaleFactor: options.scaleFactor,
+        engine: upscayl.available ? 'upscayl-ai' : 'fallback'
+      });
+
       let count = 0;
-      for (const p of targetPaths) {
+      for (let i = 0; i < targetPaths.length; i++) {
+        if (clientDisconnected) {
+          console.log('[Upscale] Client connection closed, aborting remaining queue');
+          break;
+        }
+
+        const p = targetPaths[i];
+        const cardName = path.basename(p);
+
+        sendEvent('progress', {
+          current: i,
+          total: targetPaths.length,
+          cardName,
+          status: 'upscaling',
+          message: `Upscaling ${cardName} (${i + 1} of ${targetPaths.length})...`
+        });
+
         const ok = await upscaleImageFile(p, options);
         if (ok) count++;
+
+        sendEvent('progress', {
+          current: i + 1,
+          total: targetPaths.length,
+          cardName,
+          status: 'completed',
+          message: `Upscaled ${cardName} (${i + 1} of ${targetPaths.length})`
+        });
+      }
+
+      if (isStream) {
+        sendEvent('done', {
+          success: true,
+          count,
+          total: targetPaths.length,
+          engine: upscayl.available ? 'upscayl-ai' : 'fallback',
+          model: options.model
+        });
+        return res.end();
       }
 
       return res.json({ 
@@ -3387,6 +3459,10 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       });
     } catch(e: any) {
       console.error("[Upscale Error]", e);
+      if (isStream) {
+        sendEvent('error', { error: e?.message || 'Upscaling failed' });
+        return res.end();
+      }
       return res.status(500).json({ success: false, error: e?.message || 'Upscaling failed' });
     }
   });
