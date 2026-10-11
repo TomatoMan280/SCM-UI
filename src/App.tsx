@@ -6448,20 +6448,6 @@ export default function App() {
                       <span className="truncate">Batch Upscayl ({targets.length} Cards) ({modelLabel}, {multiplier}x)</span>
                     </button>
                   )}
-
-                  {/* Batch Upscale All Cards in View */}
-                  <button 
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      setContextMenu(null);
-                      await handleUpscale(undefined, true);
-                    }}
-                    className={cn(itemBaseCls, "text-primary-300 hover:text-white hover:bg-primary-500/20 group")}
-                    title={`Batch upscayl all cards in current view using ${modelLabel} at ${multiplier}x HD`}
-                  >
-                    <ZoomIn size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                    <span className="truncate">Batch Upscayl All Cards ({modelLabel}, {multiplier}x)</span>
-                  </button>
                 </div>
 
                 {/* 3. Actions Section */}
