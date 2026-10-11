@@ -2123,6 +2123,60 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     res.json({ success: true, message: `Duplicated to ${newName}`, newName });
   });
 
+  app.post("/api/card/move-section", (req, res) => {
+    const { identities, targetSection, assetViewMode } = req.body;
+    if (!identities || !targetSection) return res.status(400).json({ error: "Missing identities or targetSection" });
+
+    const isLibrary = assetViewMode === 'library';
+    const isPlugins = assetViewMode === 'plugins';
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
+
+    const items = Array.isArray(identities) ? identities : [identities];
+    const moved: string[] = [];
+
+    const destDir = path.join(targetBase, targetSection);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+
+    for (const id of items) {
+      const [fromType, name] = id.split(':');
+      if (fromType === targetSection) continue;
+
+      const srcFile = path.join(targetBase, fromType, name);
+      if (!fs.existsSync(srcFile)) continue;
+
+      let destFile = path.join(destDir, name);
+      if (fs.existsSync(destFile)) {
+        const ext = path.extname(name);
+        const base = path.basename(name, ext);
+        let counter = 1;
+        while (fs.existsSync(path.join(destDir, `${base}_${counter}${ext}`))) {
+          counter++;
+        }
+        destFile = path.join(destDir, `${base}_${counter}${ext}`);
+      }
+
+      try {
+        fs.renameSync(srcFile, destFile);
+        moved.push(`${targetSection}:${path.basename(destFile)}`);
+
+        // If paired original backup exists in .originals, move it as well
+        const originalsDir = path.join(targetBase, '.originals');
+        const origSrc = path.join(originalsDir, fromType, name);
+        if (fs.existsSync(origSrc)) {
+          const origDestDir = path.join(originalsDir, targetSection);
+          if (!fs.existsSync(origDestDir)) fs.mkdirSync(origDestDir, { recursive: true });
+          try {
+            fs.renameSync(origSrc, path.join(origDestDir, path.basename(destFile)));
+          } catch (_) {}
+        }
+      } catch (err: any) {
+        console.error(`Failed to move ${id} to ${targetSection}:`, err);
+      }
+    }
+
+    res.json({ success: true, moved, message: `Moved ${moved.length} card(s) to ${targetSection}` });
+  });
+
   app.post("/api/delete", (req, res) => {
     const { identity, assetViewMode } = req.body;
     if (!identity) return res.status(400).json({error: "No identity"});

@@ -42,7 +42,9 @@ import {
   Maximize2,
   SlidersHorizontal,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  FolderInput,
+  FolderOutput
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -64,6 +66,19 @@ export const defaultUpscaleConfig: UpscaleConfig = {
   tta: false,
   scope: 'all',
   maxDimension: 4096
+};
+
+export const getModelShortName = (modelKey: string): string => {
+  const map: Record<string, string> = {
+    'high-fidelity-4x': 'High Fidelity',
+    'digital-art-4x': 'Digital Art',
+    'ultrasharp-4x': 'UltraSharp',
+    'remacri-4x': 'Remacri',
+    'ultramix-balanced-4x': 'UltraMix',
+    'upscayl-standard-4x': 'Standard',
+    'upscayl-lite-4x': 'Lite'
+  };
+  return map[modelKey] || modelKey.replace('-4x', '').replace(/-/g, ' ');
 };
 
 export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
@@ -5043,10 +5058,9 @@ export default function App() {
                                   <button
                                     type="button"
                                     onClick={() => handleUpscale(undefined, true)}
-                                    className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/25 active:scale-[0.98] cursor-pointer whitespace-nowrap min-w-0"
+                                    className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center shadow-lg shadow-primary-600/25 active:scale-[0.98] cursor-pointer whitespace-nowrap min-w-0"
                                   >
-                                    <Maximize2 size={15} className="shrink-0" />
-                                    <span className="truncate">Upscayl All Cards Now ({upscaleConfig.scaleFactor}x HD)</span>
+                                    <span className="truncate">Upscale All Cards Now</span>
                                   </button>
                                   <button
                                     type="button"
@@ -6255,261 +6269,388 @@ export default function App() {
 
       <ErrorBoundary>
         <AnimatePresence>
-          {contextMenu && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 10 }}
-              style={{ 
-                top: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerHeight - 440, contextMenu.y)) : 0, 
-                left: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerWidth - 220, contextMenu.x)) : 0,
-              }}
-              className="fixed z-[100] pointer-events-auto flex flex-col items-stretch gap-0.5 p-1.5 bg-[#1a1b23]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.6)] w-52 max-w-[220px]"
-            >
-              {/* Select Art Options */}
-              {contextMenu.type !== 'back' ? (
-                <>
+          {contextMenu && (() => {
+            const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
+            const isMultiSelected = selectedAssets.size > 1 && selectedAssets.has(identity);
+            const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+            const modelLabel = getModelShortName(upscaleConfig.model);
+            const multiplier = upscaleConfig.scaleFactor;
+            const itemBaseCls = "w-full h-8.5 px-2.5 rounded-lg flex items-center gap-2.5 transition-all active:scale-[0.98] text-xs font-medium cursor-pointer";
+
+            return (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 8 }}
+                transition={{ duration: 0.12 }}
+                style={{ 
+                  top: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerHeight - 520, contextMenu.y)) : 0, 
+                  left: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerWidth - 275, contextMenu.x)) : 0,
+                }}
+                className="fixed z-[100] pointer-events-auto flex flex-col items-stretch p-1.5 bg-[#14151b]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-[0_24px_50px_-10px_rgba(0,0,0,0.7)] w-64 max-w-[275px] select-none"
+              >
+                {/* Card Title Header */}
+                <div className="px-2.5 py-1.5 border-b border-white/5 mb-1 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-white/90 truncate block max-w-[190px]" title={contextMenu.name}>
+                    {contextMenu.name}
+                  </span>
+                  <span className="text-[9px] font-mono uppercase tracking-wider text-white/35 px-1.5 py-0.5 rounded bg-white/5">
+                    {contextMenu.type === 'double_sided' ? 'Double' : contextMenu.type === 'back' ? 'Back' : 'Front'}
+                  </span>
+                </div>
+
+                {/* 1. Artwork & Face Management */}
+                <div className="space-y-0.5">
+                  {contextMenu.type !== 'back' ? (
+                    <>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                          setContextMenu(null);
+                        }}
+                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                        title="Change the front face artwork of this card"
+                      >
+                        <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate">Select Front Art</span>
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
+                          setContextMenu(null);
+                        }}
+                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                        title="Set back for this card (search any card or back pattern)"
+                      >
+                        <Layers size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate">Set Back (Double-Sided)</span>
+                      </button>
+                      <button 
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setContextMenu(null);
+                          setTaskProgress({ current: 0, total: targets.length, message: `Moving to backs section...` });
+                          try {
+                            const res = await fetch('/api/card/move-section', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ identities: targets, targetSection: 'back', assetViewMode })
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                              addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to back section.`);
+                              setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to backs!` });
+                              await fetchStatus();
+                              setSelectedAssets(new Set());
+                            }
+                          } catch (err: any) {
+                            addLog(`[Error] Failed to move card(s): ${err}`);
+                            setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
+                          }
+                          setTimeout(() => setTaskProgress(null), 1500);
+                        }}
+                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                        title="Move this card into the Back Patterns section"
+                      >
+                        <FolderInput size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate">
+                          {isMultiSelected ? `Move ${targets.length} to Backs` : 'Move to Backs'}
+                        </span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openArtPickerForCard(contextMenu.name, 'back', 'back');
+                          setContextMenu(null);
+                        }}
+                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                        title="Change this back pattern"
+                      >
+                        <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate">Select Backing Art</span>
+                      </button>
+                      <button 
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setContextMenu(null);
+                          setTaskProgress({ current: 0, total: targets.length, message: `Moving to fronts section...` });
+                          try {
+                            const res = await fetch('/api/card/move-section', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ identities: targets, targetSection: 'front', assetViewMode })
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                              addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to front section.`);
+                              setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to fronts!` });
+                              await fetchStatus();
+                              setSelectedAssets(new Set());
+                            }
+                          } catch (err: any) {
+                            addLog(`[Error] Failed to move card(s): ${err}`);
+                            setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
+                          }
+                          setTimeout(() => setTaskProgress(null), 1500);
+                        }}
+                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                        title="Move this back pattern into the Front Face cards section"
+                      >
+                        <FolderOutput size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate">
+                          {isMultiSelected ? `Move ${targets.length} to Fronts` : 'Move to Fronts'}
+                        </span>
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* 2. Upscayl AI Section */}
+                <div className="h-[1px] w-full bg-white/5 my-1" />
+                <div className="px-2.5 pt-1 pb-0.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-primary-400">
+                  <span>Upscayl AI</span>
+                  <span className="font-mono text-[9px] text-primary-400/60 lowercase">
+                    {modelLabel} • {multiplier}x
+                  </span>
+                </div>
+                <div className="space-y-0.5">
+                  {/* Single Upscale */}
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setContextMenu(null);
+                      await handleUpscale([identity], false);
+                    }}
+                    className={cn(itemBaseCls, "text-primary-300 hover:text-white hover:bg-primary-500/20 group")}
+                    title={`Upscayl ${contextMenu.name} using ${modelLabel} at ${multiplier}x HD`}
+                  >
+                    <Maximize2 size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                    <span className="truncate">Upscayl Card ({modelLabel}, {multiplier}x)</span>
+                  </button>
+
+                  {/* Batch Upscale Selected */}
+                  {isMultiSelected && (
+                    <button 
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setContextMenu(null);
+                        await handleUpscale(targets, false);
+                      }}
+                      className={cn(itemBaseCls, "text-primary-300 hover:text-white hover:bg-primary-500/20 group")}
+                      title={`Batch upscayl all ${targets.length} selected cards using ${modelLabel} at ${multiplier}x HD`}
+                    >
+                      <Layers size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                      <span className="truncate">Batch Upscayl ({targets.length} Cards) ({modelLabel}, {multiplier}x)</span>
+                    </button>
+                  )}
+
+                  {/* Batch Upscale All Cards in View */}
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setContextMenu(null);
+                      await handleUpscale(undefined, true);
+                    }}
+                    className={cn(itemBaseCls, "text-primary-300 hover:text-white hover:bg-primary-500/20 group")}
+                    title={`Batch upscayl all cards in current view using ${modelLabel} at ${multiplier}x HD`}
+                  >
+                    <ZoomIn size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                    <span className="truncate">Batch Upscayl All Cards ({modelLabel}, {multiplier}x)</span>
+                  </button>
+                </div>
+
+                {/* 3. Actions Section */}
+                <div className="h-[1px] w-full bg-white/5 my-1" />
+                <div className="space-y-0.5">
+                  {/* Download Image */}
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setContextMenu(null);
+                      const basePath = assetViewMode === 'library' ? '/library' : assetViewMode === 'plugins' ? '/plugins_staging' : '/game';
+                      for (const target of targets) {
+                        const [t, n] = target.includes(':') ? target.split(':') : [contextMenu.type || 'front', target];
+                        const url = `${basePath}/${t}/${encodeURIComponent(n)}`;
+                        await downloadFile(url, n);
+                      }
+                    }}
+                    className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                    title="Download card image directly to your computer"
+                  >
+                    <Download size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                    <span className="truncate">
+                      {isMultiSelected ? `Download Images (${targets.length})` : 'Download Image'}
+                    </span>
+                  </button>
+
+                  {/* Duplicate */}
+                  {(!contextMenu.type || contextMenu.type !== 'back') && (
+                    <button 
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        let allResults: any[] = [];
+                        for (let i = 0; i < targets.length; i++) {
+                          setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
+                          try {
+                            const res = await fetch('/api/duplicate', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ identity: targets[i], assetViewMode })
+                            });
+                            const data = await res.json();
+                            if (data.newName) {
+                              addLog(`[Action: Duplicate] ${targets[i]} -> ${data.newName} (Success)`);
+                              allResults.push(`${targets[i].split(':')[0]}:${data.newName}`);
+                            }
+                          } catch(err) {
+                            addLog(`[Error] Failed to duplicate: ${err}`);
+                          }
+                        }
+                        if (allResults.length > 0) {
+                           setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
+                        }
+                        setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} duplicated` });
+                        await fetchStatus();
+                        setTimeout(() => setTaskProgress(null), 1500);
+                        setContextMenu(null);
+                      }}
+                      className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                    >
+                      <Copy size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                      <span className="truncate">Duplicate</span>
+                    </button>
+                  )}
+
+                  {/* Transfer to Project / Library */}
+                  {assetViewMode === 'library' && (
+                    <button 
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setContextMenu(null);
+                        await performMoveOrCopy(targets, 'project', 'library');
+                      }}
+                      className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                    >
+                      <PlusCircle size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                      <span className="truncate">Add to Project</span>
+                    </button>
+                  )}
+
+                  {assetViewMode === 'project' && (
+                    <button 
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setContextMenu(null);
+                        await performMoveOrCopy(targets, 'library', 'project');
+                      }}
+                      className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                    >
+                      <Book size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                      <span className="truncate">Add to Library</span>
+                    </button>
+                  )}
+
+                  {assetViewMode === 'plugins' && (
+                    <>
+                      <button 
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setContextMenu(null);
+                          await performMoveOrCopy(targets, 'project', 'plugins');
+                        }}
+                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                      >
+                        <PlusCircle size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate">Add to Project</span>
+                      </button>
+                      <button 
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setContextMenu(null);
+                          await performMoveOrCopy(targets, 'library', 'plugins');
+                        }}
+                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                      >
+                        <Book size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate">Add to Library</span>
+                      </button>
+                    </>
+                  )}
+
+                  {/* Select All */}
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                      const currentAssets = getCurrentAssets();
+                      const toSelect = new Set<string>();
+                      if (currentAssets?.fronts) {
+                        currentAssets.fronts.forEach(f => toSelect.add(`front:${f}`));
+                      }
+                      if (currentAssets?.backs) {
+                        currentAssets.backs.forEach(b => toSelect.add(`back:${b}`));
+                      }
+                      if (currentAssets?.double_sided) {
+                        currentAssets.double_sided.forEach(d => toSelect.add(`double_sided:${d}`));
+                      }
+                      setSelectedAssets(toSelect);
                       setContextMenu(null);
+                      addLog(`[System] Selected all ${toSelect.size} ${assetViewMode} assets.`);
                     }}
-                    className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                    title="Change the front face artwork of this card"
+                    className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
                   >
-                    <ImageIcon size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                    <span>Select Front Art</span>
+                    <CheckSquare size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                    <span className="truncate">Select All</span>
                   </button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
-                      setContextMenu(null);
-                    }}
-                    className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                    title="Set back for this card (search any card or back pattern)"
-                  >
-                    <Layers size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                    <span>Set Back</span>
-                  </button>
-                </>
-              ) : (
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openArtPickerForCard(contextMenu.name, 'back', 'back');
-                    setContextMenu(null);
-                  }}
-                  className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                  title="Change this back pattern"
-                >
-                  <ImageIcon size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                  <span>Select Backing Art</span>
-                </button>
-              )}
-              <div className="h-[1px] w-full bg-white/10 my-1" />
-              {(!contextMenu.type || contextMenu.type !== 'back') && (
+                </div>
+
+                {/* 4. Danger Section */}
+                <div className="h-[1px] w-full bg-white/5 my-1" />
                 <button 
                   onClick={async (e) => {
                     e.stopPropagation();
-                    const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                    const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
                     let allResults: any[] = [];
                     for (let i = 0; i < targets.length; i++) {
-                      setTaskProgress({ current: i + 1, total: targets.length, message: `Duplicating ${targets[i].split(':')[1] || targets[i]}...` });
+                      setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
                       try {
-                        const res = await fetch('/api/duplicate', {
+                        const res = await fetch('/api/delete', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ identity: targets[i], assetViewMode })
+                          body: JSON.stringify({ identity: [targets[i]], assetViewMode })
                         });
                         const data = await res.json();
-                        if (data.newName) {
-                          addLog(`[Action: Duplicate] ${targets[i]} -> ${data.newName} (Success)`);
-                          allResults.push(`${targets[i].split(':')[0]}:${data.newName}`);
+                        if (data.results) {
+                          data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
+                          allResults = allResults.concat(data.results);
                         }
                       } catch(err) {
-                        addLog(`[Error] Failed to duplicate: ${err}`);
+                        addLog(`[Error] Failed to delete: ${err}`);
                       }
                     }
                     if (allResults.length > 0) {
-                       setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
+                      setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
                     }
-                    setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} duplicated` });
+                    
+                    setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} deleted` });
                     await fetchStatus();
                     setTimeout(() => setTaskProgress(null), 1500);
                     setContextMenu(null);
+                    setSelectedAssets(new Set());
                   }}
-                  className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
+                  className={cn(itemBaseCls, "text-rose-400 hover:text-rose-200 hover:bg-rose-500/15 group")}
                 >
-                  <Copy size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                  <span className="font-bold text-xs">Duplicate</span>
+                  <Trash2 size={14} className="text-rose-400/50 group-hover:text-rose-400 shrink-0" />
+                  <span className="truncate">
+                    {isMultiSelected ? `Delete (${targets.length})` : 'Delete'}
+                  </span>
                 </button>
-              )}
-
-              {assetViewMode === 'library' && (
-                <>
-                  <div className="h-[1px] w-full bg-white/10 my-1" />
-                  <button 
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                      await performMoveOrCopy(targets, 'project', 'library');
-                    }}
-                    className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                  >
-                    <PlusCircle size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                    <span className="font-bold text-xs">Add to Project</span>
-                  </button>
-                </>
-              )}
-
-              {assetViewMode === 'project' && (
-                <>
-                  <div className="h-[1px] w-full bg-white/10 my-1" />
-                  <button 
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                      await performMoveOrCopy(targets, 'library', 'project');
-                    }}
-                    className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                  >
-                    <ImageIcon size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                    <span className="font-bold text-xs">Add to Library</span>
-                  </button>
-                </>
-              )}
-
-              {assetViewMode === 'plugins' && (
-                <>
-                  <div className="h-[1px] w-full bg-white/10 my-1" />
-                  <button 
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                      await performMoveOrCopy(targets, 'project', 'plugins');
-                    }}
-                    className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                  >
-                    <PlusCircle size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                    <span className="font-bold text-xs">Add to Project</span>
-                  </button>
-
-                  <div className="h-[1px] w-full bg-white/10 my-1" />
-                  <button 
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                      await performMoveOrCopy(targets, 'library', 'plugins');
-                    }}
-                    className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                  >
-                    <ImageIcon size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                    <span className="font-bold text-xs">Add to Library</span>
-                  </button>
-                </>
-              )}
-
-              <div className="h-[1px] w-full bg-white/10 my-1" />
-              <button 
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                  const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                  setContextMenu(null);
-                  await handleUpscale(targets, false);
-                }}
-                className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                title={`Upscayl selected card image(s) to ${upscaleConfig.scaleFactor}x HD`}
-              >
-                <Maximize2 size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                <span>Upscayl Card ({upscaleConfig.scaleFactor}x HD)</span>
-              </button>
-
-              <button 
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  setContextMenu(null);
-                  await handleUpscale(undefined, true);
-                }}
-                className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                title={`Upscayl all card images in current view to ${upscaleConfig.scaleFactor}x HD`}
-              >
-                <ZoomIn size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                <span>Upscayl View ({upscaleConfig.scaleFactor}x HD)</span>
-              </button>
-
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const currentAssets = getCurrentAssets();
-                  const toSelect = new Set<string>();
-                  if (currentAssets?.fronts) {
-                    currentAssets.fronts.forEach(f => toSelect.add(`front:${f}`));
-                  }
-                  setSelectedAssets(toSelect);
-                  setContextMenu(null);
-                  addLog(`[System] Selected all front ${assetViewMode} assets.`);
-                }}
-                className="w-full h-9 px-3 hover:bg-white/5 text-white rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-              >
-                <CheckSquare size={16} className="text-white/40 group-hover:text-white shrink-0" />
-                <span className="font-bold text-xs">Select All</span>
-              </button>
-
-              {true && (
-                <>
-                  <div className="h-[1px] w-full bg-white/10 my-1" />
-
-                  <button 
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
-                      const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
-                      
-                      let allResults: any[] = [];
-                      for (let i = 0; i < targets.length; i++) {
-                        setTaskProgress({ current: i + 1, total: targets.length, message: `Deleting ${targets[i].split(':')[1] || targets[i]}...` });
-                        try {
-                          const res = await fetch('/api/delete', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ identity: [targets[i]], assetViewMode })
-                          });
-                          const data = await res.json();
-                          if (data.results) {
-                            data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
-                            allResults = allResults.concat(data.results);
-                          }
-                        } catch(err) {
-                          addLog(`[Error] Failed to delete: ${err}`);
-                        }
-                      }
-                      if (allResults.length > 0) {
-                        setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
-                      }
-                      
-                      setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} deleted` });
-                      await fetchStatus();
-                      setTimeout(() => setTaskProgress(null), 1500);
-                      setContextMenu(null);
-                      setSelectedAssets(new Set());
-                    }}
-                    className="w-full h-9 px-3 hover:bg-rose-500/10 text-rose-400 rounded-lg flex items-center gap-3 transition-all active:scale-95 group"
-                  >
-                    <Trash2 size={16} className="text-rose-400/40 group-hover:text-rose-400 shrink-0" />
-                    <span className="font-bold text-xs">Delete</span>
-                  </button>
-                </>
-              )}
-            </motion.div>
-          )}
+              </motion.div>
+            );
+          })()}
         </AnimatePresence>
       </ErrorBoundary>
       {activeTab === 'assets' && (assetViewMode === 'library' || assetViewMode === 'plugins') && selectedAssets.size > 0 && (
