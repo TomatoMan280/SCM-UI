@@ -68,9 +68,57 @@ async function startServer() {
     }
   };
 
+  interface UpscaylInfo {
+    available: boolean;
+    binPath: string;
+    modelsDir: string;
+    models: string[];
+  }
+
+  const findUpscayl = (): UpscaylInfo => {
+    const candidateDirs = [
+      'C:\\Program Files\\Upscayl\\resources',
+      'C:\\Program Files (x86)\\Upscayl\\resources',
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'upscayl', 'resources'),
+      path.join(process.env.APPDATA || '', 'Programs', 'upscayl', 'resources'),
+      '/Applications/Upscayl.app/Contents/Resources',
+      '/usr/share/upscayl/resources',
+      '/opt/upscayl/resources'
+    ];
+
+    for (const base of candidateDirs) {
+      const bin = path.join(base, 'bin', process.platform === 'win32' ? 'upscayl-bin.exe' : 'upscayl-bin');
+      const models = path.join(base, 'models');
+      if (fs.existsSync(bin) && fs.existsSync(models)) {
+        let modelFiles: string[] = [];
+        try {
+          modelFiles = fs.readdirSync(models)
+            .filter(f => f.endsWith('.param'))
+            .map(f => f.replace('.param', ''));
+        } catch (_) {}
+        return {
+          available: true,
+          binPath: bin,
+          modelsDir: models,
+          models: modelFiles.length > 0 ? modelFiles : [
+            'high-fidelity-4x',
+            'digital-art-4x',
+            'ultrasharp-4x',
+            'remacri-4x',
+            'ultramix-balanced-4x',
+            'upscayl-standard-4x',
+            'upscayl-lite-4x'
+          ]
+        };
+      }
+    }
+    return { available: false, binPath: '', modelsDir: '', models: [] };
+  };
+
   interface UpscaleOptions {
     scaleFactor?: number;
     model?: string;
+    tta?: boolean;
     sharpen?: boolean;
     denoise?: boolean;
     enhanceContrast?: boolean;
@@ -84,21 +132,54 @@ async function startServer() {
         ? { scaleFactor: optionsOrScale }
         : (optionsOrScale || { scaleFactor: 2 });
       const scaleFactor = Math.max(1, Math.min(8, Number(opts.scaleFactor) || 2));
-      const model = opts.model || 'realesrgan';
-      const sharpen = opts.sharpen !== false;
-      const denoise = !!opts.denoise;
-      const enhanceContrast = !!opts.enhanceContrast;
+      const model = opts.model || 'high-fidelity-4x';
+      const tta = !!opts.tta;
       const maxDimension = Number(opts.maxDimension) || 4096;
 
+      const upscayl = findUpscayl();
+      if (upscayl.available) {
+        let upscaylModel = 'high-fidelity-4x';
+        if (model.includes('digital') || model === 'digital_art') upscaylModel = 'digital-art-4x';
+        else if (model.includes('remacri')) upscaylModel = 'remacri-4x';
+        else if (model.includes('ultrasharp')) upscaylModel = 'ultrasharp-4x';
+        else if (model.includes('ultramix')) upscaylModel = 'ultramix-balanced-4x';
+        else if (model.includes('lite')) upscaylModel = 'upscayl-lite-4x';
+        else if (model.includes('standard') || model.includes('realesrgan')) upscaylModel = 'upscayl-standard-4x';
+        else if (model.includes('high-fidelity') || model.includes('card_fidelity')) upscaylModel = 'high-fidelity-4x';
+        else if (upscayl.models.includes(model)) upscaylModel = model;
+
+        const tempOut = path.join(os.tmpdir(), `upscayl_${Date.now()}_${Math.random().toString(36).substring(7)}.png`);
+        
+        const args = [
+          '-i', path.resolve(filePath),
+          '-o', tempOut,
+          '-s', scaleFactor.toString(),
+          '-m', upscayl.modelsDir,
+          '-n', upscaylModel,
+          '-f', 'png'
+        ];
+        if (tta) args.push('-x');
+        if (maxDimension > 0 && maxDimension < 8192) {
+          args.push('-w', maxDimension.toString());
+        }
+
+        const { execFileSync } = await import('child_process');
+        execFileSync(upscayl.binPath, args, { encoding: 'utf8', stdio: 'pipe' });
+
+        if (fs.existsSync(tempOut) && fs.statSync(tempOut).size > 0) {
+          fs.copyFileSync(tempOut, filePath);
+          try { fs.unlinkSync(tempOut); } catch (_) {}
+          console.log(`[Upscayl AI: ${upscaylModel}] ${path.basename(filePath)} (${scaleFactor}x HD via Vulkan GPU)`);
+          return true;
+        }
+      }
+
+      // Fallback
       const { Jimp } = await import('jimp');
       const image = await Jimp.read(filePath);
       const curW = image.width;
       const curH = image.height;
       if (curW > 0 && curH > 0) {
-         if (denoise) {
-           image.blur(1);
-         }
-
          let targetW = Math.round(curW * scaleFactor);
          let targetH = Math.round(curH * scaleFactor);
          if (targetW > maxDimension || targetH > maxDimension) {
@@ -106,47 +187,13 @@ async function startServer() {
            targetW = Math.round(targetW * ratio);
            targetH = Math.round(targetH * ratio);
          }
-
          image.resize({ w: targetW, h: targetH });
-
-         if (model === 'digital_art') {
-           image.contrast(0.06);
-           image.convolute([
-             [0, -0.25, 0],
-             [-0.25, 2, -0.25],
-             [0, -0.25, 0]
-           ]);
-         } else if (model === 'remacri') {
-           image.convolute([
-             [0, -0.5, 0],
-             [-0.5, 3, -0.5],
-             [0, -0.5, 0]
-           ]);
-         } else if (model === 'card_fidelity') {
-           image.contrast(0.04);
-           image.convolute([
-             [0, -0.3, 0],
-             [-0.3, 2.2, -0.3],
-             [0, -0.3, 0]
-           ]);
-         } else if (sharpen) {
-           image.convolute([
-             [0, -0.25, 0],
-             [-0.25, 2, -0.25],
-             [0, -0.25, 0]
-           ]);
-         }
-
-         if (enhanceContrast) {
-           image.contrast(0.05);
-         }
-
          await image.write(filePath as any);
-         console.log(`[Upscale: ${model}] ${path.basename(filePath)} (${curW}x${curH} -> ${image.width}x${image.height})`);
+         console.log(`[Upscale: fallback] ${path.basename(filePath)} (${curW}x${curH} -> ${image.width}x${image.height})`);
          return true;
       }
     } catch(e: any) {
-      console.error(`[Upscale Error] Failed to upscale ${filePath}:`, e?.message || e);
+      console.error(`[Upscayl Error] Failed to upscale ${filePath}:`, e?.message || e);
     }
     return false;
   };
@@ -155,6 +202,54 @@ async function startServer() {
     if (!fs.existsSync(dirPath)) return 0;
     try {
       const files = fs.readdirSync(dirPath).filter(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+      if (files.length === 0) return 0;
+
+      const opts: UpscaleOptions = typeof optionsOrScale === 'number'
+        ? { scaleFactor: optionsOrScale }
+        : (optionsOrScale || { scaleFactor: 2 });
+
+      const upscayl = findUpscayl();
+      if (upscayl.available) {
+        const tempOutDir = path.join(os.tmpdir(), `upscayl_batch_${Date.now()}_${Math.random().toString(36).substring(7)}`);
+        fs.mkdirSync(tempOutDir, { recursive: true });
+
+        const scaleFactor = Math.max(1, Math.min(8, Number(opts.scaleFactor) || 2));
+        let upscaylModel = opts.model || 'high-fidelity-4x';
+        if (upscaylModel.includes('digital') || upscaylModel === 'digital_art') upscaylModel = 'digital-art-4x';
+        else if (upscaylModel.includes('remacri')) upscaylModel = 'remacri-4x';
+        else if (upscaylModel.includes('ultrasharp')) upscaylModel = 'ultrasharp-4x';
+        else if (upscaylModel.includes('ultramix')) upscaylModel = 'ultramix-balanced-4x';
+        else if (upscaylModel.includes('lite')) upscaylModel = 'upscayl-lite-4x';
+        else if (upscaylModel.includes('standard') || upscaylModel.includes('realesrgan')) upscaylModel = 'upscayl-standard-4x';
+        else if (upscaylModel.includes('high-fidelity') || upscaylModel.includes('card_fidelity')) upscaylModel = 'high-fidelity-4x';
+
+        const args = [
+          '-i', path.resolve(dirPath),
+          '-o', tempOutDir,
+          '-s', scaleFactor.toString(),
+          '-m', upscayl.modelsDir,
+          '-n', upscaylModel,
+          '-f', 'png'
+        ];
+        if (opts.tta) args.push('-x');
+
+        const { execFileSync } = await import('child_process');
+        execFileSync(upscayl.binPath, args, { encoding: 'utf8', stdio: 'pipe' });
+
+        let count = 0;
+        const outFiles = fs.readdirSync(tempOutDir);
+        for (const outF of outFiles) {
+          const srcFile = path.join(tempOutDir, outF);
+          const destFile = path.join(dirPath, outF);
+          fs.copyFileSync(srcFile, destFile);
+          count++;
+        }
+        try { fs.rmSync(tempOutDir, { recursive: true, force: true }); } catch (_) {}
+        console.log(`[Upscayl Batch: ${upscaylModel}] Upscaled ${count} images in ${dirPath}`);
+        return count;
+      }
+
+      // Fallback
       let count = 0;
       for (const f of files) {
         const full = path.join(dirPath, f);
@@ -163,6 +258,7 @@ async function startServer() {
       }
       return count;
     } catch(e) {
+      console.error("[Upscayl Directory Error]", e);
       return 0;
     }
   };
@@ -3053,6 +3149,10 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     });
   });
 
+  app.get("/api/upscayl/status", (req, res) => {
+    res.json(findUpscayl());
+  });
+
   app.post("/api/upscale", async (req, res) => {
     try {
       const {
@@ -3060,7 +3160,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         assetViewMode,
         allInView,
         scaleFactor = 2,
-        model = 'realesrgan',
+        model = 'high-fidelity-4x',
+        tta = false,
         sharpen = true,
         denoise = false,
         enhanceContrast = false,
@@ -3120,19 +3221,27 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       const options: UpscaleOptions = {
         scaleFactor: Number(scaleFactor) || 2,
         model,
+        tta: !!tta,
         sharpen: !!sharpen,
         denoise: !!denoise,
         enhanceContrast: !!enhanceContrast,
         maxDimension: Number(maxDimension) || 4096
       };
 
+      const upscayl = findUpscayl();
       let count = 0;
       for (const p of targetPaths) {
         const ok = await upscaleImageFile(p, options);
         if (ok) count++;
       }
 
-      return res.json({ success: true, count, total: targetPaths.length });
+      return res.json({ 
+        success: true, 
+        count, 
+        total: targetPaths.length, 
+        engine: upscayl.available ? 'upscayl-ai' : 'fallback',
+        model: options.model
+      });
     } catch(e: any) {
       console.error("[Upscale Error]", e);
       return res.status(500).json({ success: false, error: e?.message || 'Upscaling failed' });

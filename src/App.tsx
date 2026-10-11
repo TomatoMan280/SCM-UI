@@ -51,20 +51,16 @@ import ProjectManager from './components/ProjectManager';
 
 export interface UpscaleConfig {
   scaleFactor: 2 | 3 | 4;
-  model: 'realesrgan' | 'digital_art' | 'remacri' | 'card_fidelity' | 'bicubic_crisp';
-  sharpen: boolean;
-  denoise: boolean;
-  enhanceContrast: boolean;
+  model: 'high-fidelity-4x' | 'digital-art-4x' | 'ultrasharp-4x' | 'remacri-4x' | 'ultramix-balanced-4x' | 'upscayl-standard-4x' | 'upscayl-lite-4x';
+  tta: boolean;
   scope: 'all' | 'front' | 'back' | 'double_sided' | 'selected';
   maxDimension: number;
 }
 
 export const defaultUpscaleConfig: UpscaleConfig = {
   scaleFactor: 2,
-  model: 'realesrgan',
-  sharpen: true,
-  denoise: true,
-  enhanceContrast: false,
+  model: 'high-fidelity-4x',
+  tta: false,
   scope: 'all',
   maxDimension: 4096
 };
@@ -1065,6 +1061,8 @@ export default function App() {
     } catch(e) {}
   };
 
+  const [upscaylStatus, setUpscaylStatus] = useState<{ available: boolean; binPath: string; models: string[] } | null>(null);
+
   const [upscaleConfig, setUpscaleConfig] = useState<UpscaleConfig>(() => {
     try {
       const saved = localStorage.getItem('scm_upscale_config');
@@ -1099,8 +1097,8 @@ export default function App() {
     try {
       const cfg = { ...upscaleConfig, ...(customConfig || {}) };
       const label = allInView ? 'all deck / view cards' : `${identities?.length || 1} card${(identities?.length || 1) === 1 ? '' : 's'}`;
-      setTaskProgress({ current: 1, total: 100, message: `Upscaling ${label} (${cfg.scaleFactor}x HD)...` });
-      addLog(`[Action: Upscale] Initiating ${cfg.scaleFactor}x resolution upscaling (${cfg.model}) for ${label}...`);
+      setTaskProgress({ current: 1, total: 100, message: `Upscaling ${label} with Upscayl AI (${cfg.scaleFactor}x HD)...` });
+      addLog(`[Action: Upscayl AI] Initiating ${cfg.scaleFactor}x super-resolution upscaling (Model: ${cfg.model}${cfg.tta ? ', TTA Mode' : ''}) for ${label}...`);
 
       const res = await fetch('/api/upscale', {
         method: 'POST',
@@ -1111,31 +1109,51 @@ export default function App() {
           assetViewMode,
           scaleFactor: cfg.scaleFactor,
           model: cfg.model,
-          sharpen: cfg.sharpen,
-          denoise: cfg.denoise,
-          enhanceContrast: cfg.enhanceContrast,
+          tta: cfg.tta,
           scope: allInView ? cfg.scope : (identities ? 'selected' : cfg.scope),
           maxDimension: cfg.maxDimension
         })
       });
       const data = await res.json();
       if (data.success) {
-        addLog(`[Action: Upscale] Successfully upscaled ${data.count} card image(s) to ${cfg.scaleFactor}x high resolution.`);
-        setTaskProgress({ current: 100, total: 100, message: `Upscaled ${data.count} card image(s) (${cfg.scaleFactor}x HD)!` });
+        addLog(`[Action: Upscayl AI] Successfully upscaled ${data.count} card image(s) to ${cfg.scaleFactor}x high resolution.`);
+        setTaskProgress({ current: 100, total: 100, message: `Upscaled ${data.count} card image(s) with Upscayl (${cfg.scaleFactor}x HD)!` });
+        
+        // Invalidate image cache so that the freshly upscaled images load immediately in the UI
+        const newBusts = { ...cacheBusts };
+        const now = Date.now();
+        if (identities) {
+          identities.forEach(item => {
+            const name = item.includes(':') ? item.split(':')[1] : item;
+            newBusts[name] = now;
+          });
+        }
+        if (allInView) {
+          const cur = getCurrentAssets();
+          cur?.fronts?.forEach(f => { newBusts[f] = now; });
+          cur?.backs?.forEach(b => { newBusts[b] = now; });
+          cur?.double_sided?.forEach(d => { newBusts[d] = now; });
+        }
+        setCacheBusts(newBusts);
+
         await fetchStatus();
       } else {
-        addLog(`[Error: Upscale] ${data.message || data.error || 'Failed to upscale card images.'}`);
+        addLog(`[Error: Upscayl AI] ${data.message || data.error || 'Failed to upscale card images.'}`);
         setTaskProgress({ current: 0, total: 100, message: `Upscale failed.` });
       }
     } catch(err: any) {
-      addLog(`[Error: Upscale] ${err?.message || err}`);
+      addLog(`[Error: Upscayl AI] ${err?.message || err}`);
     } finally {
-      setTimeout(() => setTaskProgress(null), 2000);
+      setTimeout(() => setTaskProgress(null), 2500);
     }
   };
 
   useEffect(() => {
     setCurrentTheme(getTheme());
+    fetch('/api/upscayl/status')
+      .then(res => res.json())
+      .then(data => setUpscaylStatus(data))
+      .catch(() => {});
     const handleGlobalClick = () => setContextMenu(null);
     window.addEventListener('click', handleGlobalClick);
     return () => window.removeEventListener('click', handleGlobalClick);
@@ -4194,7 +4212,7 @@ export default function App() {
                             </div>
                           )}
 
-                          {/* Image Upscaling & Resolution Engine Subsection */}
+                          {/* UPSCAYL AI Super-Resolution Engine Subsection */}
                           <div className="mb-4 bg-white/[0.03] border border-white/10 hover:border-primary-500/30 rounded-2xl overflow-hidden transition-all shadow-lg">
                             {/* Subsection Header */}
                             <div 
@@ -4206,19 +4224,29 @@ export default function App() {
                                   <Maximize2 size={18} />
                                 </div>
                                 <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-white block">Image Upscaling Engine</span>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs font-bold text-white block">UPSCAYL AI Engine</span>
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary-500/20 text-primary-300 border border-primary-500/30">
                                       {upscaleConfig.scaleFactor}x HD
                                     </span>
+                                    {upscaylStatus?.available ? (
+                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        Upscayl Vulkan Active
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-white/10 text-white/50 border border-white/10">
+                                        Upscayl Ready
+                                      </span>
+                                    )}
                                     {autoUpscaleImport && (
-                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                        Auto-Active
+                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-primary-500/20 text-primary-300 border border-primary-500/30">
+                                        Auto-Upscayl
                                       </span>
                                     )}
                                   </div>
                                   <span className="text-[11px] text-white/50 block">
-                                    Resolution multiplier, AI models, unsharp mask & artifact reduction
+                                    GPU-accelerated super-resolution using native Upscayl AI neural models
                                   </span>
                                 </div>
                               </div>
@@ -4230,7 +4258,7 @@ export default function App() {
                                     toggleAutoUpscaleImport(!autoUpscaleImport);
                                   }}
                                   className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${autoUpscaleImport ? 'bg-primary-500' : 'bg-white/20'}`}
-                                  title={autoUpscaleImport ? "Auto-upscaling enabled for plugin fetches" : "Auto-upscaling disabled"}
+                                  title={autoUpscaleImport ? "Auto-upscaling enabled for plugin imports" : "Auto-upscaling disabled"}
                                 >
                                   <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${autoUpscaleImport ? 'left-6' : 'left-1'}`} />
                                 </button>
@@ -4247,7 +4275,7 @@ export default function App() {
                                 {/* Scale Factor Selector */}
                                 <div>
                                   <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
-                                    Resolution Scale Multiplier
+                                    Upscayl Output Scale Multiplier
                                   </label>
                                   <div className="grid grid-cols-3 gap-2">
                                     {([2, 3, 4] as const).map(scale => (
@@ -4262,19 +4290,19 @@ export default function App() {
                                             : "bg-white/5 text-white/60 hover:text-white hover:bg-white/10 border-white/10"
                                         )}
                                       >
-                                        <span>{scale}x Resolution</span>
+                                        <span>{scale}x AI Scale</span>
                                         <span className="text-[9px] opacity-75 font-normal">
-                                          {scale === 2 ? 'Fast HD (200%)' : scale === 3 ? 'Super HD (300%)' : 'Ultra HD (400%)'}
+                                          {scale === 2 ? 'Fast 2x HD' : scale === 3 ? '3x Quad HD' : '4x Extreme HD'}
                                         </span>
                                       </button>
                                     ))}
                                   </div>
                                 </div>
 
-                                {/* Model / Profile Selector */}
+                                {/* Upscayl AI Model Selector */}
                                 <div>
                                   <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
-                                    Upscaling Profile & Model
+                                    Upscayl Neural Model Architecture
                                   </label>
                                   <div className="relative">
                                     <select
@@ -4282,11 +4310,13 @@ export default function App() {
                                       onChange={(e) => updateUpscaleConfig({ model: e.target.value as any })}
                                       className="w-full bg-[#14151b] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors"
                                     >
-                                      <option value="realesrgan" className="bg-[#14151b]">Real-ESRGAN (General / Card Art Balanced)</option>
-                                      <option value="digital_art" className="bg-[#14151b]">Digital Art & Anime (High Vibrancy & Sharp Lines)</option>
-                                      <option value="remacri" className="bg-[#14151b]">Remacri / Ultramix (Extreme Texture & Micro-Sharpening)</option>
-                                      <option value="card_fidelity" className="bg-[#14151b]">Card Art & Typography Fidelity (Crisp Text & Borders)</option>
-                                      <option value="bicubic_crisp" className="bg-[#14151b]">Bicubic Crisp (Lightweight Neural Interpolation)</option>
+                                      <option value="high-fidelity-4x" className="bg-[#14151b]">High Fidelity 4x (Recommended: Cards, Text & Borders)</option>
+                                      <option value="digital-art-4x" className="bg-[#14151b]">Digital Art 4x (Anime, Illustrations & Lineart)</option>
+                                      <option value="ultrasharp-4x" className="bg-[#14151b]">UltraSharp 4x (Maximum Crispness & Sharp Edges)</option>
+                                      <option value="remacri-4x" className="bg-[#14151b]">Remacri 4x (Ultra-Realistic Textures & Depth)</option>
+                                      <option value="ultramix-balanced-4x" className="bg-[#14151b]">UltraMix Balanced 4x (Smooth Blend & Detail)</option>
+                                      <option value="upscayl-standard-4x" className="bg-[#14151b]">Upscayl Standard 4x (General AI Model)</option>
+                                      <option value="upscayl-lite-4x" className="bg-[#14151b]">Upscayl Lite 4x (Fast Inference)</option>
                                     </select>
                                     <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
                                   </div>
@@ -4313,64 +4343,30 @@ export default function App() {
                                   </div>
                                 </div>
 
-                                {/* Filters and Enhancement Toggles */}
+                                {/* Upscayl AI Pipeline Toggles */}
                                 <div className="space-y-2 pt-1">
                                   <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1">
-                                    Quality & Pre/Post-Processing
+                                    Upscayl Neural Parameters
                                   </label>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {/* Sharpening Toggle */}
+                                    {/* TTA Mode Toggle */}
                                     <div 
-                                      onClick={() => updateUpscaleConfig({ sharpen: !upscaleConfig.sharpen })}
+                                      onClick={() => updateUpscaleConfig({ tta: !upscaleConfig.tta })}
                                       className={cn(
                                         "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
-                                        upscaleConfig.sharpen ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
+                                        upscaleConfig.tta ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
                                       )}
                                     >
                                       <div className="pr-2">
-                                        <span className="text-xs font-semibold block">Edge & Text Sharpen</span>
-                                        <span className="text-[10px] opacity-60 block">Crisp text, numbers & borders</span>
+                                        <span className="text-xs font-semibold block">TTA Mode (Enhanced Quality)</span>
+                                        <span className="text-[10px] opacity-60 block">8x rotational passes to eliminate artifacts</span>
                                       </div>
-                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.sharpen ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
-                                        {upscaleConfig.sharpen && <Check size={12} />}
-                                      </div>
-                                    </div>
-
-                                    {/* Denoise Toggle */}
-                                    <div 
-                                      onClick={() => updateUpscaleConfig({ denoise: !upscaleConfig.denoise })}
-                                      className={cn(
-                                        "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
-                                        upscaleConfig.denoise ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
-                                      )}
-                                    >
-                                      <div className="pr-2">
-                                        <span className="text-xs font-semibold block">Artifact Reduction</span>
-                                        <span className="text-[10px] opacity-60 block">Remove web JPEG compression noise</span>
-                                      </div>
-                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.denoise ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
-                                        {upscaleConfig.denoise && <Check size={12} />}
+                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.tta ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
+                                        {upscaleConfig.tta && <Check size={12} />}
                                       </div>
                                     </div>
 
-                                    {/* Contrast / Vibrancy Toggle */}
-                                    <div 
-                                      onClick={() => updateUpscaleConfig({ enhanceContrast: !upscaleConfig.enhanceContrast })}
-                                      className={cn(
-                                        "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
-                                        upscaleConfig.enhanceContrast ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-white/[0.02] border-white/5 text-white/50"
-                                      )}
-                                    >
-                                      <div className="pr-2">
-                                        <span className="text-xs font-semibold block">Color & Contrast Boost</span>
-                                        <span className="text-[10px] opacity-60 block">Vibrant saturation for physical print</span>
-                                      </div>
-                                      <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.enhanceContrast ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
-                                        {upscaleConfig.enhanceContrast && <Check size={12} />}
-                                      </div>
-                                    </div>
-
-                                    {/* Max Resolution Clamp */}
+                                    {/* Memory Safety Clamp */}
                                     <div 
                                       onClick={() => updateUpscaleConfig({ maxDimension: upscaleConfig.maxDimension === 4096 ? 8192 : 4096 })}
                                       className={cn(
@@ -4379,8 +4375,8 @@ export default function App() {
                                       )}
                                     >
                                       <div className="pr-2">
-                                        <span className="text-xs font-semibold block">Memory Clamp (4096px)</span>
-                                        <span className="text-[10px] opacity-60 block">Prevents memory exhaustion</span>
+                                        <span className="text-xs font-semibold block">Max Dimension Clamp ({upscaleConfig.maxDimension}px)</span>
+                                        <span className="text-[10px] opacity-60 block">Prevents memory overflow on huge sheets</span>
                                       </div>
                                       <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.maxDimension === 4096 ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
                                         {upscaleConfig.maxDimension === 4096 && <Check size={12} />}
@@ -4397,7 +4393,7 @@ export default function App() {
                                     className="w-full sm:flex-1 py-2.5 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 cursor-pointer"
                                   >
                                     <Maximize2 size={14} />
-                                    <span>Upscale All Cards Now ({upscaleConfig.scaleFactor}x HD)</span>
+                                    <span>Upscayl All Cards Now ({upscaleConfig.scaleFactor}x HD)</span>
                                   </button>
                                   <button
                                     type="button"
@@ -4411,7 +4407,7 @@ export default function App() {
                                     )}
                                   >
                                     <CheckSquare size={14} />
-                                    <span>Upscale Selected ({selectedAssets.size})</span>
+                                    <span>Upscayl Selected ({selectedAssets.size})</span>
                                   </button>
                                 </div>
                               </div>
@@ -5744,10 +5740,10 @@ export default function App() {
                   await handleUpscale(targets, false);
                 }}
                 className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                title={`Upscale selected card image(s) to ${upscaleConfig.scaleFactor}x HD`}
+                title={`Upscayl selected card image(s) to ${upscaleConfig.scaleFactor}x HD`}
               >
                 <Maximize2 size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                <span>Upscale Card ({upscaleConfig.scaleFactor}x HD)</span>
+                <span>Upscayl Card ({upscaleConfig.scaleFactor}x HD)</span>
               </button>
 
               <button 
@@ -5757,10 +5753,10 @@ export default function App() {
                   await handleUpscale(undefined, true);
                 }}
                 className="w-full h-9 px-3 hover:bg-primary-500/15 text-primary-300 rounded-lg flex items-center gap-3 transition-all active:scale-95 group font-bold text-xs cursor-pointer"
-                title={`Upscale all card images in current view to ${upscaleConfig.scaleFactor}x HD`}
+                title={`Upscayl all card images in current view to ${upscaleConfig.scaleFactor}x HD`}
               >
                 <ZoomIn size={15} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                <span>Upscale View ({upscaleConfig.scaleFactor}x HD)</span>
+                <span>Upscayl View ({upscaleConfig.scaleFactor}x HD)</span>
               </button>
 
               <button 
