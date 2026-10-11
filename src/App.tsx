@@ -3451,16 +3451,21 @@ export default function App() {
                     />
                   </svg>
                   <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
-                    {taskProgress.total > 0 && taskProgress.message && (taskProgress.message.toLowerCase().includes('card') || taskProgress.message.toLowerCase().includes('image') || taskProgress.message.toLowerCase().includes('of'))
-                      ? `${taskProgress.current}/${taskProgress.total}`
-                      : (taskProgress.total === 100 
-                          ? `${Math.round(taskProgress.current)}%` 
-                          : `${taskProgress.current}/${taskProgress.total}`)}
+                    {taskProgress.total > 0 
+                      ? `${Math.round((taskProgress.current / taskProgress.total) * 100)}%` 
+                      : `${taskProgress.current}`}
                   </span>
                 </div>
               )}
-             <div className="flex flex-col flex-1 pl-2">
-               <span className="text-sm font-bold text-white/90">{taskProgress.message}</span>
+             <div className="flex flex-col flex-1 pl-2 min-w-0">
+               <span className="text-sm font-bold text-white/90 truncate" title={taskProgress.message}>
+                 {taskProgress.message.replace(/\s*\(\d+\s+of\s+\d+\)\s*\.{0,3}/i, '').trim() || taskProgress.message}
+               </span>
+               {taskProgress.total > 1 && (
+                 <span className="text-[11px] font-semibold text-primary-400">
+                   Card {taskProgress.current} of {taskProgress.total}
+                 </span>
+               )}
              </div>
              {activeTaskController && (
                <button

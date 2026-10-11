@@ -3515,11 +3515,11 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         const cardName = path.basename(p);
 
         sendEvent('progress', {
-          current: i,
+          current: i + 1,
           total: targetPaths.length,
           cardName,
           status: 'upscaling',
-          message: `Upscaling ${cardName} (${i + 1} of ${targetPaths.length})...`
+          message: `Upscaling ${cardName}...`
         });
 
         const ok = await upscaleImageFile(p, options);
@@ -3530,7 +3530,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           total: targetPaths.length,
           cardName,
           status: 'completed',
-          message: `Upscaled ${cardName} (${i + 1} of ${targetPaths.length})`
+          message: `Upscaled ${cardName}`
         });
       }
 
