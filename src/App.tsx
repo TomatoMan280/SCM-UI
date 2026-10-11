@@ -41,7 +41,8 @@ import {
   Zap,
   Maximize2,
   SlidersHorizontal,
-  ZoomIn
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -478,6 +479,15 @@ const LightboxGallery = ({
   const [isFlipped, setIsFlipped] = useState(false);
   const [backSrc, setBackSrc] = useState<string | null>(null);
 
+  // Zoom & Pan state
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef({ x: 0, y: 0 });
+  const hasPannedRef = useRef(false);
+  const zoomContentRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
   // Before / After Comparison state
   const [hasOriginal, setHasOriginal] = useState(false);
   const [originalSrc, setOriginalSrc] = useState<string | null>(null);
@@ -487,6 +497,126 @@ const LightboxGallery = ({
   const [imageStats, setImageStats] = useState<{ origSize?: number; currentSize?: number } | null>(null);
   const [isUpscalingSingle, setIsUpscalingSingle] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Wheel zoom listener with passive: false to reliably zoom towards mouse cursor
+  useEffect(() => {
+    const modalEl = modalRef.current;
+    if (!modalEl) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const factor = e.deltaY < 0 ? 1.15 : 0.87;
+
+      setZoom(prevZoom => {
+        let nextZoom = prevZoom * factor;
+        if (nextZoom <= 1.02) {
+          setPan({ x: 0, y: 0 });
+          return 1;
+        }
+        if (nextZoom > 8) {
+          nextZoom = 8;
+        }
+
+        // Adjust pan so the position under the mouse cursor remains stationary
+        if (zoomContentRef.current) {
+          const rect = zoomContentRef.current.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          const mouseOffsetX = e.clientX - centerX;
+          const mouseOffsetY = e.clientY - centerY;
+
+          const zoomRatio = nextZoom / prevZoom;
+          setPan(p => ({
+            x: p.x - mouseOffsetX * (zoomRatio - 1),
+            y: p.y - mouseOffsetY * (zoomRatio - 1)
+          }));
+        }
+
+        return nextZoom;
+      });
+    };
+
+    modalEl.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      modalEl.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
+  // Mouse drag panning when zoomed in
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom > 1 && e.button === 0) {
+      e.stopPropagation();
+      setIsPanning(true);
+      hasPannedRef.current = false;
+      panStartRef.current = {
+        x: e.clientX - pan.x,
+        y: e.clientY - pan.y
+      };
+    }
+  };
+
+  useEffect(() => {
+    if (!isPanning) return;
+
+    const onMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      const newX = e.clientX - panStartRef.current.x;
+      const newY = e.clientY - panStartRef.current.y;
+      if (Math.abs(newX - pan.x) > 3 || Math.abs(newY - pan.y) > 3) {
+        hasPannedRef.current = true;
+      }
+      setPan({ x: newX, y: newY });
+    };
+
+    const onMouseUp = () => {
+      setIsPanning(false);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isPanning, pan.x, pan.y]);
+
+  const handleTouchStartOnZoom = (e: React.TouchEvent) => {
+    if (zoom > 1 && e.touches.length === 1) {
+      setIsPanning(true);
+      hasPannedRef.current = false;
+      panStartRef.current = {
+        x: e.touches[0].clientX - pan.x,
+        y: e.touches[0].clientY - pan.y
+      };
+    }
+  };
+
+  const handleTouchMoveOnZoom = (e: React.TouchEvent) => {
+    if (isPanning && e.touches.length === 1) {
+      const newX = e.touches[0].clientX - panStartRef.current.x;
+      const newY = e.touches[0].clientY - panStartRef.current.y;
+      if (Math.abs(newX - pan.x) > 3 || Math.abs(newY - pan.y) > 3) {
+        hasPannedRef.current = true;
+      }
+      setPan({ x: newX, y: newY });
+    }
+  };
+
+  const handleTouchEndOnZoom = () => {
+    setIsPanning(false);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (zoom > 1) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+    } else {
+      setZoom(2.5);
+    }
+  };
 
   useEffect(() => {
     const allElements = Array.from(document.querySelectorAll<HTMLElement>('.lightbox-trigger'));
@@ -505,6 +635,8 @@ const LightboxGallery = ({
     const bSrc = initialEl?.getAttribute('data-back-src');
     setBackSrc(bSrc || null);
     setIsFlipped(false);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   }, [initialImage]);
 
   // When currentImage changes, update backSrc
@@ -514,6 +646,8 @@ const LightboxGallery = ({
     const bSrc = matchEl?.getAttribute('data-back-src');
     setBackSrc(bSrc || null);
     setIsFlipped(false);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
   }, [currentImage]);
 
   const displaySrc = isFlipped && backSrc ? backSrc : currentImage;
@@ -625,18 +759,29 @@ const LightboxGallery = ({
   const goPrev = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
     e?.stopPropagation();
     const idx = allImages.indexOf(currentImage);
-    if (idx > 0) setCurrentImage(allImages[idx - 1]);
+    if (idx > 0) {
+      setCurrentImage(allImages[idx - 1]);
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+    }
   }, [currentImage, allImages]);
 
   const goNext = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
     e?.stopPropagation();
     const idx = allImages.indexOf(currentImage);
-    if (idx !== -1 && idx < allImages.length - 1) setCurrentImage(allImages[idx + 1]);
+    if (idx !== -1 && idx < allImages.length - 1) {
+      setCurrentImage(allImages[idx + 1]);
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+    }
   }, [currentImage, allImages]);
 
   const toggleFlip = useCallback((e?: React.MouseEvent | KeyboardEvent) => {
     e?.stopPropagation();
-    if (backSrc) setIsFlipped(f => !f);
+    if (backSrc) {
+      setIsFlipped(f => !f);
+      setPan({ x: 0, y: 0 });
+    }
   }, [backSrc]);
 
   useEffect(() => {
@@ -648,6 +793,26 @@ const LightboxGallery = ({
         e.preventDefault();
         toggleFlip(e);
       }
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        setZoom(z => Math.min(8, z * 1.25));
+      }
+      if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        setZoom(z => {
+          const next = Math.max(1, z / 1.25);
+          if (next <= 1.02) {
+            setPan({ x: 0, y: 0 });
+            return 1;
+          }
+          return next;
+        });
+      }
+      if (e.key === '0') {
+        e.preventDefault();
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -655,10 +820,12 @@ const LightboxGallery = ({
 
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
+    if (zoom > 1) return;
     if (hasOriginal && isComparing) return;
     setTouchStart(e.targetTouches[0].clientX);
   };
   const onTouchEnd = (e: React.TouchEvent) => {
+    if (zoom > 1) return;
     if (hasOriginal && isComparing) return;
     if (touchStart === null) return;
     const touchEnd = e.changedTouches[0].clientX;
@@ -712,13 +879,66 @@ const LightboxGallery = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md p-4 md:p-8 select-none"
-      onClick={onClose}
+      ref={modalRef}
+      className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md p-4 md:p-8 select-none overflow-hidden"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !hasPannedRef.current) {
+          onClose();
+        }
+      }}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
       {/* Top Controls Bar */}
       <div className="absolute top-6 right-6 flex items-center gap-3 z-30">
+        {/* Zoom Controls Pill */}
+        <div className="flex items-center bg-white/10 backdrop-blur-md rounded-xl p-1 border border-white/15 text-xs text-white shadow-lg">
+          <button 
+            type="button"
+            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/15 active:scale-95 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed transition-all"
+            disabled={zoom <= 1}
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoom(z => {
+                const next = Math.max(1, z / 1.25);
+                if (next <= 1.02) {
+                  setPan({ x: 0, y: 0 });
+                  return 1;
+                }
+                return next;
+              });
+            }}
+            title="Zoom Out (Scroll Down / Key: -)"
+          >
+            <ZoomOut size={14} />
+          </button>
+          <button 
+            type="button"
+            className="px-2 h-7 font-mono font-bold text-[11px] hover:bg-white/15 rounded-lg transition-all cursor-pointer flex items-center gap-1"
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            }}
+            title="Reset Zoom (100% / Key: 0 / Double-click image)"
+          >
+            <span>{Math.round(zoom * 100)}%</span>
+            {zoom > 1 && <span className="text-[9px] opacity-70 text-primary-300">Reset</span>}
+          </button>
+          <button 
+            type="button"
+            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/15 active:scale-95 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed transition-all"
+            disabled={zoom >= 8}
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoom(z => Math.min(8, z * 1.25));
+            }}
+            title="Zoom In (Scroll Up / Key: +)"
+          >
+            <ZoomIn size={14} />
+          </button>
+        </div>
+
         {hasOriginal && (
           <button 
             type="button"
@@ -735,7 +955,7 @@ const LightboxGallery = ({
             title="Toggle interactive Before/After comparison slider"
           >
             <SlidersHorizontal size={14} />
-            <span>{isComparing ? 'Split Slider Active' : 'Enable Split Slider'}</span>
+            <span className="hidden sm:inline">{isComparing ? 'Split Slider Active' : 'Enable Split Slider'}</span>
           </button>
         )}
 
@@ -747,7 +967,7 @@ const LightboxGallery = ({
             title="Revert this card to original un-upscaled image"
           >
             <RotateCcw size={13} />
-            <span>Revert to Orig</span>
+            <span className="hidden sm:inline">Revert to Orig</span>
           </button>
         )}
 
@@ -804,22 +1024,119 @@ const LightboxGallery = ({
         transition={{ type: 'spring', damping: 20, stiffness: 200 }}
         className="relative max-h-full max-w-full outline-none flex flex-col items-center justify-center perspective-1000"
       >
-        {hasOriginal && isComparing && originalSrc ? (
-          /* INTERACTIVE REAL-TIME BEFORE / AFTER COMPARISON SLIDER */
-          <div 
-            ref={containerRef}
-            className="relative max-h-[82vh] max-w-full select-none cursor-ew-resize group/compare overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/15"
-            onMouseDown={handleStartDrag}
-            onTouchStart={handleStartDrag}
-            onClick={(e) => {
-              e.stopPropagation();
-              updateSliderFromClientX(e.clientX);
-            }}
-          >
-            {/* Base Layer: After (Upscaled HD) */}
+        <div
+          ref={zoomContentRef}
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStartOnZoom}
+          onTouchMove={handleTouchMoveOnZoom}
+          onTouchEnd={handleTouchEndOnZoom}
+          onDoubleClick={handleDoubleClick}
+          className={cn(
+            "relative transition-transform duration-75 select-none flex items-center justify-center max-h-[82vh] max-w-full",
+            zoom > 1 ? (isPanning ? "cursor-grabbing" : "cursor-grab") : ""
+          )}
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transformOrigin: 'center center'
+          }}
+        >
+          {hasOriginal && isComparing && originalSrc ? (
+            /* INTERACTIVE REAL-TIME BEFORE / AFTER COMPARISON SLIDER */
+            <div 
+              ref={containerRef}
+              className="relative max-h-[82vh] max-w-full select-none cursor-ew-resize group/compare overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/15"
+              onMouseDown={handleStartDrag}
+              onTouchStart={handleStartDrag}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (hasPannedRef.current) return;
+                updateSliderFromClientX(e.clientX);
+              }}
+            >
+              {/* Base Layer: After (Upscaled HD) */}
+              <img 
+                src={displaySrc} 
+                alt="Upscaled asset" 
+                onLoad={(e) => {
+                  const img = e.currentTarget;
+                  if (img.naturalWidth && img.naturalHeight) {
+                    setDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+                  }
+                }}
+                className={cn(
+                  "max-h-[82vh] max-w-full object-contain block pointer-events-none select-none",
+                  isFlipped && "[transform:scaleX(-1)]"
+                )}
+                draggable={false}
+              />
+
+              {/* Overlaid Layer: Before (Original Pre-Upscale) clipped in real-time */}
+              <div 
+                className="absolute inset-0 overflow-hidden pointer-events-none select-none"
+                style={{
+                  clipPath: `inset(0 ${(100 - sliderPos).toFixed(2)}% 0 0)`
+                }}
+              >
+                <img 
+                  src={originalSrc} 
+                  alt="Original asset" 
+                  className={cn(
+                    "w-full h-full object-contain pointer-events-none select-none",
+                    isFlipped && "[transform:scaleX(-1)]"
+                  )}
+                  draggable={false}
+                />
+              </div>
+
+              {/* Draggable Divider Bar */}
+              <div 
+                className="absolute top-0 bottom-0 pointer-events-none z-20"
+                style={{ left: `${sliderPos.toFixed(2)}%` }}
+              >
+                <div className="absolute top-0 bottom-0 -left-[1.5px] w-[3px] bg-white shadow-[0_0_12px_rgba(0,0,0,0.85)]" />
+                <div 
+                  className={cn(
+                    "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-primary-600 text-white shadow-2xl flex items-center justify-center border-2 border-white pointer-events-auto cursor-ew-resize transition-transform duration-100",
+                    isDragging ? "scale-115 shadow-primary-500/50 ring-4 ring-primary-500/40" : "hover:scale-110"
+                  )}
+                  onMouseDown={handleStartDrag}
+                  onTouchStart={handleStartDrag}
+                  title="Drag left/right to compare Before (Original) and After (Upscayl AI)"
+                >
+                  <div className="flex items-center gap-0.5">
+                    <ChevronLeft size={14} className="stroke-[3] -mr-1" />
+                    <ChevronRight size={14} className="stroke-[3] -ml-1" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Before (Original) Floating Badge */}
+              <div 
+                className={cn(
+                  "absolute top-4 left-4 z-20 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 text-white flex items-center gap-1.5 shadow-xl transition-opacity pointer-events-none",
+                  sliderPos < 15 ? "opacity-20" : "opacity-95"
+                )}
+              >
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-wider">Before (Original)</span>
+              </div>
+
+              {/* After (Upscayl AI) Floating Badge */}
+              <div 
+                className={cn(
+                  "absolute top-4 right-4 z-20 px-3 py-1.5 rounded-full bg-primary-600/95 backdrop-blur-md border border-primary-400 text-white flex items-center gap-1.5 shadow-xl shadow-primary-600/30 transition-opacity pointer-events-none",
+                  sliderPos > 85 ? "opacity-20" : "opacity-100"
+                )}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="text-[10px] font-black uppercase tracking-wider">After (Upscayl AI HD)</span>
+              </div>
+            </div>
+          ) : (
+            /* STANDARD ENLARGED IMAGE */
             <img 
               src={displaySrc} 
-              alt="Upscaled asset" 
+              alt="Enlarged asset" 
               onLoad={(e) => {
                 const img = e.currentTarget;
                 if (img.naturalWidth && img.naturalHeight) {
@@ -827,95 +1144,17 @@ const LightboxGallery = ({
                 }
               }}
               className={cn(
-                "max-h-[82vh] max-w-full object-contain block pointer-events-none select-none",
+                "max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl pointer-events-auto transition-transform duration-300",
                 isFlipped && "[transform:scaleX(-1)]"
               )}
-              draggable={false}
-            />
-
-            {/* Overlaid Layer: Before (Original Pre-Upscale) clipped in real-time */}
-            <div 
-              className="absolute inset-0 overflow-hidden pointer-events-none select-none"
-              style={{
-                clipPath: `inset(0 ${(100 - sliderPos).toFixed(2)}% 0 0)`
+              onClick={(e) => {
+                e.stopPropagation();
+                if (hasPannedRef.current) return;
+                if (backSrc) toggleFlip(e);
               }}
-            >
-              <img 
-                src={originalSrc} 
-                alt="Original asset" 
-                className={cn(
-                  "w-full h-full object-contain pointer-events-none select-none",
-                  isFlipped && "[transform:scaleX(-1)]"
-                )}
-                draggable={false}
-              />
-            </div>
-
-            {/* Draggable Divider Bar */}
-            <div 
-              className="absolute top-0 bottom-0 pointer-events-none z-20"
-              style={{ left: `${sliderPos.toFixed(2)}%` }}
-            >
-              <div className="absolute top-0 bottom-0 -left-[1.5px] w-[3px] bg-white shadow-[0_0_12px_rgba(0,0,0,0.85)]" />
-              <div 
-                className={cn(
-                  "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-primary-600 text-white shadow-2xl flex items-center justify-center border-2 border-white pointer-events-auto cursor-ew-resize transition-transform duration-100",
-                  isDragging ? "scale-115 shadow-primary-500/50 ring-4 ring-primary-500/40" : "hover:scale-110"
-                )}
-                onMouseDown={handleStartDrag}
-                onTouchStart={handleStartDrag}
-                title="Drag left/right to compare Before (Original) and After (Upscayl AI)"
-              >
-                <div className="flex items-center gap-0.5">
-                  <ChevronLeft size={14} className="stroke-[3] -mr-1" />
-                  <ChevronRight size={14} className="stroke-[3] -ml-1" />
-                </div>
-              </div>
-            </div>
-
-            {/* Before (Original) Floating Badge */}
-            <div 
-              className={cn(
-                "absolute top-4 left-4 z-20 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 text-white flex items-center gap-1.5 shadow-xl transition-opacity pointer-events-none",
-                sliderPos < 15 ? "opacity-20" : "opacity-95"
-              )}
-            >
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-[10px] font-black uppercase tracking-wider">Before (Original)</span>
-            </div>
-
-            {/* After (Upscayl AI) Floating Badge */}
-            <div 
-              className={cn(
-                "absolute top-4 right-4 z-20 px-3 py-1.5 rounded-full bg-primary-600/95 backdrop-blur-md border border-primary-400 text-white flex items-center gap-1.5 shadow-xl shadow-primary-600/30 transition-opacity pointer-events-none",
-                sliderPos > 85 ? "opacity-20" : "opacity-100"
-              )}
-            >
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span className="text-[10px] font-black uppercase tracking-wider">After (Upscayl AI HD)</span>
-            </div>
-          </div>
-        ) : (
-          /* STANDARD ENLARGED IMAGE */
-          <img 
-            src={displaySrc} 
-            alt="Enlarged asset" 
-            onLoad={(e) => {
-              const img = e.currentTarget;
-              if (img.naturalWidth && img.naturalHeight) {
-                setDimensions({ width: img.naturalWidth, height: img.naturalHeight });
-              }
-            }}
-            className={cn(
-              "max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl pointer-events-auto transition-transform duration-300",
-              isFlipped && "[transform:scaleX(-1)]"
-            )}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (backSrc) toggleFlip(e);
-            }}
-          />
-        )}
+            />
+          )}
+        </div>
 
         {/* Resolution & File Size Stats Badge - Outside card frame so it NEVER blocks card image */}
         {(dimensions || (imageStats?.origSize && imageStats?.currentSize)) && (
@@ -931,6 +1170,12 @@ const LightboxGallery = ({
                 <span className="text-white/60">Orig: <strong className="text-white font-semibold">{(imageStats.origSize / 1024).toFixed(0)} KB</strong></span>
                 <span className="text-white/20">•</span>
                 <span className="text-primary-400 font-bold">Upscaled HD: {(imageStats.currentSize / 1024).toFixed(0)} KB ({((imageStats.currentSize / imageStats.origSize)).toFixed(1)}x detail)</span>
+              </>
+            )}
+            {zoom > 1 && (
+              <>
+                <span className="text-white/20">•</span>
+                <span className="text-primary-400 font-bold">Zoom: {Math.round(zoom * 100)}%</span>
               </>
             )}
           </div>
