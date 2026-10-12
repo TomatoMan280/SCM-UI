@@ -495,6 +495,30 @@ async function startServer() {
     }
   };
 
+  const normalizeDimensionArgs = (argsList: string[]): string[] => {
+    const res = [...(argsList || [])];
+    const dimensionFlags = new Set([
+      '--crop', '--crop_backs',
+      '--extend_corners', '--extend_corners_backs',
+      '--extend_edges', '--extend_edges_backs',
+      '--extend_bleed', '--extend_bleed_backs'
+    ]);
+    for (let i = 0; i < res.length - 1; i++) {
+      if (dimensionFlags.has(res[i])) {
+        const val = String(res[i + 1]).trim();
+        if (/^(\d+(\.\d+)?|\.\d+)$/.test(val) && val !== '0') {
+          res[i + 1] = `${val}mm`;
+        } else {
+          const m = val.match(/^(\d+(?:\.\d+)?|\.\d+)\s*(mm|in|px)$/i);
+          if (m) {
+            res[i + 1] = `${m[1]}${m[2].toLowerCase()}`;
+          }
+        }
+      }
+    }
+    return res;
+  };
+
   const createTempPatchedPythonScript = (scriptPath: string): { tempPath: string; isTemp: boolean } => {
     if (fs.existsSync(scriptPath) && scriptPath.endsWith('.py')) {
       try {
@@ -3085,13 +3109,15 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         }
       }
 
-      let finalArgs = [...(args || [])];
+      let finalArgs = normalizeDimensionArgs(args || []);
       
       // Backend Crop Execution: Append crop argument if provided via req.body
       if (req.body.crop) {
+          const rawCrop = String(req.body.crop).trim();
+          const cropVal = /^(\d+(\.\d+)?|\.\d+)$/.test(rawCrop) && rawCrop !== '0' ? `${rawCrop}mm` : rawCrop;
           const hasCrop = finalArgs.some(a => a === '--crop');
-          if (!hasCrop) {
-              finalArgs.push('--crop', req.body.crop.toString());
+          if (!hasCrop && cropVal && cropVal !== '0') {
+              finalArgs.push('--crop', cropVal);
           }
       }
 
@@ -3322,8 +3348,10 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const { command, args, pythonPath, calibration } = req.body;
     writeCalibrationData(calibration);
     
+    const normalizedArgs = normalizeDimensionArgs(args || []);
+
     // Construct CLI string from args array
-    const argString = (args || []).map((arg: any) => {
+    const argString = normalizedArgs.map((arg: any) => {
         let finalArg = arg;
         if (req.body.uploadedPluginFilePath && arg === req.body.uploadedPluginFilePath) {
             finalArg = path.join(scmPath, arg);
