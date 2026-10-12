@@ -527,6 +527,22 @@ const LightboxGallery = ({
   const [isUpscalingSingle, setIsUpscalingSingle] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Clamp pan boundaries to ensure card never detaches or flies off-screen
+  const clampPan = useCallback((rawX: number, rawY: number, targetZoom: number) => {
+    if (targetZoom <= 1.02 || !zoomContentRef.current) {
+      return { x: 0, y: 0 };
+    }
+    const rect = zoomContentRef.current.getBoundingClientRect();
+    const unscaledW = rect.width / (targetZoom > 1 ? targetZoom : 1);
+    const unscaledH = rect.height / (targetZoom > 1 ? targetZoom : 1);
+    const maxPanX = Math.max(0, (unscaledW * (targetZoom - 1)) / 2);
+    const maxPanY = Math.max(0, (unscaledH * (targetZoom - 1)) / 2);
+    return {
+      x: Math.max(-maxPanX, Math.min(maxPanX, rawX)),
+      y: Math.max(-maxPanY, Math.min(maxPanY, rawY))
+    };
+  }, []);
+
   // Wheel zoom listener with passive: false to reliably zoom towards mouse cursor
   useEffect(() => {
     const modalEl = modalRef.current;
@@ -557,10 +573,11 @@ const LightboxGallery = ({
           const mouseOffsetY = e.clientY - centerY;
 
           const zoomRatio = nextZoom / prevZoom;
-          setPan(p => ({
-            x: p.x - mouseOffsetX * (zoomRatio - 1),
-            y: p.y - mouseOffsetY * (zoomRatio - 1)
-          }));
+          setPan(p => {
+            const rawX = p.x - mouseOffsetX * (zoomRatio - 1);
+            const rawY = p.y - mouseOffsetY * (zoomRatio - 1);
+            return clampPan(rawX, rawY, nextZoom);
+          });
         }
 
         return nextZoom;
@@ -571,10 +588,11 @@ const LightboxGallery = ({
     return () => {
       modalEl.removeEventListener('wheel', onWheel);
     };
-  }, []);
+  }, [clampPan]);
 
-  // Mouse drag panning when enlarged / zoomed
+  // Mouse drag panning - ONLY allowed when zoomed in (zoom > 1.02); card remains locked/centered at 100%
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom <= 1.02) return;
     if (e.button === 0) {
       e.stopPropagation();
       setIsPanning(true);
@@ -591,12 +609,12 @@ const LightboxGallery = ({
 
     const onMouseMove = (e: MouseEvent) => {
       e.preventDefault();
-      const newX = e.clientX - panStartRef.current.x;
-      const newY = e.clientY - panStartRef.current.y;
-      if (Math.abs(newX - pan.x) > 3 || Math.abs(newY - pan.y) > 3) {
+      const rawX = e.clientX - panStartRef.current.x;
+      const rawY = e.clientY - panStartRef.current.y;
+      if (Math.abs(rawX - pan.x) > 3 || Math.abs(rawY - pan.y) > 3) {
         hasPannedRef.current = true;
       }
-      setPan({ x: newX, y: newY });
+      setPan(clampPan(rawX, rawY, zoom));
     };
 
     const onMouseUp = () => {
@@ -609,9 +627,10 @@ const LightboxGallery = ({
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [isPanning, pan.x, pan.y]);
+  }, [isPanning, pan.x, pan.y, zoom, clampPan]);
 
   const handleTouchStartOnZoom = (e: React.TouchEvent) => {
+    if (zoom <= 1.02) return;
     if (e.touches.length === 1) {
       setIsPanning(true);
       hasPannedRef.current = false;
@@ -624,12 +643,12 @@ const LightboxGallery = ({
 
   const handleTouchMoveOnZoom = (e: React.TouchEvent) => {
     if (isPanning && e.touches.length === 1) {
-      const newX = e.touches[0].clientX - panStartRef.current.x;
-      const newY = e.touches[0].clientY - panStartRef.current.y;
-      if (Math.abs(newX - pan.x) > 3 || Math.abs(newY - pan.y) > 3) {
+      const rawX = e.touches[0].clientX - panStartRef.current.x;
+      const rawY = e.touches[0].clientY - panStartRef.current.y;
+      if (Math.abs(rawX - pan.x) > 3 || Math.abs(rawY - pan.y) > 3) {
         hasPannedRef.current = true;
       }
-      setPan({ x: newX, y: newY });
+      setPan(clampPan(rawX, rawY, zoom));
     }
   };
 
@@ -639,7 +658,7 @@ const LightboxGallery = ({
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (zoom > 1) {
+    if (zoom > 1.02) {
       setZoom(1);
       setPan({ x: 0, y: 0 });
     } else {
@@ -1061,8 +1080,9 @@ const LightboxGallery = ({
           onTouchEnd={handleTouchEndOnZoom}
           onDoubleClick={handleDoubleClick}
           className={cn(
-            "relative transition-transform duration-75 select-none flex items-center justify-center max-h-[82vh] max-w-full",
-            zoom > 1 || pan.x !== 0 || pan.y !== 0 ? (isPanning ? "cursor-grabbing" : "cursor-grab") : "cursor-grab"
+            "relative select-none flex items-center justify-center max-h-[82vh] max-w-full",
+            !isPanning && "transition-transform duration-100",
+            zoom > 1.02 ? (isPanning ? "cursor-grabbing" : "cursor-grab") : "cursor-default"
           )}
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
@@ -1073,7 +1093,20 @@ const LightboxGallery = ({
             /* INTERACTIVE REAL-TIME BEFORE / AFTER COMPARISON SLIDER */
             <div
               ref={containerRef}
-              className="relative max-h-[82vh] max-w-full select-none group/compare overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/15"
+              onMouseDown={(e) => {
+                if (zoom <= 1.02) {
+                  handleStartDrag(e);
+                }
+              }}
+              onTouchStart={(e) => {
+                if (zoom <= 1.02) {
+                  handleStartDrag(e);
+                }
+              }}
+              className={cn(
+                "relative max-h-[82vh] max-w-full select-none group/compare overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/15",
+                zoom <= 1.02 ? "cursor-ew-resize" : ""
+              )}
             >
               {/* Base Layer: After (Upscaled HD) */}
               <img
