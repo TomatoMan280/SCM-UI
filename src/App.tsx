@@ -1695,6 +1695,7 @@ export default function App() {
     message: string;
     percent?: number;
     isComplete?: boolean;
+    totalUnknown?: boolean;
     activeWorkers?: Record<string | number, { cardName: string; status: 'upscaling' | 'completed' }>;
   } | null>(null);
   const [importConflictData, setImportConflictData] = useState<{ items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check' | 'keep' | 'replace' } | null>(null);
@@ -2751,17 +2752,50 @@ export default function App() {
                 if (parsedTotal > 0) totalCards = parsedTotal;
               }
 
-              // Detect current progress indices (Image 1 of 50, Image 1: SolRing.png, Slot 1, 1/50, etc.)
+              // Detect current progress indices and card names
               let matchedIndex = false;
               let cardName = '';
+
+              // Extract card title if present anywhere on this line
+              // e.g. "Index: 1, quantity: 1, set code: m10, collector number: 123, name: Black Lotus"
+              const nameParamMatch = text.match(/name:\s*(.+?)(?:,\s*(?:quantity|set code|collector number|Index):|$)/i) || text.match(/name:\s*(.*)$/i);
+              if (nameParamMatch && nameParamMatch[1]) {
+                const cand = cleanCardName(nameParamMatch[1].trim());
+                if (cand && !/^card\s*\d*$/i.test(cand)) {
+                  cardName = cand;
+                }
+              }
+
+              // e.g. "Slot 1: Black Lotus" or "Image 1: Black Lotus.png"
+              if (!cardName) {
+                const slotColonMatch = text.match(/(?:Slot|Image)\s*#?\d+:\s*(.*)$/i);
+                if (slotColonMatch && slotColonMatch[1]) {
+                  const cand = cleanCardName(slotColonMatch[1].trim());
+                  if (cand && !/^card\s*\d*$/i.test(cand)) {
+                    cardName = cand;
+                  }
+                }
+              }
+
+              // e.g. "Downloading Black Lotus..." or "Fetching Black Lotus..."
+              if (!cardName) {
+                const downloadMatch = text.match(/(?:Downloading|Fetching)\s+([^.\r\n]+?)(?:\.\.\.|$)/i);
+                if (downloadMatch && downloadMatch[1]) {
+                  const cand = cleanCardName(downloadMatch[1].trim());
+                  if (cand && !/^card\s*\d*$/i.test(cand)) {
+                    cardName = cand;
+                  }
+                }
+              }
 
               // 1. Check for "Image 1 of 50: CardName", "Card 1/50 - CardName", etc.
               const idxOfTotalMatch = text.match(/(?:Image|Card|Processing|Downloading|Fetching)\s*#?(\d+)\s*(?:of|\/)\s*(\d+)(?:[:\s-]+(.*))?/i) || text.match(/^(\d+)\s*\/\s*(\d+)(?:[:\s-]+(.*))?/);
               if (idxOfTotalMatch) {
                 currentCard = parseInt(idxOfTotalMatch[1]);
-                totalCards = parseInt(idxOfTotalMatch[2]);
+                const parsedTotal = parseInt(idxOfTotalMatch[2]);
+                if (parsedTotal > 0) totalCards = parsedTotal;
                 matchedIndex = true;
-                if (idxOfTotalMatch[3]) {
+                if (!cardName && idxOfTotalMatch[3]) {
                   const cleaned = cleanCardName(idxOfTotalMatch[3].trim());
                   if (cleaned && !/^card\s*\d*$/i.test(cleaned)) {
                     cardName = cleaned;
@@ -2769,25 +2803,11 @@ export default function App() {
                 }
               }
 
-              // 2. Check for "Image 1: cardname.png" or "Slot 1: cardname" (standard Python output)
-              const imgColonMatch = text.match(/(?:Image|Slot|Card|Index)\s*#?(\d+):\s*(.*)/i);
-              if (imgColonMatch) {
-                const parsedIdx = parseInt(imgColonMatch[1]);
-                if (!isNaN(parsedIdx)) {
-                  currentCard = parsedIdx;
-                  matchedIndex = true;
-                  const rawName = imgColonMatch[2].trim();
-                  if (rawName) {
-                    cardName = cleanCardName(rawName);
-                  }
-                }
-              }
-
-              // 3. Fallback single index match without colon (Index: 1, Slot 1)
+              // 2. Check for single index matches: "Index: 46", "Index 46", "Slot 1:", "Image 1:"
               if (!matchedIndex) {
-                const singleIdxMatch = text.match(/(?:Image\s+(\d+):?|Index:\s*(\d+)|Slot\s*(\d+):?)/i);
+                const singleIdxMatch = text.match(/(?:Image|Slot|Card|Index)[:\s]+#?(\d+)/i) || text.match(/(?:Image|Slot|Card|Index)\s*#?(\d+)/i);
                 if (singleIdxMatch) {
-                  const val = singleIdxMatch[1] || singleIdxMatch[2] || singleIdxMatch[3];
+                  const val = singleIdxMatch[1];
                   if (val) {
                     currentCard = parseInt(val);
                     matchedIndex = true;
@@ -2795,38 +2815,31 @@ export default function App() {
                 }
               }
 
-              // 4. Check for finalizing/compiling state e.g. "Finalizing and compiling PDF file..."
+              // 3. Check for finalizing/compiling state e.g. "Finalizing and compiling PDF file..."
               const isCompilingMatch = text.includes('Compiling PDF') || text.includes('Finalizing and compiling') || text.includes('Generated PDF');
               if (isCompilingMatch) {
                 const finalTotal = totalCards > 0 ? totalCards : Math.max(currentCard, 1);
-                setTaskProgress(prev => ({
+                setTaskProgress({
                   current: finalTotal,
                   total: finalTotal,
                   percent: 98,
                   message: 'Compiling PDF document...'
+                });
+              } else if (matchedIndex || cardName) {
+                const hasKnownTotal = totalCards > 0;
+                const dispTotal = hasKnownTotal ? totalCards : 0;
+                const msg = cardName || (hasKnownTotal && totalCards > 1 ? `Fetching Cards...` : `Fetching Card...`);
+                // Calculate in-progress percentage only if total is known!
+                const inProgressPercent = hasKnownTotal
+                  ? Math.min(95, Math.max(5, Math.round(((currentCard - 0.5) / totalCards) * 100)))
+                  : undefined;
+                setTaskProgress(prev => ({
+                  current: currentCard > 0 ? currentCard : (prev?.current ?? 0),
+                  total: dispTotal,
+                  totalUnknown: !hasKnownTotal,
+                  percent: inProgressPercent,
+                  message: msg
                 }));
-              } else if (matchedIndex) {
-                const dispTotal = totalCards > 0 ? totalCards : Math.max(currentCard, 1);
-                const msg = cardName || (dispTotal > 1 ? `Fetching Cards...` : `Fetching Card...`);
-                // Calculate in-progress percentage (card is actively downloading, so currentCard - 0.5)
-                const inProgressPercent = dispTotal > 0
-                  ? Math.min(95, Math.max(5, Math.round(((currentCard - 0.5) / dispTotal) * 100)))
-                  : 5;
-                setTaskProgress({ current: currentCard, total: dispTotal, percent: inProgressPercent, message: msg });
-              } else {
-                // Extract human card title if available
-                const nameMatch = text.match(/name:\s*([^,\r\n]+)/i) || text.match(/(?:Downloading|Fetching)\s+([^.\r\n]+?)(?:\.\.\.|$)/i);
-                if (nameMatch && nameMatch[1]) {
-                  const extracted = cleanCardName(nameMatch[1].trim());
-                  if (extracted) {
-                    setTaskProgress(prev => ({
-                      current: prev?.current ?? currentCard,
-                      total: prev?.total ?? (totalCards > 0 ? totalCards : 1),
-                      percent: prev?.percent,
-                      message: extracted
-                    }));
-                  }
-                }
               }
             } else if (eventType === 'stderr') {
               output.push(`[Error] ${eventData}`);
@@ -3584,13 +3597,16 @@ export default function App() {
             taskProgress.message.toLowerCase().includes('finished') ||
             taskProgress.message.toLowerCase().includes('successfully') ||
             taskProgress.message.toLowerCase().includes('saved') ||
-            taskProgress.message.toLowerCase().includes('cleaned');
+            taskProgress.message.toLowerCase().includes('cleaned') ||
+            taskProgress.message.toLowerCase().startsWith('imported');
+
+          const isUnknownTotal = !!taskProgress.totalUnknown || taskProgress.total <= 0;
 
           const displayPercent = taskProgress.percent !== undefined
             ? Math.min(100, Math.max(0, taskProgress.percent))
             : isComplete
               ? 100
-              : taskProgress.total > 0
+              : !isUnknownTotal
                 ? Math.min(95, Math.max(5, Math.round(((Math.max(1, taskProgress.current) - 0.5) / taskProgress.total) * 100)))
                 : 0;
 
@@ -3607,7 +3623,7 @@ export default function App() {
               .trim();
 
             if (!clean || /^card\s*\d*$/i.test(clean) || /^image\s*\d*$/i.test(clean)) {
-              displayTitle = taskProgress.total > 1 ? 'Fetching Cards...' : 'Processing...';
+              displayTitle = (!isUnknownTotal && taskProgress.total > 1) ? 'Fetching Cards...' : 'Fetching Card...';
             } else {
               displayTitle = clean;
             }
@@ -3620,7 +3636,7 @@ export default function App() {
               exit={{ opacity: 0, y: 50, scale: 0.9 }}
               className="fixed bottom-6 right-6 z-[1000] flex items-center gap-4 p-4 bg-[#0f0f13] rounded-2xl border border-primary-500/30 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] min-w-[300px]"
             >
-              {taskProgress.total <= 1 && taskProgress.current === 0 && !isComplete ? (
+              {(isUnknownTotal || (taskProgress.total <= 1 && taskProgress.current === 0)) && !isComplete ? (
                 <Loader2 className="w-10 h-10 text-primary-500 animate-spin flex-none" />
               ) : (
                 <div className="relative">
@@ -3679,9 +3695,11 @@ export default function App() {
                     <span className="text-sm font-bold text-white/90 truncate" title={displayTitle}>
                       {displayTitle}
                     </span>
-                    {taskProgress.total > 1 && !isComplete && (
+                    {taskProgress.current > 0 && !isComplete && (
                       <span className="text-[11px] font-semibold text-primary-400">
-                        Card {taskProgress.current} of {taskProgress.total}
+                        {!isUnknownTotal && taskProgress.total > 1
+                          ? `Card ${taskProgress.current} of ${taskProgress.total}`
+                          : `Card ${taskProgress.current}`}
                       </span>
                     )}
                   </>
@@ -5594,7 +5612,7 @@ export default function App() {
                                       setTaskProgress(null);
                                       setFetchConflictData({ tempDirId, collisions, resolutions: {} });
                                     } else {
-                                      setTaskProgress({ current: totalFetched, total: totalFetched, message: `Committing ${totalFetched} card(s)...` });
+                                      setTaskProgress({ current: totalFetched, total: totalFetched, percent: 98, message: `Committing ${totalFetched} card(s)...` });
                                       await fetch('/api/plugin/fetch-commit', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
@@ -5602,7 +5620,7 @@ export default function App() {
                                       });
                                       await fetchStatus();
                                       addLog(`[System] Successfully imported ${totalFetched} card image(s).`);
-                                      setTaskProgress({ current: totalFetched, total: totalFetched, message: `Imported ${totalFetched} card(s)!` });
+                                      setTaskProgress({ current: totalFetched, total: totalFetched, percent: 100, isComplete: true, message: `Imported ${totalFetched} card(s)!` });
                                       setTimeout(() => setTaskProgress(null), 1500);
                                     }
                                   } else {
@@ -6071,7 +6089,7 @@ export default function App() {
                     onClick={async () => {
                       const { tempDirId, collisions } = fetchConflictData;
                       setFetchConflictData(null);
-                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      setTaskProgress({ current: 1, total: 1, percent: 98, message: 'Committing fetch...' });
 
                       const resolutions: Record<string, 'skip'> = {};
                       collisions.forEach(c => resolutions[c] = 'skip');
@@ -6082,7 +6100,8 @@ export default function App() {
                         body: JSON.stringify({ tempDirId, resolutions })
                       });
                       await fetchStatus();
-                      setTaskProgress(null);
+                      setTaskProgress({ current: 1, total: 1, percent: 100, isComplete: true, message: 'Committed.' });
+                      setTimeout(() => setTaskProgress(null), 1200);
                     }}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all"
                   >
@@ -6093,7 +6112,7 @@ export default function App() {
                     onClick={async () => {
                       const { tempDirId, collisions } = fetchConflictData;
                       setFetchConflictData(null);
-                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      setTaskProgress({ current: 1, total: 1, percent: 98, message: 'Committing fetch...' });
                       await fetch('/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -6108,7 +6127,8 @@ export default function App() {
                       setCacheBusts(newBusts);
 
                       await fetchStatus();
-                      setTaskProgress(null);
+                      setTaskProgress({ current: 1, total: 1, percent: 100, isComplete: true, message: 'Committed.' });
+                      setTimeout(() => setTaskProgress(null), 1200);
                     }}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-primary-500 hover:bg-primary-400 text-white rounded-xl font-bold transition-all"
                   >
@@ -6119,7 +6139,7 @@ export default function App() {
                     onClick={async () => {
                       const { tempDirId, collisions } = fetchConflictData;
                       setFetchConflictData(null);
-                      setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
+                      setTaskProgress({ current: 1, total: 1, percent: 98, message: 'Committing fetch...' });
 
                       const resolutions: Record<string, 'keep_both'> = {};
                       collisions.forEach(c => resolutions[c] = 'keep_both');
@@ -6131,7 +6151,8 @@ export default function App() {
                       });
 
                       await fetchStatus();
-                      setTaskProgress(null);
+                      setTaskProgress({ current: 1, total: 1, percent: 100, isComplete: true, message: 'Committed.' });
+                      setTimeout(() => setTaskProgress(null), 1200);
                     }}
                     className="w-full flex items-center justify-center gap-2 py-3 bg-secondary-500/20 hover:bg-secondary-500/30 text-white rounded-xl font-bold transition-all border border-secondary-500/30"
                   >
