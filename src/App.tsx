@@ -1655,7 +1655,12 @@ export default function App() {
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [taskProgress, setTaskProgress] = useState<{ current: number, total: number, message: string } | null>(null);
+  const [taskProgress, setTaskProgress] = useState<{
+    current: number;
+    total: number;
+    message: string;
+    activeWorkers?: Record<string | number, { cardName: string; status: 'upscaling' | 'completed' }>;
+  } | null>(null);
   const [importConflictData, setImportConflictData] = useState<{ items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check' | 'keep' | 'replace' } | null>(null);
   const [backConflictData, setBackConflictData] = useState<{ items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check' | 'keep' | 'replace' | 'keep_both' } | null>(null);
   const [fetchConflictData, setFetchConflictData] = useState<{ tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'> } | null>(null);
@@ -1765,7 +1770,8 @@ export default function App() {
               setTaskProgress({
                 current: eventData.current,
                 total: eventData.total,
-                message: eventData.message || `Upscaling ${eventData.cardName || ''}...`
+                message: eventData.message || `Upscaling ${eventData.cardName || ''}...`,
+                activeWorkers: eventData.activeWorkers
               });
               if (eventData.status === 'completed') {
                 addLog(`[Action: Upscayl AI] Finished ${eventData.cardName} (${eventData.current}/${eventData.total})`);
@@ -3482,13 +3488,48 @@ export default function App() {
               </div>
             )}
             <div className="flex flex-col flex-1 pl-2 min-w-0">
-              <span className="text-sm font-bold text-white/90 truncate" title={taskProgress.message}>
-                {taskProgress.message.replace(/\s*\(\d+\s+of\s+\d+\)\s*\.{0,3}/i, '').trim() || taskProgress.message}
-              </span>
-              {taskProgress.total > 1 && (
-                <span className="text-[11px] font-semibold text-primary-400">
-                  Card {taskProgress.current} of {taskProgress.total}
-                </span>
+              {taskProgress.activeWorkers && Object.keys(taskProgress.activeWorkers).length > 1 ? (
+                <div className="space-y-1.5 py-0.5">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-primary-400 gap-4">
+                    <span>Active Workers ({Object.keys(taskProgress.activeWorkers).length})</span>
+                    {taskProgress.total > 1 && (
+                      <span className="text-white/60 font-mono">
+                        Card {taskProgress.current} of {taskProgress.total}
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-w-[460px]">
+                    {Object.entries(taskProgress.activeWorkers).map(([wid, w]) => (
+                      <div
+                        key={wid}
+                        className={cn(
+                          "flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] border transition-all truncate",
+                          w.status === 'upscaling'
+                            ? "bg-white/[0.06] border-primary-500/30 text-white shadow-sm"
+                            : "bg-white/[0.02] border-white/5 text-white/50"
+                        )}
+                      >
+                        <span className={cn(
+                          "w-1.5 h-1.5 rounded-full shrink-0",
+                          w.status === 'upscaling' ? "bg-emerald-400 animate-pulse" : "bg-white/30"
+                        )} />
+                        <span className="font-mono text-primary-400 font-bold shrink-0">W{wid}:</span>
+                        <span className="truncate" title={w.cardName}>{w.cardName}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <span className="text-sm font-bold text-white/90 truncate" title={taskProgress.message}>
+                    {taskProgress.message.replace(/\s*\(\d+\s+of\s+\d+\)\s*\.{0,3}/i, '').trim() || taskProgress.message}
+                  </span>
+                  {taskProgress.total > 1 && (
+                    <span className="text-[11px] font-semibold text-primary-400">
+                      Card {taskProgress.current} of {taskProgress.total}
+                    </span>
+                  )}
+                </>
               )}
             </div>
             {activeTaskController && (
@@ -5088,7 +5129,7 @@ export default function App() {
                                         <div>
                                           <div className="flex items-center justify-between mb-1.5">
                                             <label className="text-[10px] font-bold uppercase tracking-widest text-white/50">
-                                              Parallel Workers (GPU Concurrency)
+                                              Parallel Workers
                                             </label>
                                             <span className="text-[10px] font-mono text-primary-400 font-bold">
                                               {upscaleConfig.workers || 1} Card{(upscaleConfig.workers || 1) === 1 ? '' : 's'} at once
@@ -5130,7 +5171,7 @@ export default function App() {
                                               onChange={(e) => updateUpscaleConfig({ tileSize: Number(e.target.value) })}
                                               className="w-full bg-[#121318] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors cursor-pointer"
                                             >
-                                              <option value={0} className="bg-[#14151b]">Auto / Full (Best Quality & Speed · ~2 GB/card)</option>
+                                              <option value={0} className="bg-[#14151b]">Auto (Best Quality & Speed · ~2 GB/card)</option>
                                               <option value={1024} className="bg-[#14151b]">1024px Tiles (Balanced Memory · ~1.5 GB/card)</option>
                                               <option value={512} className="bg-[#14151b]">512px Tiles (Low VRAM Mode · ~1.0 GB/card)</option>
                                               <option value={256} className="bg-[#14151b]">256px Tiles (Minimal VRAM Mode · ~600 MB/card)</option>

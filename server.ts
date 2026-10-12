@@ -3632,6 +3632,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       let completed = 0;
       let nextIndex = 0;
       const total = targetPaths.length;
+      const activeWorkers: Record<number, { cardName: string; status: 'upscaling' | 'completed' }> = {};
 
       const runWorker = async (workerId: number) => {
         while (nextIndex < total && !clientDisconnected) {
@@ -3641,11 +3642,15 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           const p = targetPaths[idx];
           const cardName = path.basename(p);
 
+          activeWorkers[workerId] = { cardName, status: 'upscaling' };
+
           sendEvent('progress', {
-            current: completed + 1,
+            current: completed,
             total,
             cardName,
+            workerId,
             status: 'upscaling',
+            activeWorkers: { ...activeWorkers },
             message: concurrency > 1
               ? `[Worker ${workerId}] Upscaling ${cardName}...`
               : `Upscaling ${cardName}...`
@@ -3655,16 +3660,21 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           if (ok) count++;
           completed++;
 
+          activeWorkers[workerId] = { cardName, status: 'completed' };
+
           sendEvent('progress', {
             current: completed,
             total,
             cardName,
+            workerId,
             status: 'completed',
+            activeWorkers: { ...activeWorkers },
             message: concurrency > 1
               ? `Upscaled ${cardName} (${completed}/${total})`
               : `Upscaled ${cardName}`
           });
         }
+        delete activeWorkers[workerId];
       };
 
       const workerCount = Math.min(concurrency, total);
