@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { 
+import {
   Loader2,
-  Terminal, 
-  Settings, 
-  Book, 
-  ShieldCheck, 
-  Download, 
-  RefreshCw, 
-  Play, 
+  Terminal,
+  Settings,
+  Book,
+  ShieldCheck,
+  Download,
+  RefreshCw,
+  Play,
   FolderOpen,
   Info,
   ExternalLink,
@@ -42,9 +42,10 @@ import {
   Maximize2,
   SlidersHorizontal,
   ZoomIn,
-  ZoomOut,
   FolderInput,
-  FolderOutput
+  FolderOutput,
+  Cpu,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -52,12 +53,22 @@ import { Theme, setTheme, getTheme } from './lib/theme';
 import PresetManager from './components/PresetManager';
 import ProjectManager from './components/ProjectManager';
 
+export interface GpuVramInfo {
+  detected: boolean;
+  name: string;
+  totalVramMB: number;
+  freeVramMB: number;
+  source?: string;
+}
+
 export interface UpscaleConfig {
   scaleFactor: 2 | 3 | 4;
   model: 'high-fidelity-4x' | 'digital-art-4x' | 'ultrasharp-4x' | 'remacri-4x' | 'ultramix-balanced-4x' | 'upscayl-standard-4x' | 'upscayl-lite-4x';
   tta: boolean;
   scope: 'all' | 'front' | 'back' | 'double_sided' | 'selected';
   maxDimension: number;
+  workers: number;
+  tileSize: number;
 }
 
 export const defaultUpscaleConfig: UpscaleConfig = {
@@ -65,7 +76,9 @@ export const defaultUpscaleConfig: UpscaleConfig = {
   model: 'high-fidelity-4x',
   tta: false,
   scope: 'all',
-  maxDimension: 4096
+  maxDimension: 4096,
+  workers: 1,
+  tileSize: 0
 };
 
 export const getModelShortName = (modelKey: string): string => {
@@ -98,7 +111,7 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
         <div className="p-4 m-4 bg-red-950/40 border border-red-500/30 rounded-2xl text-red-200 text-sm flex flex-col items-center gap-3">
           <p className="font-bold">An unexpected interface error occurred, but the app was prevented from crashing.</p>
           <p className="text-xs text-red-300/80 font-mono">{this.state.error?.message}</p>
-          <button 
+          <button
             onClick={() => this.setState({ hasError: false, error: null })}
             className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-xl text-xs font-bold text-red-100 transition-colors cursor-pointer"
           >
@@ -160,7 +173,7 @@ const FORMAT_HINTS: Record<string, string> = {
   scryfall_json: "Export as JSON from Scryfall.",
   mpcfill_xml: "MPCFill XML file content.",
   url: "Deck URL. Example: https://www.moxfield.com/decks/...",
-  
+
   // Pokemon
   limitless: "Limitless TCG format. Example: 4 Pikachu PAR 18",
 
@@ -245,9 +258,9 @@ interface PluginConfig {
 }
 
 const PLUGINS: PluginConfig[] = [
-  { 
-    id: 'mtg', 
-    name: 'Magic: The Gathering', 
+  {
+    id: 'mtg',
+    name: 'Magic: The Gathering',
     formats: ['simple', 'mtga', 'mtgo', 'archidekt', 'cubecobra_csv', 'deckstats', 'moxfield', 'scryfall_json', 'mpcfill_xml', 'url'],
     options: [
       { label: 'Ignore Set/Collector #', flag: '--ignore_set_and_collector_number', type: 'toggle' },
@@ -273,16 +286,16 @@ const PLUGINS: PluginConfig[] = [
       { name: 'Aetherhub', url: 'https://aetherhub.com' }
     ]
   },
-  { 
-    id: 'pokemon', 
-    name: 'Pokemon', 
+  {
+    id: 'pokemon',
+    name: 'Pokemon',
     formats: ['limitless'],
     options: [],
     websites: [{ name: 'Limitless', url: 'https://my.limitlesstcg.com/builder' }]
   },
-  { 
-    id: 'one_piece', 
-    name: 'One Piece', 
+  {
+    id: 'one_piece',
+    name: 'One Piece',
     formats: ['egman', 'optcgsim'],
     options: [],
     websites: [
@@ -290,16 +303,16 @@ const PLUGINS: PluginConfig[] = [
       { name: 'OPTCG Sim', url: 'https://optcgsim.com/' }
     ]
   },
-  { 
-    id: 'lorcana', 
-    name: 'Lorcana', 
+  {
+    id: 'lorcana',
+    name: 'Lorcana',
     formats: ['dreamborn'],
     options: [],
     websites: [{ name: 'Dreamborn', url: 'https://dreamborn.ink/' }]
   },
-  { 
-    id: 'star_wars_unlimited', 
-    name: 'Star Wars Unlimited', 
+  {
+    id: 'star_wars_unlimited',
+    name: 'Star Wars Unlimited',
     formats: ['melee', 'picklist', 'swudb_json'],
     options: [],
     websites: [
@@ -307,16 +320,16 @@ const PLUGINS: PluginConfig[] = [
       { name: 'Melee', url: 'https://melee.gg/' }
     ]
   },
-  { 
-    id: 'sorcery_contested_realm', 
-    name: 'Sorcery: Contested Realm', 
+  {
+    id: 'sorcery_contested_realm',
+    name: 'Sorcery: Contested Realm',
     formats: ['curiosa_url'],
     options: [],
     websites: [{ name: 'Curiosa', url: 'https://curiosa.io/' }]
   },
-  { 
-    id: 'riftbound', 
-    name: 'Riftbound', 
+  {
+    id: 'riftbound',
+    name: 'Riftbound',
     formats: ['piltover_archive', 'pixelborn', 'tts'],
     options: [
       { label: 'Image Source', flag: '--source', type: 'select', choices: ['piltover_archive', 'riftmana'] }
@@ -326,9 +339,9 @@ const PLUGINS: PluginConfig[] = [
       { name: 'Pixelborn', url: 'https://pixelborn.com/' }
     ]
   },
-  { 
-    id: 'netrunner', 
-    name: 'Netrunner', 
+  {
+    id: 'netrunner',
+    name: 'Netrunner',
     formats: ['bbcode', 'jinteki', 'markdown', 'plain_text', 'text'],
     options: [],
     websites: [
@@ -336,9 +349,9 @@ const PLUGINS: PluginConfig[] = [
       { name: 'Jinteki', url: 'https://jinteki.net/' }
     ]
   },
-  { 
-    id: 'gundam', 
-    name: 'Gundam', 
+  {
+    id: 'gundam',
+    name: 'Gundam',
     formats: ['deckplanet', 'egman', 'exburst', 'limitless'],
     options: [],
     websites: [
@@ -348,44 +361,44 @@ const PLUGINS: PluginConfig[] = [
       { name: 'Limitless', url: 'https://my.limitlesstcg.com/builder' }
     ]
   },
-  { 
-    id: 'grand_archive', 
-    name: 'Grand Archive', 
+  {
+    id: 'grand_archive',
+    name: 'Grand Archive',
     formats: ['omnideck'],
     options: [],
     websites: [{ name: 'Omnideck', url: 'https://omnideck.org' }]
   },
-  { 
-    id: 'flesh_and_blood', 
-    name: 'Flesh and Blood', 
+  {
+    id: 'flesh_and_blood',
+    name: 'Flesh and Blood',
     formats: ['fabrary'],
     options: [],
     websites: [{ name: 'Fabrary', url: 'https://fabrary.net' }]
   },
-  { 
-    id: 'final_fantasy', 
-    name: 'Final Fantasy', 
+  {
+    id: 'final_fantasy',
+    name: 'Final Fantasy',
     formats: ['octgn_xml', 'tts', 'untap'],
     options: [],
     websites: [{ name: 'FF Decks', url: 'https://ffdecks.com/' }]
   },
-  { 
-    id: 'elestrals', 
-    name: 'Elestrals', 
+  {
+    id: 'elestrals',
+    name: 'Elestrals',
     formats: ['elestrals'],
     options: [],
     websites: [{ name: 'Elestrals', url: 'https://elestrals.com/' }]
   },
-  { 
-    id: 'echoes_of_astra', 
-    name: 'Echoes of Astra', 
+  {
+    id: 'echoes_of_astra',
+    name: 'Echoes of Astra',
     formats: ['astrabuilder_url'],
     options: [],
     websites: [{ name: 'Astra Builder', url: 'https://astrabuilder.com/' }]
   },
-  { 
-    id: 'digimon', 
-    name: 'Digimon', 
+  {
+    id: 'digimon',
+    name: 'Digimon',
     formats: ['digimoncardapp', 'digimoncarddev', 'digimoncardio', 'digimonmeta', 'tts', 'untap'],
     options: [],
     websites: [
@@ -393,32 +406,32 @@ const PLUGINS: PluginConfig[] = [
       { name: 'Digimoncard.app', url: 'https://digimoncard.app/' }
     ]
   },
-  { 
-    id: 'ashes_reborn', 
-    name: 'Ashes Reborn', 
+  {
+    id: 'ashes_reborn',
+    name: 'Ashes Reborn',
     formats: ['ashes_share_url', 'ashesdb_share_url'],
     options: [
       { label: 'Image Source', flag: '--source', type: 'select', choices: ['ashes', 'ashesdb'] }
     ],
     websites: [{ name: 'Ashes.live', url: 'https://ashes.live/' }]
   },
-  { 
-    id: 'altered', 
-    name: 'Altered', 
+  {
+    id: 'altered',
+    name: 'Altered',
     formats: ['ajordat'],
     options: [],
     websites: [{ name: 'Altered', url: 'https://altered.gg/' }]
   },
-  { 
-    id: 'bushiroad', 
-    name: 'Bushiroad', 
+  {
+    id: 'bushiroad',
+    name: 'Bushiroad',
     formats: ['bushiroad_url'],
     options: [],
     websites: [{ name: 'Deck Log', url: 'https://decklog.bushiroad.com/' }]
   },
-  { 
-    id: 'yugioh', 
-    name: 'Yu-Gi-Oh!', 
+  {
+    id: 'yugioh',
+    name: 'Yu-Gi-Oh!',
     formats: ['ydke', 'ydk'],
     options: [],
     websites: [{ name: 'YGOProDeck', url: 'https://ygoprodeck.com/' }]
@@ -480,12 +493,12 @@ interface AppStatus {
   userDataPath?: string;
 }
 
-const LightboxGallery = ({ 
-  initialImage, 
+const LightboxGallery = ({
+  initialImage,
   onClose,
-  onUpscaleSingle 
-}: { 
-  initialImage: string; 
+  onUpscaleSingle
+}: {
+  initialImage: string;
   onClose: () => void;
   onUpscaleSingle?: (src: string) => Promise<void>;
 }) => {
@@ -637,12 +650,12 @@ const LightboxGallery = ({
     const allElements = Array.from(document.querySelectorAll<HTMLElement>('.lightbox-trigger'));
     const initialEl = allElements.find(el => el.getAttribute('data-enlarge-src') === initialImage);
     const group = initialEl?.getAttribute('data-lightbox-group');
-    
+
     let filteredElements = allElements;
     if (group) {
-        filteredElements = allElements.filter(el => el.getAttribute('data-lightbox-group') === group);
+      filteredElements = allElements.filter(el => el.getAttribute('data-lightbox-group') === group);
     }
-    
+
     setAllImages(filteredElements
       .map(el => el.getAttribute('data-enlarge-src') as string)
       .filter(Boolean));
@@ -889,11 +902,11 @@ const LightboxGallery = ({
         else setCurrentImage(newSrc);
         await checkOriginal(newSrc, true);
       }
-    } catch {}
+    } catch { }
   };
 
   return (
-    <div 
+    <div
       ref={modalRef}
       className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/95 backdrop-blur-md p-4 md:p-8 select-none overflow-hidden"
       onClick={(e) => {
@@ -908,7 +921,7 @@ const LightboxGallery = ({
       <div className="absolute top-6 right-6 flex items-center gap-3 z-30">
         {/* Zoom Controls Pill */}
         <div className="flex items-center bg-white/10 backdrop-blur-md rounded-xl p-1 border border-white/15 text-xs text-white shadow-lg">
-          <button 
+          <button
             type="button"
             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/15 active:scale-95 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed transition-all"
             disabled={zoom <= 1}
@@ -927,7 +940,7 @@ const LightboxGallery = ({
           >
             <ZoomOut size={14} />
           </button>
-          <button 
+          <button
             type="button"
             className="px-2 h-7 font-mono font-bold text-[11px] hover:bg-white/15 rounded-lg transition-all cursor-pointer flex items-center gap-1"
             onClick={(e) => {
@@ -940,7 +953,7 @@ const LightboxGallery = ({
             <span>{Math.round(zoom * 100)}%</span>
             {zoom > 1 && <span className="text-[9px] opacity-70 text-primary-300">Reset</span>}
           </button>
-          <button 
+          <button
             type="button"
             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-white/15 active:scale-95 disabled:opacity-30 disabled:hover:bg-transparent cursor-pointer disabled:cursor-not-allowed transition-all"
             disabled={zoom >= 8}
@@ -955,12 +968,12 @@ const LightboxGallery = ({
         </div>
 
         {hasOriginal && (
-          <button 
+          <button
             type="button"
             className={cn(
               "px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border cursor-pointer active:scale-95",
-              isComparing 
-                ? "bg-primary-600 border-primary-400 text-white shadow-lg shadow-primary-600/30" 
+              isComparing
+                ? "bg-primary-600 border-primary-400 text-white shadow-lg shadow-primary-600/30"
                 : "bg-white/10 border-white/20 text-white/70 hover:text-white hover:bg-white/15"
             )}
             onClick={(e) => {
@@ -975,7 +988,7 @@ const LightboxGallery = ({
         )}
 
         {hasOriginal && (
-          <button 
+          <button
             type="button"
             className="px-3 py-2 bg-white/10 hover:bg-white/15 text-white/70 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-white/10 active:scale-95 cursor-pointer"
             onClick={handleRestoreCurrent}
@@ -987,7 +1000,7 @@ const LightboxGallery = ({
         )}
 
         {!hasOriginal && onUpscaleSingle && (
-          <button 
+          <button
             type="button"
             className="px-3.5 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-primary-600/30 active:scale-95 cursor-pointer disabled:opacity-50"
             disabled={isUpscalingSingle}
@@ -1000,7 +1013,7 @@ const LightboxGallery = ({
         )}
 
         {backSrc && (
-          <button 
+          <button
             type="button"
             className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-white/20 active:scale-95 cursor-pointer"
             onClick={toggleFlip}
@@ -1011,7 +1024,7 @@ const LightboxGallery = ({
           </button>
         )}
 
-        <button 
+        <button
           type="button"
           className="p-2 text-white/50 hover:text-white transition-colors bg-white/5 rounded-full hover:bg-white/10 cursor-pointer"
           onClick={onClose}
@@ -1022,7 +1035,7 @@ const LightboxGallery = ({
       </div>
 
       {/* Prev Navigation Button */}
-      <button 
+      <button
         type="button"
         className={`absolute left-2 md:left-6 p-2 transition-colors z-20 ${hasPrev ? 'text-white/30 hover:text-white cursor-pointer' : 'text-white/10 cursor-not-allowed'}`}
         onClick={goPrev}
@@ -1057,14 +1070,14 @@ const LightboxGallery = ({
         >
           {hasOriginal && isComparing && originalSrc ? (
             /* INTERACTIVE REAL-TIME BEFORE / AFTER COMPARISON SLIDER */
-            <div 
+            <div
               ref={containerRef}
               className="relative max-h-[82vh] max-w-full select-none group/compare overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/15"
             >
               {/* Base Layer: After (Upscaled HD) */}
-              <img 
-                src={displaySrc} 
-                alt="Upscaled asset" 
+              <img
+                src={displaySrc}
+                alt="Upscaled asset"
                 onLoad={(e) => {
                   const img = e.currentTarget;
                   if (img.naturalWidth && img.naturalHeight) {
@@ -1079,15 +1092,15 @@ const LightboxGallery = ({
               />
 
               {/* Overlaid Layer: Before (Original Pre-Upscale) clipped in real-time */}
-              <div 
+              <div
                 className="absolute inset-0 overflow-hidden pointer-events-none select-none"
                 style={{
                   clipPath: `inset(0 ${(100 - sliderPos).toFixed(2)}% 0 0)`
                 }}
               >
-                <img 
-                  src={originalSrc} 
-                  alt="Original asset" 
+                <img
+                  src={originalSrc}
+                  alt="Original asset"
                   className={cn(
                     "w-full h-full object-contain pointer-events-none select-none",
                     isFlipped && "[transform:scaleX(-1)]"
@@ -1097,19 +1110,19 @@ const LightboxGallery = ({
               </div>
 
               {/* Draggable Divider Bar */}
-              <div 
+              <div
                 className="absolute top-0 bottom-0 pointer-events-none z-20"
                 style={{ left: `${sliderPos.toFixed(2)}%` }}
               >
                 <div className="absolute top-0 bottom-0 -left-[1.5px] w-[3px] bg-white shadow-[0_0_12px_rgba(0,0,0,0.85)] pointer-events-none" />
                 {/* Dedicated Interactive Hit Area for the Divider Line */}
-                <div 
+                <div
                   className="absolute top-0 bottom-0 -left-3 w-6 pointer-events-auto cursor-ew-resize"
                   onMouseDown={handleStartDrag}
                   onTouchStart={handleStartDrag}
                   title="Drag left/right to compare Before and After"
                 />
-                <div 
+                <div
                   className={cn(
                     "absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-primary-600 text-white shadow-2xl flex items-center justify-center border-2 border-white pointer-events-auto cursor-ew-resize transition-transform duration-100",
                     isDragging ? "scale-115 shadow-primary-500/50 ring-4 ring-primary-500/40" : "hover:scale-110"
@@ -1126,7 +1139,7 @@ const LightboxGallery = ({
               </div>
 
               {/* Before (Original) Floating Badge */}
-              <div 
+              <div
                 className={cn(
                   "absolute top-4 left-4 z-20 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-md border border-white/20 text-white flex items-center gap-1.5 shadow-xl transition-opacity pointer-events-none",
                   sliderPos < 15 ? "opacity-20" : "opacity-95"
@@ -1137,7 +1150,7 @@ const LightboxGallery = ({
               </div>
 
               {/* After (Upscayl AI) Floating Badge */}
-              <div 
+              <div
                 className={cn(
                   "absolute top-4 right-4 z-20 px-3 py-1.5 rounded-full bg-primary-600/95 backdrop-blur-md border border-primary-400 text-white flex items-center gap-1.5 shadow-xl shadow-primary-600/30 transition-opacity pointer-events-none",
                   sliderPos > 85 ? "opacity-20" : "opacity-100"
@@ -1149,9 +1162,9 @@ const LightboxGallery = ({
             </div>
           ) : (
             /* STANDARD ENLARGED IMAGE */
-            <img 
-              src={displaySrc} 
-              alt="Enlarged asset" 
+            <img
+              src={displaySrc}
+              alt="Enlarged asset"
               onLoad={(e) => {
                 const img = e.currentTarget;
                 if (img.naturalWidth && img.naturalHeight) {
@@ -1198,14 +1211,14 @@ const LightboxGallery = ({
       </motion.div>
 
       {/* Next Navigation Button */}
-      <button 
+      <button
         type="button"
         className={`absolute right-2 md:right-6 p-2 transition-colors z-20 ${hasNext ? 'text-white/30 hover:text-white cursor-pointer' : 'text-white/10 cursor-not-allowed'}`}
         onClick={goNext}
         disabled={!hasNext}
         title="Next card (Right Arrow)"
       >
-         <ChevronRight size={48} strokeWidth={1.5} />
+        <ChevronRight size={48} strokeWidth={1.5} />
       </button>
     </div>
   );
@@ -1232,7 +1245,7 @@ export default function App() {
           setAppIcon('/icon.png');
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
@@ -1242,7 +1255,7 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('scm_sidebar_collapsed', String(isSidebarCollapsed));
   }, [isSidebarCollapsed]);
-  
+
   const [fileUndoStack, setFileUndoStack] = useState<any[]>([]);
 
   // History State for Undo/Redo
@@ -1260,15 +1273,15 @@ export default function App() {
       const { items, index } = prev;
       const nextItems = items.slice(0, index + 1);
       const snapshot = JSON.parse(JSON.stringify({ cmdOptions: options, pluginState: pState }));
-      
+
       if (nextItems.length > 0) {
         const last = nextItems[nextItems.length - 1];
-        if (JSON.stringify(last.cmdOptions) === JSON.stringify(snapshot.cmdOptions) && 
-            JSON.stringify(last.pluginState) === JSON.stringify(snapshot.pluginState)) {
+        if (JSON.stringify(last.cmdOptions) === JSON.stringify(snapshot.cmdOptions) &&
+          JSON.stringify(last.pluginState) === JSON.stringify(snapshot.pluginState)) {
           return prev;
         }
       }
-      
+
       nextItems.push(snapshot);
       if (nextItems.length > 100) nextItems.shift();
       return {
@@ -1283,13 +1296,13 @@ export default function App() {
       if (fileUndoStack.length === 0) return;
       const lastAction = fileUndoStack[fileUndoStack.length - 1];
       setFileUndoStack(prev => prev.slice(0, prev.length - 1));
-      
+
       try {
         if (lastAction.action === 'delete') {
           await fetch('/api/restore', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ items: lastAction.items, assetViewMode: lastAction.assetViewMode })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: lastAction.items, assetViewMode: lastAction.assetViewMode })
           });
           addLog(`[System] Undid delete of ${lastAction.items.length} item(s).`);
         } else if (lastAction.action === 'duplicate' || lastAction.action === 'import') {
@@ -1297,9 +1310,9 @@ export default function App() {
           const identities = lastAction.items;
           const viewMode = lastAction.action === 'duplicate' ? lastAction.assetViewMode : lastAction.destination;
           await fetch('/api/delete', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ identity: identities, assetViewMode: viewMode })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identity: identities, assetViewMode: viewMode })
           });
           addLog(`[System] Undid ${lastAction.action} of ${identities.length} item(s).`);
         }
@@ -1394,12 +1407,12 @@ export default function App() {
             const cards = Array.from(document.querySelectorAll('[data-asset-name]')).map(el => el.getAttribute('data-asset-name')!);
             const startIndex = cards.indexOf(dragState.current.startCard);
             const currentIndex = cards.indexOf(name);
-            
+
             if (startIndex !== -1 && currentIndex !== -1) {
               const min = Math.min(startIndex, currentIndex);
               const max = Math.max(startIndex, currentIndex);
               const rangeNames = cards.slice(min, max + 1);
-              
+
               setSelectedAssets(() => {
                 const next = new Set(dragState.current.initialSelection);
                 rangeNames.forEach(n => next.add(n));
@@ -1439,12 +1452,12 @@ export default function App() {
           const cards = Array.from(document.querySelectorAll('[data-asset-name]')).map(el => el.getAttribute('data-asset-name')!);
           const startIndex = cards.indexOf(dragState.current.startCard);
           const currentIndex = cards.indexOf(name);
-          
+
           if (startIndex !== -1 && currentIndex !== -1) {
             const min = Math.min(startIndex, currentIndex);
             const max = Math.max(startIndex, currentIndex);
             const rangeNames = cards.slice(min, max + 1);
-            
+
             setSelectedAssets(() => {
               const next = new Set(dragState.current.initialSelection);
               rangeNames.forEach(n => next.add(n));
@@ -1457,14 +1470,14 @@ export default function App() {
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!dragState.current.isSelecting) return;
-      e.preventDefault(); 
+      e.preventDefault();
       const touch = e.touches[0];
       dragState.current.lastClientX = touch.clientX;
       dragState.current.lastClientY = touch.clientY;
-      
+
       const EDGE_THRESHOLD = 200;
       const MAX_SPEED = 30;
-      
+
       if (touch.clientY < EDGE_THRESHOLD) {
         dragState.current.scrollSpeed = -MAX_SPEED * (1 - touch.clientY / EDGE_THRESHOLD);
       } else if (window.innerHeight - touch.clientY < EDGE_THRESHOLD) {
@@ -1472,7 +1485,7 @@ export default function App() {
       } else {
         dragState.current.scrollSpeed = 0;
       }
-      
+
       checkSelection(touch.clientX, touch.clientY);
     };
 
@@ -1495,7 +1508,7 @@ export default function App() {
   const [uploadedImages, setUploadedImages] = useState<Record<string, string>>({});
   const [cacheBusts, setCacheBusts] = useState<Record<string, number>>({});
   const [globalCacheBust, setGlobalCacheBust] = useState<number>(0);
-  const [localAssets, setLocalAssets] = useState<Array<{name: string, type: 'front' | 'back' | 'double_sided', view: 'project' | 'library' | 'plugins'}>>([]);
+  const [localAssets, setLocalAssets] = useState<Array<{ name: string, type: 'front' | 'back' | 'double_sided', view: 'project' | 'library' | 'plugins' }>>([]);
   const [isReplaceBackDialogOpen, setIsReplaceBackDialogOpen] = useState(false);
   const [pendingBackFile, setPendingBackFile] = useState<File | null>(null);
   const [copiedBuffer, setCopiedBuffer] = useState<string[]>([]);
@@ -1562,11 +1575,11 @@ export default function App() {
     const fetchTunnel = () => {
       fetch(`/api/tunnel`)
         .then(res => res.json())
-        .then(data => { 
-           if (data.url) setTunnelUrl(data.url);
-           if (data.starting !== undefined) setIsTunnelStarting(data.starting);
+        .then(data => {
+          if (data.url) setTunnelUrl(data.url);
+          if (data.starting !== undefined) setIsTunnelStarting(data.starting);
         })
-        .catch(() => {});
+        .catch(() => { });
     };
     fetchTunnel();
     const interval = setInterval(fetchTunnel, 3000);
@@ -1617,12 +1630,12 @@ export default function App() {
     if (showPluginLoadModal) fetchPluginConfigs();
   }, [showPluginLoadModal]);
   const [activeTaskController, setActiveTaskController] = useState<AbortController | null>(null);
-  
+
   const getColorMode = () => {
     return localStorage.getItem('scm_color_mode') || 'dark';
   };
   const [colorMode, setColorMode] = useState<'light' | 'dark'>(getColorMode() as any);
-  
+
   useEffect(() => {
     localStorage.setItem('scm_color_mode', colorMode);
     document.documentElement.setAttribute('data-mode', colorMode);
@@ -1642,18 +1655,18 @@ export default function App() {
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [taskProgress, setTaskProgress] = useState<{current: number, total: number, message: string} | null>(null);
-  const [importConflictData, setImportConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check'|'keep'|'replace'} | null>(null);
-  const [backConflictData, setBackConflictData] = useState<{items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check'|'keep'|'replace'|'keep_both'} | null>(null);
-  const [fetchConflictData, setFetchConflictData] = useState<{tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'>} | null>(null);
+  const [taskProgress, setTaskProgress] = useState<{ current: number, total: number, message: string } | null>(null);
+  const [importConflictData, setImportConflictData] = useState<{ items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check' | 'keep' | 'replace' } | null>(null);
+  const [backConflictData, setBackConflictData] = useState<{ items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution?: 'check' | 'keep' | 'replace' | 'keep_both' } | null>(null);
+  const [fetchConflictData, setFetchConflictData] = useState<{ tempDirId: string, collisions: string[], resolutions: Record<string, 'replace' | 'skip'> } | null>(null);
 
-  const [upscaylStatus, setUpscaylStatus] = useState<{ available: boolean; binPath: string; models: string[] } | null>(null);
+  const [upscaylStatus, setUpscaylStatus] = useState<{ available: boolean; binPath: string; models: string[]; gpu?: GpuVramInfo } | null>(null);
 
   const [upscaleConfig, setUpscaleConfig] = useState<UpscaleConfig>(() => {
     try {
       const saved = localStorage.getItem('scm_upscale_config');
       if (saved) return { ...defaultUpscaleConfig, ...JSON.parse(saved) };
-    } catch(e) {}
+    } catch (e) { }
     return defaultUpscaleConfig;
   });
 
@@ -1661,20 +1674,20 @@ export default function App() {
     try {
       const saved = localStorage.getItem('scm_upscale_expanded');
       return saved === 'true';
-    } catch(e) {
+    } catch (e) {
       return false;
     }
   });
 
   const toggleUpscaleSectionExpanded = (val: boolean) => {
     setUpscaleSectionExpanded(val);
-    try { localStorage.setItem('scm_upscale_expanded', String(val)); } catch(e) {}
+    try { localStorage.setItem('scm_upscale_expanded', String(val)); } catch (e) { }
   };
 
   const updateUpscaleConfig = (updates: Partial<UpscaleConfig>) => {
     setUpscaleConfig(prev => {
       const next = { ...prev, ...updates };
-      try { localStorage.setItem('scm_upscale_config', JSON.stringify(next)); } catch(e) {}
+      try { localStorage.setItem('scm_upscale_config', JSON.stringify(next)); } catch (e) { }
       return next;
     });
   };
@@ -1692,7 +1705,7 @@ export default function App() {
 
       const res = await fetch('/api/upscale', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream'
         },
@@ -1705,7 +1718,9 @@ export default function App() {
           model: cfg.model,
           tta: cfg.tta,
           scope: allInView ? 'all' : (identities ? 'selected' : 'all'),
-          maxDimension: cfg.maxDimension
+          maxDimension: cfg.maxDimension,
+          workers: cfg.workers || 1,
+          tileSize: cfg.tileSize !== undefined ? cfg.tileSize : 0
         }),
         signal: abortController.signal
       });
@@ -1736,15 +1751,15 @@ export default function App() {
               if (line.startsWith('event: ')) {
                 eventType = line.substring(7).trim();
               } else if (line.startsWith('data: ')) {
-                try { eventData = JSON.parse(line.substring(6)); } catch (_) {}
+                try { eventData = JSON.parse(line.substring(6)); } catch (_) { }
               }
             }
 
             if (eventType === 'start' && eventData) {
-              setTaskProgress({ 
-                current: 0, 
-                total: eventData.total || 1, 
-                message: `Preparing ${eventData.total} card image(s) for Upscayl AI...` 
+              setTaskProgress({
+                current: 0,
+                total: eventData.total || 1,
+                message: `Preparing ${eventData.total} card image(s) for Upscayl AI...`
               });
             } else if (eventType === 'progress' && eventData) {
               setTaskProgress({
@@ -1769,7 +1784,7 @@ export default function App() {
       if (data && data.success) {
         addLog(`[Action: Upscayl AI] Successfully upscaled ${data.count} card image(s) to ${cfg.scaleFactor}x high resolution.`);
         setTaskProgress({ current: data.count, total: data.total || data.count, message: `Upscaled ${data.count} card image(s) with Upscayl (${cfg.scaleFactor}x HD)!` });
-        
+
         // Invalidate image cache and clear in-memory uploaded blobs so that freshly upscaled images load immediately in the UI
         const now = Date.now();
         setUploadedImages({});
@@ -1798,7 +1813,7 @@ export default function App() {
         addLog(`[Error: Upscayl AI] ${data.message || data.error || 'Failed to upscale card images.'}`);
         setTaskProgress({ current: 0, total: 1, message: `Upscale failed.` });
       }
-    } catch(err: any) {
+    } catch (err: any) {
       if (err?.name === 'AbortError') {
         addLog(`[Action: Upscayl AI] Upscale canceled by user.`);
         setTaskProgress({ current: 0, total: 1, message: 'Upscale canceled.' });
@@ -1817,11 +1832,20 @@ export default function App() {
     fetch('/api/upscayl/status')
       .then(res => res.json())
       .then(data => setUpscaylStatus(data))
-      .catch(() => {});
+      .catch(() => { });
     const handleGlobalClick = () => setContextMenu(null);
     window.addEventListener('click', handleGlobalClick);
     return () => window.removeEventListener('click', handleGlobalClick);
   }, []);
+
+  useEffect(() => {
+    if (upscaleSectionExpanded) {
+      fetch('/api/upscayl/status')
+        .then(res => res.json())
+        .then(data => setUpscaylStatus(data))
+        .catch(() => { });
+    }
+  }, [upscaleSectionExpanded]);
 
   const handleKeyDown = (e: KeyboardEvent) => {
     const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
@@ -1856,12 +1880,12 @@ export default function App() {
       if (match('tabDashboard')) { e.preventDefault(); setActiveTab('dashboard'); return; }
       if (match('tabWorkspace')) { e.preventDefault(); setActiveTab('assets'); setAssetViewMode('project'); return; }
       if (match('tabLibrary')) { e.preventDefault(); setActiveTab('assets'); setAssetViewMode('library'); return; }
-      if (match('tabPlugins')) { 
-        e.preventDefault(); 
-        setActiveTab('assets'); 
-        setAssetViewMode('plugins'); 
+      if (match('tabPlugins')) {
+        e.preventDefault();
+        setActiveTab('assets');
+        setAssetViewMode('plugins');
         if (assetFilter === 'back') setAssetFilter('all');
-        return; 
+        return;
       }
       if (match('saveProject') && activeTab === 'assets' && assetViewMode === 'project') {
         e.preventDefault();
@@ -1887,11 +1911,11 @@ export default function App() {
     // Select All
     if (match('selectAll')) {
       if (isInput) return;
-      
+
       e.preventDefault();
       const currentAssets = getCurrentAssets();
       if (!currentAssets) return;
-      
+
       const toSelect = new Set<string>();
       if (assetFilter === 'all' || assetFilter === 'front') {
         currentAssets.fronts.forEach(f => toSelect.add(`front:${f}`));
@@ -1931,13 +1955,13 @@ export default function App() {
                 });
                 const data = await res.json();
                 if (data.newName) {
-                     addLog(`[Action: Duplicate] ${copiedBuffer[i]} -> ${data.newName} (Success)`);
-                     allResults.push(`${copiedBuffer[i].split(':')[0]}:${data.newName}`);
+                  addLog(`[Action: Duplicate] ${copiedBuffer[i]} -> ${data.newName} (Success)`);
+                  allResults.push(`${copiedBuffer[i].split(':')[0]}:${data.newName}`);
                 }
-              } catch(e) {}
+              } catch (e) { }
             }
             if (allResults.length > 0) {
-               setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
+              setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
             }
             setTaskProgress({ current: copiedBuffer.length, total: copiedBuffer.length, message: `${copiedBuffer.length} card${copiedBuffer.length === 1 ? '' : 's'} duplicated` });
             await fetchStatus();
@@ -1963,7 +1987,7 @@ export default function App() {
       if (selectedAssets.size > 0 && !isInput) {
         e.preventDefault();
         addLog(`[System] Deleting ${selectedAssets.size} selected items...`);
-        
+
         // Use API to delete instead of clear_up.py directly
         (async () => {
           try {
@@ -1972,28 +1996,28 @@ export default function App() {
             for (let i = 0; i < arr.length; i++) {
               setTaskProgress({ current: i + 1, total: arr.length, message: `Deleting ${arr[i].split(':')[1]}...` });
               const res = await fetch('/api/delete', {
-                 method: 'POST',
-                 headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ identity: [arr[i]], assetViewMode })
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identity: [arr[i]], assetViewMode })
               });
               const data = await res.json();
               if (data.results) {
                 data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
                 allResults = allResults.concat(data.results);
-              }              
+              }
             }
             if (allResults.length > 0) {
-               setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
+              setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
             }
             setTaskProgress({ current: arr.length, total: arr.length, message: `${arr.length} card${arr.length === 1 ? '' : 's'} deleted` });
             await fetchStatus();
-          } catch(err) {
+          } catch (err) {
             addLog(`[Error] Delete failed: ${err}`);
-          } finally { 
-              setTimeout(() => setTaskProgress(null), 1500); 
+          } finally {
+            setTimeout(() => setTaskProgress(null), 1500);
           }
         })();
-        
+
         setSelectedAssets(new Set());
       }
     }
@@ -2106,7 +2130,7 @@ export default function App() {
   ];
 
   // Scryfall / Custom Art Picker State
-    // Selected Card for Art Picker
+  // Selected Card for Art Picker
   const [artTargetCard, setArtTargetCard] = useState<{ name: string; type: 'front' | 'back' | 'double_sided'; targetMode?: 'front' | 'double_sided' | 'back' } | null>(null);
   const [artSourceTab, setArtSourceTab] = useState<'scryfall' | 'mpcfill'>('scryfall');
   const [artCardSize, setArtCardSize] = useState(() => {
@@ -2116,7 +2140,7 @@ export default function App() {
     localStorage.setItem('scm_art_card_size', artCardSize.toString());
   }, [artCardSize]);
 
-  const [mtgSets, setMtgSets] = useState<{code: string, name: string}[]>([]);
+  const [mtgSets, setMtgSets] = useState<{ code: string, name: string }[]>([]);
   useEffect(() => {
     fetch('https://api.scryfall.com/sets')
       .then(res => res.json())
@@ -2216,9 +2240,9 @@ export default function App() {
       const setTag = (card.set || 'custom').toUpperCase();
       const numTag = card.collector_number || '1';
       const safeName = replaceOriginalFilename || (type === 'back' ? `${cleanTitle}.png` : `${cleanTitle} (${setTag} ${numTag}).png`);
-      
+
       setArtDownloadMsg(`Downloading ${card.name || safeName}...`);
-      
+
       const res = await fetch('/api/scryfall/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2234,8 +2258,8 @@ export default function App() {
         setArtDownloadMsg(`✓ Applied "${safeName}" as ${type === 'double_sided' ? 'reverse back' : type} to ${target}!`);
         const finalFilename = data.filename || safeName;
         setLocalAssets(prev => [{ name: finalFilename, type, view: target }, ...prev]);
-        setCacheBusts(prev => ({ 
-          ...prev, 
+        setCacheBusts(prev => ({
+          ...prev,
           [finalFilename]: Date.now(),
           ...(replaceOriginalFilename ? { [replaceOriginalFilename]: Date.now() } : {})
         }));
@@ -2291,7 +2315,7 @@ export default function App() {
             options: parsed.options || {}
           };
         }
-      } catch (e) {}
+      } catch (e) { }
     }
     return {
       selectedPlugin: PLUGINS[0],
@@ -2309,7 +2333,7 @@ export default function App() {
       const res = await fetch('/api/custom-scripts');
       const data = await res.json();
       setCustomScripts(data.scripts || []);
-    } catch (e) {}
+    } catch (e) { }
   };
 
   useEffect(() => {
@@ -2344,13 +2368,13 @@ export default function App() {
   }, [cmdOptions, pluginState, saveToHistory]);
 
   const [isSettingUpPython, setIsSettingUpPython] = useState(false);
-  const [pythonSetupProgress, setPythonSetupProgress] = useState<{step: string, detail: string, percent?: number}>({ step: 'Initializing setup...', detail: '', percent: 10 });
+  const [pythonSetupProgress, setPythonSetupProgress] = useState<{ step: string, detail: string, percent?: number }>({ step: 'Initializing setup...', detail: '', percent: 10 });
   const [setupLogs, setSetupLogs] = useState<string[]>([]);
   const setupLogEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (setupLogEndRef.current) {
-        setupLogEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      setupLogEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [setupLogs]);
 
@@ -2358,9 +2382,9 @@ export default function App() {
     setIsSettingUpPython(true);
     setSetupLogs([]);
     setPythonSetupProgress({ step: 'Initializing background process', detail: 'Please wait...', percent: 10 });
-    
+
     const eventSource = new EventSource('/api/setup-python-stream');
-    
+
     eventSource.addEventListener('progress', (e: Event) => {
       const data = JSON.parse((e as MessageEvent).data);
       setPythonSetupProgress(data);
@@ -2404,7 +2428,7 @@ export default function App() {
       const res = await fetch(url);
       const data = await res.json();
       setPythonStatus(data);
-    } catch(e) {}
+    } catch (e) { }
   };
 
   useEffect(() => {
@@ -2417,12 +2441,12 @@ export default function App() {
       const res = await fetch('/api/status?_=' + new Date().getTime());
       const data = await res.json();
       setStatus(data);
-      
+
       fetchPythonStatus();
 
       if (data && data.pythonFound === false) {
         if (!isSettingUpPython && (!localStorage.getItem('scm_python_path') || data.isElectron)) {
-           startPythonSetup();
+          startPythonSetup();
         }
       }
 
@@ -2457,7 +2481,7 @@ export default function App() {
     } else if (type === 'double_sided') {
       serverAssets = current?.double_sided || [];
     }
-      
+
     const local = localAssets.filter(a => {
       if (a.view !== assetViewMode) return false;
       if (a.type !== type) return false;
@@ -2467,7 +2491,7 @@ export default function App() {
       }
       return true;
     }).map(a => a.name);
-    
+
     return [...serverAssets, ...local];
   };
 
@@ -2476,20 +2500,20 @@ export default function App() {
     const logArray = (Array.isArray(newLogs) ? newLogs : [newLogs])
       .filter(l => l !== null && l !== undefined && typeof l === 'string')
       .filter(l => l.trim().length > 0);
-    
+
     if (logArray.length === 0) return;
     setLogs(prev => [...prev, ...logArray]);
   };
-  
+
   const savePluginConfig = async () => {
     if (!pluginSaveName) return;
-    
+
     setTaskProgress({ current: 1, total: 1, message: `Saving config...` });
     try {
       await fetch('/api/library/save-decklist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           pluginId: pluginState.selectedPlugin.id,
           saveName: pluginSaveName.replace(/[^a-zA-Z0-9_]/g, ''),
           decklist: pluginState.decklist,
@@ -2499,7 +2523,7 @@ export default function App() {
       });
       addLog(`[Plugins] Saved configuration '${pluginSaveName}' for ${pluginState.selectedPlugin.name}.`);
       setTaskProgress(prev => prev ? { ...prev, message: `Saved ${pluginSaveName} successfully.` } : null);
-    } catch(e) {
+    } catch (e) {
       addLog(`[Error] Failed to save config: ${e}`);
     } finally {
       setPluginSaveName("");
@@ -2511,7 +2535,7 @@ export default function App() {
   const loadPluginConfig = (name: string) => {
     const config = pluginConfigs[name];
     if (!config) return;
-    
+
     const plugin = PLUGINS.find(p => p.id === config.pluginId);
     if (plugin) {
       setPluginState({
@@ -2539,7 +2563,7 @@ export default function App() {
         addLog(`[Plugins] Deleted configuration '${name}'.`);
         await fetchPluginConfigs();
       }
-    } catch(err) {
+    } catch (err) {
       addLog(`[Error] Failed to delete config: ${err}`);
     }
   };
@@ -2570,13 +2594,13 @@ export default function App() {
       const res = await fetch('/api/run-command-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          command, 
-          args, 
+        body: JSON.stringify({
+          command,
+          args,
           isPluginFetch: options?.isPluginFetch,
-          tempDirId: options?.tempDirId, 
-          uploadedPluginFilePath: options?.uploadedPluginFilePath, 
-          pythonPath, 
+          tempDirId: options?.tempDirId,
+          uploadedPluginFilePath: options?.uploadedPluginFilePath,
+          pythonPath,
           crop: options?.crop,
           calibration: options?.calibration,
           upscaleOptions: options?.upscaleOptions || upscaleConfig
@@ -2596,10 +2620,10 @@ export default function App() {
       let fetchedFiles: Record<string, string[]> = { fronts: [], backs: [], double_sided: [] };
       let pendingData = "";
       let success = true;
-      
+
       let totalCards = 0;
       let currentCard = 0;
-      
+
       if (options?.startMessage === 'Generating PDF...') {
         const assets = getCurrentAssets();
         totalCards = (assets?.fronts?.length || 0) + (assets?.double_sided?.length || 0);
@@ -2609,105 +2633,105 @@ export default function App() {
       while (reader) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         pendingData += decoder.decode(value, { stream: true });
         const events = pendingData.split('\n\n');
         pendingData = events.pop() || '';
-        
-         for (const event of events) {
+
+        for (const event of events) {
           const lines = event.split('\n');
           let eventType = 'stdout';
           let eventData = null;
           for (const line of lines) {
             if (line.startsWith('event: ')) {
-               eventType = line.substring(7);
+              eventType = line.substring(7);
             } else if (line.startsWith('data: ')) {
-               try { eventData = JSON.parse(line.substring(6)); } catch(e) {}
+              try { eventData = JSON.parse(line.substring(6)); } catch (e) { }
             }
           }
           if (eventData !== null) {
-             if (eventType === 'stdout') {
-                 const text = String(eventData);
-                 output.push(text);
-                 addLog(`[Console] ${text}`);
+            if (eventType === 'stdout') {
+              const text = String(eventData);
+              output.push(text);
+              addLog(`[Console] ${text}`);
 
-                 // Detect total card count reported in output
-                 const totalMatch = text.match(/(?:Parsed|Found|Total(?:\s+cards)?[:\s]+)\s*(\d+)\s*(?:cards|unique entries)?/i);
-                 if (totalMatch) {
-                     const parsedTotal = parseInt(totalMatch[1]);
-                     if (parsedTotal > 0) totalCards = parsedTotal;
-                 }
+              // Detect total card count reported in output
+              const totalMatch = text.match(/(?:Parsed|Found|Total(?:\s+cards)?[:\s]+)\s*(\d+)\s*(?:cards|unique entries)?/i);
+              if (totalMatch) {
+                const parsedTotal = parseInt(totalMatch[1]);
+                if (parsedTotal > 0) totalCards = parsedTotal;
+              }
 
-                 // Detect current progress indices (Image 1 of 50, Index: 1, Slot 1, 1/50, etc.)
-                 let matchedIndex = false;
-                 const idxOfTotalMatch = text.match(/(?:Image|Card|Processing|Downloading|Fetching)\s*#?(\d+)\s*(?:of|\/)\s*(\d+)/i) || text.match(/^(\d+)\s*\/\s*(\d+)/);
-                 if (idxOfTotalMatch) {
-                     currentCard = parseInt(idxOfTotalMatch[1]);
-                     totalCards = parseInt(idxOfTotalMatch[2]);
-                     matchedIndex = true;
-                 } else {
-                     const singleIdxMatch = text.match(/^(?:Image\s+(\d+):|Index:\s*(\d+)|Slot\s*(\d+):?)/i);
-                     if (singleIdxMatch) {
-                         const val = singleIdxMatch[1] || singleIdxMatch[2] || singleIdxMatch[3];
-                         if (val) {
-                             currentCard = parseInt(val);
-                             matchedIndex = true;
-                         }
-                     }
-                 }
+              // Detect current progress indices (Image 1 of 50, Index: 1, Slot 1, 1/50, etc.)
+              let matchedIndex = false;
+              const idxOfTotalMatch = text.match(/(?:Image|Card|Processing|Downloading|Fetching)\s*#?(\d+)\s*(?:of|\/)\s*(\d+)/i) || text.match(/^(\d+)\s*\/\s*(\d+)/);
+              if (idxOfTotalMatch) {
+                currentCard = parseInt(idxOfTotalMatch[1]);
+                totalCards = parseInt(idxOfTotalMatch[2]);
+                matchedIndex = true;
+              } else {
+                const singleIdxMatch = text.match(/^(?:Image\s+(\d+):|Index:\s*(\d+)|Slot\s*(\d+):?)/i);
+                if (singleIdxMatch) {
+                  const val = singleIdxMatch[1] || singleIdxMatch[2] || singleIdxMatch[3];
+                  if (val) {
+                    currentCard = parseInt(val);
+                    matchedIndex = true;
+                  }
+                }
+              }
 
-                 // Extract human card title if available
-                 let cardName = '';
-                 const nameMatch = text.match(/name:\s*([^,\r\n]+)/i) || text.match(/Slot \d+:\s*([^/\r\n]+)/i) || text.match(/(?:Downloading|Fetching)\s+([^.\r\n]+?)(?:\.\.\.|$)/i);
-                 if (nameMatch && nameMatch[1]) {
-                     cardName = nameMatch[1].trim();
-                 }
+              // Extract human card title if available
+              let cardName = '';
+              const nameMatch = text.match(/name:\s*([^,\r\n]+)/i) || text.match(/Slot \d+:\s*([^/\r\n]+)/i) || text.match(/(?:Downloading|Fetching)\s+([^.\r\n]+?)(?:\.\.\.|$)/i);
+              if (nameMatch && nameMatch[1]) {
+                cardName = nameMatch[1].trim();
+              }
 
-                 if (matchedIndex) {
-                     const dispTotal = totalCards > 0 ? totalCards : Math.max(currentCard, 1);
-                     const msg = cardName 
-                         ? `${cardName} (${currentCard}/${dispTotal})` 
-                         : `Card ${currentCard}${totalCards > 0 ? ` of ${totalCards}` : ''}...`;
-                     setTaskProgress({ current: currentCard, total: dispTotal, message: msg });
-                 } else if (cardName) {
-                     setTaskProgress(prev => ({
-                         current: prev?.current ?? currentCard,
-                         total: prev?.total ?? (totalCards > 0 ? totalCards : 1),
-                         message: `Fetching ${cardName}...`
-                     }));
-                 }
-             } else if (eventType === 'stderr') {
-                 output.push(`[Error] ${eventData}`);
-                 addLog(`[Console Error] ${eventData}`);
-             } else if (eventType === 'error') {
-                 output.push(eventData as string);
-                 addLog(`[Console Error] ${eventData}`);
-             } else if (eventType === 'fetched_files') {
-                 fetchedFiles = eventData as any;
-             } else if (eventType === 'exit') {
-                 const exitData = eventData as any;
-                 success = exitData.code === 0 && !exitData.hasError;
-             }
+              if (matchedIndex) {
+                const dispTotal = totalCards > 0 ? totalCards : Math.max(currentCard, 1);
+                const msg = cardName
+                  ? `${cardName} (${currentCard}/${dispTotal})`
+                  : `Card ${currentCard}${totalCards > 0 ? ` of ${totalCards}` : ''}...`;
+                setTaskProgress({ current: currentCard, total: dispTotal, message: msg });
+              } else if (cardName) {
+                setTaskProgress(prev => ({
+                  current: prev?.current ?? currentCard,
+                  total: prev?.total ?? (totalCards > 0 ? totalCards : 1),
+                  message: `Fetching ${cardName}...`
+                }));
+              }
+            } else if (eventType === 'stderr') {
+              output.push(`[Error] ${eventData}`);
+              addLog(`[Console Error] ${eventData}`);
+            } else if (eventType === 'error') {
+              output.push(eventData as string);
+              addLog(`[Console Error] ${eventData}`);
+            } else if (eventType === 'fetched_files') {
+              fetchedFiles = eventData as any;
+            } else if (eventType === 'exit') {
+              const exitData = eventData as any;
+              success = exitData.code === 0 && !exitData.hasError;
+            }
           }
         }
       }
-      
+
       setActiveTaskController(null);
       const assets = await fetchStatus();
-      
+
       if (!options?.hideProgressOnComplete) {
-         setTaskProgress({ current: 1, total: 1, message: 'Complete.' });
-         setTimeout(() => setTaskProgress(null), 1500);
+        setTaskProgress({ current: 1, total: 1, message: 'Complete.' });
+        setTimeout(() => setTaskProgress(null), 1500);
       }
-      
+
       return { output, assets, fetchedFiles, success };
     } catch (err: any) {
       if (err.name === 'AbortError') {
-         addLog(`[System] Task canceled by user.`);
-         setTaskProgress(prev => prev ? { ...prev, message: 'Canceled.' } : null);
+        addLog(`[System] Task canceled by user.`);
+        setTaskProgress(prev => prev ? { ...prev, message: 'Canceled.' } : null);
       } else {
-         addLog(`[Error] Execution failed: ${err}`);
-         setTaskProgress(prev => prev ? { ...prev, message: 'Failed.' } : null);
+        addLog(`[Error] Execution failed: ${err}`);
+        setTaskProgress(prev => prev ? { ...prev, message: 'Failed.' } : null);
       }
       setActiveTaskController(null);
       setTimeout(() => setTaskProgress(null), 1500);
@@ -2718,7 +2742,7 @@ export default function App() {
   const downloadFile = async (url: string, filename: string) => {
     try {
       addLog(`[System] Initiating download for ${filename}...`);
-      
+
       // Verify endpoint exists without buffering the entire file into memory
       const response = await fetch(url, { method: 'HEAD' });
       if (!response.ok) {
@@ -2732,9 +2756,9 @@ export default function App() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      
+
       addLog(`[System] Download started for ${filename}. Check your browser downloads.`);
-    } catch(e: any) {
+    } catch (e: any) {
       console.error(e);
       addLog(`[Error] Failed to trigger download for ${filename}: ${e.message}`);
     }
@@ -2755,17 +2779,17 @@ export default function App() {
       gainNode.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.5);
-    } catch(e) {}
+    } catch (e) { }
   };
 
   const generatePDF = async () => {
     const currentAssets = getCurrentAssets();
     const hasFronts = (currentAssets?.fronts?.length || 0) > 0;
     const hasDoubleSided = (currentAssets?.double_sided?.length || 0) > 0;
-    
+
     if (!hasFronts && !hasDoubleSided) {
-        addLog("[Error] Cannot generate PDF: No card fronts found in project.");
-        return;
+      addLog("[Error] Cannot generate PDF: No card fronts found in project.");
+      return;
     }
 
     addLog("[System] Launching PDF Generator...");
@@ -2804,8 +2828,8 @@ export default function App() {
     if (cmdOptions.extend_edges_backs) { args.push('--extend_edges_backs'); args.push(cmdOptions.extend_edges_backs); }
     if (cmdOptions.label) { args.push('--label'); args.push(cmdOptions.label); }
     if (cmdOptions.skip) { args.push('--skip'); args.push(cmdOptions.skip); }
-    const result = await runCommand('create_pdf.py', args, { 
-      startMessage: 'Generating PDF...', 
+    const result = await runCommand('create_pdf.py', args, {
+      startMessage: 'Generating PDF...',
       crop: cmdOptions.crop,
       calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
     });
@@ -2824,17 +2848,17 @@ export default function App() {
     setFlippedAssets(prev => {
       const next = new Set(prev);
       const isCurrentlyFlipped = next.has(identity);
-      
+
       if (selectedAssets.size > 1 && selectedAssets.has(identity)) {
         // Toggle all selected assets based on the state of the clicked one
         selectedAssets.forEach(item => {
-           if (item.startsWith('front:') || item.startsWith('double_sided:')) {
-             if (isCurrentlyFlipped) {
-               next.delete(item);
-             } else {
-               next.add(item);
-             }
-           }
+          if (item.startsWith('front:') || item.startsWith('double_sided:')) {
+            if (isCurrentlyFlipped) {
+              next.delete(item);
+            } else {
+              next.add(item);
+            }
+          }
         });
       } else {
         // Just toggle this one
@@ -2852,7 +2876,7 @@ export default function App() {
 
     setSelectedAssets(prev => {
       const next = new Set(prev);
-      
+
       // Enforce single selection for backs
       if (isBack) {
         // Clear all other backs first
@@ -2882,7 +2906,7 @@ export default function App() {
           );
           range.forEach((item: string) => {
             if (!item.startsWith('back:')) {
-               next.add(item);
+              next.add(item);
             }
           });
         }
@@ -2906,9 +2930,9 @@ export default function App() {
         addLog("[System] No assets selected for upload.");
         return;
       }
-      
+
       let itemsToUpload = pendingUploadItems.length > 0 ? [...pendingUploadItems] : Array.from(selectedAssets);
-      
+
       // Check for back card conflict
       const backItems = itemsToUpload.filter(item => item.startsWith('back:'));
       if (backItems.length > 1) {
@@ -2919,28 +2943,28 @@ export default function App() {
       }
       const hasBackSelected = backItems.length > 0;
       const projectHasBack = (status?.assets?.backs.length || 0) > 0;
-  
+
       if (hasBackSelected && projectHasBack && !forceReplaceBack && !skipBack && !showConflictModal) {
         setPendingUploadItems(itemsToUpload);
         setShowConflictModal(true);
         return;
       }
-  
+
       if (skipBack) {
         itemsToUpload = itemsToUpload.filter(item => !item.startsWith('back:'));
       }
-  
+
       if (itemsToUpload.length === 0) {
         setShowConflictModal(false);
         setPendingUploadItems([]);
         setSelectedAssets(new Set());
         return;
       }
-  
+
       const source = (assetViewMode === 'plugins' || assetViewMode === 'project') ? assetViewMode : 'library';
       addLog(`[Project] Uploading ${itemsToUpload.length} selected ${source} assets to project...`);
       await performMoveOrCopy(itemsToUpload, 'project', source as 'library' | 'plugins');
-    } catch(err) {
+    } catch (err) {
       addLog(`[Error] Upload failed: ${err}`);
     }
   };
@@ -2951,13 +2975,13 @@ export default function App() {
         addLog("[System] No assets selected for upload.");
         return;
       }
-      
+
       let itemsToUpload = Array.from(selectedAssets);
-      
+
       const source = (assetViewMode === 'plugins' || assetViewMode === 'project') ? assetViewMode : 'library';
       addLog(`[Library] Uploading ${itemsToUpload.length} selected ${source} assets to library...`);
       await performMoveOrCopy(itemsToUpload, 'library', source as 'library' | 'plugins');
-    } catch(err) {
+    } catch (err) {
       addLog(`[Error] Upload to library failed: ${err}`);
     }
   };
@@ -2973,7 +2997,7 @@ export default function App() {
         setTaskProgress(prev => prev ? { ...prev, message: 'Cleaned successfully.' } : null);
         await fetchStatus();
       }
-    } catch(err) {
+    } catch (err) {
       addLog(`[Error] Cleanup failed: ${err}`);
       setTaskProgress(prev => prev ? { ...prev, message: 'Failed.' } : null);
     }
@@ -3007,7 +3031,7 @@ export default function App() {
       setIsReplaceBackDialogOpen(true);
       return;
     }
-    
+
     await performUpload(file, type, isLibrary);
   };
 
@@ -3016,10 +3040,10 @@ export default function App() {
       let replaceBack = false;
       if (type === 'back' && !isLibrary) {
         if (status?.assets?.backs && status.assets.backs.length > 0) {
-            replaceBack = true;
+          replaceBack = true;
         }
       }
-  
+
       const url = URL.createObjectURL(file);
       const name = file.name;
       setUploadedImages(prev => ({ ...prev, [`${type}_${name}`]: url }));
@@ -3027,19 +3051,19 @@ export default function App() {
       // Optimistically add to localAssets regardless of library state
       // (Since we fetchStatus 1s later anyway)
       setLocalAssets(prev => {
-          if (!isLibrary && type === 'back' && replaceBack) {
-              return prev.filter(asset => asset.type !== 'back').concat({name, type, view: isLibrary ? 'library' : 'project'});
-          }
-          return [...prev, {name, type, view: isLibrary ? 'library' : 'project'}];
+        if (!isLibrary && type === 'back' && replaceBack) {
+          return prev.filter(asset => asset.type !== 'back').concat({ name, type, view: isLibrary ? 'library' : 'project' });
+        }
+        return [...prev, { name, type, view: isLibrary ? 'library' : 'project' }];
       });
-      
+
       addLog(`[Uploader] Uploading ${type} asset: ${file.name}`);
       const formData = new FormData();
       formData.append('file', file);
       formData.append('type', type);
       if (isLibrary) formData.append('library', 'true');
       if (replaceBack) formData.append('replaceBack', 'true');
-      
+
       const res = await fetch('/api/upload', {
         method: 'POST',
         body: formData
@@ -3055,103 +3079,103 @@ export default function App() {
   };
 
   const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' | 'keep_both' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
-      let finalItems = [...items];
-      const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
-      
-      // 1. Back image check (workspace only)
-      if (destination === 'project' && backResolution === 'check') {
-         if (targetObj && targetObj.backs.length > 0) {
-            const hasBack = items.some(item => item.startsWith('back:'));
-            if (hasBack) {
-               setBackConflictData({ items, destination, source, conflictResolution });
-               return; // pause for back check
-            }
-         }
-      }
+    let finalItems = [...items];
+    const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
 
-      if (backResolution === 'keep') {
-          // Remove back items from the transfer
-          finalItems = finalItems.filter(item => !item.startsWith('back:'));
-          if (finalItems.length === 0) return;
+    // 1. Back image check (workspace only)
+    if (destination === 'project' && backResolution === 'check') {
+      if (targetObj && targetObj.backs.length > 0) {
+        const hasBack = items.some(item => item.startsWith('back:'));
+        if (hasBack) {
+          setBackConflictData({ items, destination, source, conflictResolution });
+          return; // pause for back check
+        }
       }
+    }
 
-      // 2. Name collision check
-      if (conflictResolution === 'check') {
-         if (targetObj) {
-            const collisions = finalItems.filter(item => {
-                const [type, name] = item.split(':');
-                if (type === 'front' && targetObj.fronts.includes(name)) return true;
-                if (type === 'back' && targetObj.backs.includes(name)) return true;
-                if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return true;
-                return false;
-            });
-            if (collisions.length > 0) {
-               setImportConflictData({ items: finalItems, destination, source, collisions, backResolution });
-               return; // pause for user name collision check
-            }
-         }
-      } else if (conflictResolution === 'keep') {
-         if (targetObj) {
-            finalItems = finalItems.filter(item => {
-                const [type, name] = item.split(':');
-                if (type === 'front' && targetObj.fronts.includes(name)) return false;
-                if (type === 'back' && targetObj.backs.includes(name)) return false;
-                if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return false;
-                return true;
-            });
-         }
-      }
-      
+    if (backResolution === 'keep') {
+      // Remove back items from the transfer
+      finalItems = finalItems.filter(item => !item.startsWith('back:'));
       if (finalItems.length === 0) return;
+    }
 
-      let clearBackFirst = backResolution === 'replace';
+    // 2. Name collision check
+    if (conflictResolution === 'check') {
+      if (targetObj) {
+        const collisions = finalItems.filter(item => {
+          const [type, name] = item.split(':');
+          if (type === 'front' && targetObj.fronts.includes(name)) return true;
+          if (type === 'back' && targetObj.backs.includes(name)) return true;
+          if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return true;
+          return false;
+        });
+        if (collisions.length > 0) {
+          setImportConflictData({ items: finalItems, destination, source, collisions, backResolution });
+          return; // pause for user name collision check
+        }
+      }
+    } else if (conflictResolution === 'keep') {
+      if (targetObj) {
+        finalItems = finalItems.filter(item => {
+          const [type, name] = item.split(':');
+          if (type === 'front' && targetObj.fronts.includes(name)) return false;
+          if (type === 'back' && targetObj.backs.includes(name)) return false;
+          if (type === 'double_sided' && targetObj.double_sided?.includes(name)) return false;
+          return true;
+        });
+      }
+    }
 
-      let allResults: any[] = [];
-      for (let i = 0; i < finalItems.length; i++) {
-         setTaskProgress({ current: i + 1, total: finalItems.length, message: `Processing ${finalItems[i].split(':')[1]}...` });
-         try {
-             // Pass clearBackFirst only on the first item to avoid doing it multiple times
-             const res = await fetch('/api/plugin/import', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    identity: finalItems[i], 
-                    destination, 
-                    source, 
-                    clearBackFirst: clearBackFirst && i === 0,
-                    keepBoth: conflictResolution === 'keep_both'
-                })
-             });
-             const data = await res.json();
-             if (data.results) {
-                 data.results.forEach((r: any) => {
-                     addLog(`[Action: Move/Copy] ${r.from} -> ${r.to} (Success)`);
-                 });
-                 allResults = allResults.concat(data.results.map((r: any) => `${finalItems[i].split(':')[0]}:${r.name}`));
-             }
-         } catch(e) { }
+    if (finalItems.length === 0) return;
+
+    let clearBackFirst = backResolution === 'replace';
+
+    let allResults: any[] = [];
+    for (let i = 0; i < finalItems.length; i++) {
+      setTaskProgress({ current: i + 1, total: finalItems.length, message: `Processing ${finalItems[i].split(':')[1]}...` });
+      try {
+        // Pass clearBackFirst only on the first item to avoid doing it multiple times
+        const res = await fetch('/api/plugin/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identity: finalItems[i],
+            destination,
+            source,
+            clearBackFirst: clearBackFirst && i === 0,
+            keepBoth: conflictResolution === 'keep_both'
+          })
+        });
+        const data = await res.json();
+        if (data.results) {
+          data.results.forEach((r: any) => {
+            addLog(`[Action: Move/Copy] ${r.from} -> ${r.to} (Success)`);
+          });
+          allResults = allResults.concat(data.results.map((r: any) => `${finalItems[i].split(':')[0]}:${r.name}`));
+        }
+      } catch (e) { }
+    }
+
+    if (allResults.length > 0) {
+      setFileUndoStack(prev => [...prev, { action: 'import', items: allResults, destination }]);
+
+      if (conflictResolution === 'replace') {
+        const newBusts = { ...cacheBusts };
+        items.forEach(item => {
+          const name = item.split(':')[1];
+          newBusts[name] = Date.now();
+        });
+        setCacheBusts(newBusts);
       }
-      
-      if (allResults.length > 0) {
-         setFileUndoStack(prev => [...prev, { action: 'import', items: allResults, destination }]);
-         
-         if (conflictResolution === 'replace') {
-             const newBusts = { ...cacheBusts };
-             items.forEach(item => {
-                 const name = item.split(':')[1];
-                 newBusts[name] = Date.now();
-             });
-             setCacheBusts(newBusts);
-         }
-      }
-      
-      const actionStr = destination === 'project' ? 'added' : 'copied';
-      setTaskProgress({ current: finalItems.length, total: finalItems.length, message: `${finalItems.length} card${finalItems.length === 1 ? '' : 's'} ${actionStr}` });
-      await fetchStatus();
-      setSelectedAssets(new Set());
-      setContextMenu(null);
-      setTimeout(() => setTaskProgress(null), 1500);
-      addLog(`[System] Moved ${finalItems.length} cards to ${destination}.`);
+    }
+
+    const actionStr = destination === 'project' ? 'added' : 'copied';
+    setTaskProgress({ current: finalItems.length, total: finalItems.length, message: `${finalItems.length} card${finalItems.length === 1 ? '' : 's'} ${actionStr}` });
+    await fetchStatus();
+    setSelectedAssets(new Set());
+    setContextMenu(null);
+    setTimeout(() => setTaskProgress(null), 1500);
+    addLog(`[System] Moved ${finalItems.length} cards to ${destination}.`);
   };
 
   const saveProject = async (customName?: string) => {
@@ -3218,7 +3242,7 @@ export default function App() {
         addLog(`[Project] Deleted project '${name}'.`);
         await fetchStatus();
       }
-    } catch(err) {
+    } catch (err) {
       addLog(`[Error] Failed to delete project: ${err}`);
     }
   };
@@ -3236,7 +3260,7 @@ export default function App() {
       } else {
         addLog(`[Error] Failed to rename project.`);
       }
-    } catch(err) {
+    } catch (err) {
       addLog(`[Error] Failed to rename project: ${err}`);
     }
   };
@@ -3292,11 +3316,11 @@ export default function App() {
 
         const presetName = data.name || file.name.replace(/_export\.json$/i, '').replace(/\.json$/i, '');
         setTaskProgress({ current: 1, total: 1, message: "Importing preset assets & images..." });
-        
+
         const res = await fetch('/api/project/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             items: itemsToUpload,
             images: data.images || {},
             decklists: data.decklists || {},
@@ -3305,7 +3329,7 @@ export default function App() {
           })
         });
         const result = await res.json();
-        
+
         if (result.success) {
           addLog(`[Project] Successfully imported preset '${presetName}' (${result.message}).`);
           setLoadedProject(presetName);
@@ -3359,7 +3383,7 @@ export default function App() {
             className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/80 backdrop-blur-md pointer-events-auto"
           >
             <div className={cn("flex flex-col items-center gap-6 p-10 bg-[#0f0f13] rounded-3xl border shadow-[0_0_60px_-15px_rgba(16,185,129,0.3)] max-w-xl w-full text-center", pythonSetupProgress.step === 'Failed' ? 'border-rose-500/50 shadow-[0_0_60px_-15px_rgba(244,63,94,0.3)]' : 'border-primary-500/20')}>
-              
+
               {pythonSetupProgress.step === 'Ready' && (
                 <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center border border-emerald-500/50 mb-2">
                   <Check className="w-8 h-8 text-emerald-400" />
@@ -3383,26 +3407,26 @@ export default function App() {
                 )}
               </div>
               <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-2">
-                 <div 
-                   className={cn("h-full rounded-full transition-all duration-500 ease-in-out", pythonSetupProgress.step === 'Failed' ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-primary-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]')}
-                   style={{ width: `${pythonSetupProgress.percent || 10}%` }}
-                 ></div>
+                <div
+                  className={cn("h-full rounded-full transition-all duration-500 ease-in-out", pythonSetupProgress.step === 'Failed' ? 'bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]' : 'bg-primary-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]')}
+                  style={{ width: `${pythonSetupProgress.percent || 10}%` }}
+                ></div>
               </div>
               <div className="w-full h-48 bg-black/50 border border-white/10 rounded-xl mt-4 overflow-y-auto text-left p-3 font-mono text-xs text-white/70">
-                 {setupLogs.map((log, i) => (
-                   <div key={i} className={cn(log.includes('[ERROR]') || log.includes('Failed') ? 'text-rose-400' : '')}>{log}</div>
-                 ))}
-                 <div ref={setupLogEndRef} />
+                {setupLogs.map((log, i) => (
+                  <div key={i} className={cn(log.includes('[ERROR]') || log.includes('Failed') ? 'text-rose-400' : '')}>{log}</div>
+                ))}
+                <div ref={setupLogEndRef} />
               </div>
 
               {(!status?.isElectron || pythonSetupProgress.step === 'Failed') && (
-                <button 
+                <button
                   onClick={() => {
                     setIsSettingUpPython(false);
                     if (!status?.isElectron) {
                       localStorage.setItem('scm_python_path', 'preview_bypass');
                     }
-                  }} 
+                  }}
                   className="mt-4 px-8 py-3 bg-white/5 hover:bg-white/10 text-white font-bold tracking-widest text-xs uppercase rounded-xl transition-colors border border-white/10"
                 >
                   {!status?.isElectron ? "Skip Setup (Preview Mode)" : "Dismiss & Continue in Local Mode"}
@@ -3433,48 +3457,48 @@ export default function App() {
             exit={{ opacity: 0, y: 50, scale: 0.9 }}
             className="fixed bottom-6 right-6 z-[1000] flex items-center gap-4 p-4 bg-[#0f0f13] rounded-2xl border border-primary-500/30 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] min-w-[300px]"
           >
-              {taskProgress.total <= 1 && taskProgress.current === 0 ? (
-                <Loader2 className="w-10 h-10 text-primary-500 animate-spin flex-none" />
-              ) : (
-                <div className="relative">
-                  <svg className="w-10 h-10 transform -rotate-90">
-                    <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
-                    <circle 
-                      cx="20" 
-                      cy="20" 
-                      r="18" 
-                      className="stroke-primary-500 transition-all duration-300" 
-                      strokeWidth="4" 
-                      fill="none" 
-                      strokeDasharray={113} 
-                      strokeDashoffset={113 - (113 * (taskProgress.total > 0 ? Math.min(1, Math.max(0, taskProgress.current / taskProgress.total)) : 0))} 
-                    />
-                  </svg>
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
-                    {taskProgress.total > 0 
-                      ? `${Math.round((taskProgress.current / taskProgress.total) * 100)}%` 
-                      : `${taskProgress.current}`}
-                  </span>
-                </div>
+            {taskProgress.total <= 1 && taskProgress.current === 0 ? (
+              <Loader2 className="w-10 h-10 text-primary-500 animate-spin flex-none" />
+            ) : (
+              <div className="relative">
+                <svg className="w-10 h-10 transform -rotate-90">
+                  <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
+                  <circle
+                    cx="20"
+                    cy="20"
+                    r="18"
+                    className="stroke-primary-500 transition-all duration-300"
+                    strokeWidth="4"
+                    fill="none"
+                    strokeDasharray={113}
+                    strokeDashoffset={113 - (113 * (taskProgress.total > 0 ? Math.min(1, Math.max(0, taskProgress.current / taskProgress.total)) : 0))}
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                  {taskProgress.total > 0
+                    ? `${Math.round((taskProgress.current / taskProgress.total) * 100)}%`
+                    : `${taskProgress.current}`}
+                </span>
+              </div>
+            )}
+            <div className="flex flex-col flex-1 pl-2 min-w-0">
+              <span className="text-sm font-bold text-white/90 truncate" title={taskProgress.message}>
+                {taskProgress.message.replace(/\s*\(\d+\s+of\s+\d+\)\s*\.{0,3}/i, '').trim() || taskProgress.message}
+              </span>
+              {taskProgress.total > 1 && (
+                <span className="text-[11px] font-semibold text-primary-400">
+                  Card {taskProgress.current} of {taskProgress.total}
+                </span>
               )}
-             <div className="flex flex-col flex-1 pl-2 min-w-0">
-               <span className="text-sm font-bold text-white/90 truncate" title={taskProgress.message}>
-                 {taskProgress.message.replace(/\s*\(\d+\s+of\s+\d+\)\s*\.{0,3}/i, '').trim() || taskProgress.message}
-               </span>
-               {taskProgress.total > 1 && (
-                 <span className="text-[11px] font-semibold text-primary-400">
-                   Card {taskProgress.current} of {taskProgress.total}
-                 </span>
-               )}
-             </div>
-             {activeTaskController && (
-               <button
-                 onClick={() => activeTaskController.abort()}
-                 className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg text-xs font-bold transition-colors shrink-0"
-               >
-                 Cancel
-               </button>
-             )}
+            </div>
+            {activeTaskController && (
+              <button
+                onClick={() => activeTaskController.abort()}
+                className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg text-xs font-bold transition-colors shrink-0"
+              >
+                Cancel
+              </button>
+            )}
           </motion.div>
         )}
 
@@ -3485,28 +3509,28 @@ export default function App() {
             exit={{ opacity: 0, y: -50, scale: 0.9 }}
             className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] flex items-center justify-between gap-6 p-4 pl-5 bg-[#0f0f13] rounded-2xl border border-emerald-500/30 shadow-[0_8px_32px_-8px_rgba(16,185,129,0.3)] min-w-[340px]"
           >
-             <div className="flex items-center gap-3">
-               <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-full">
-                 <CheckCircle size={24} />
-               </div>
-               <div className="flex flex-col">
-                 <span className="text-sm font-bold text-white">PDF Generation Complete</span>
-                 <span className="text-xs text-white/60 mt-0.5">Your document is ready to download.</span>
-               </div>
-             </div>
-             <div className="flex items-center gap-2">
-               <a
-                 href="/api/project/download-pdf" 
-                 download="game.pdf"
-                 onClick={() => setPdfReadyToastOpen(false)}
-                 className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-xs font-bold transition-colors"
-               >
-                 Download
-               </a>
-               <button onClick={() => setPdfReadyToastOpen(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/40 hover:text-white">
-                  <X size={16} />
-               </button>
-             </div>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-full">
+                <CheckCircle size={24} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-bold text-white">PDF Generation Complete</span>
+                <span className="text-xs text-white/60 mt-0.5">Your document is ready to download.</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href="/api/project/download-pdf"
+                download="game.pdf"
+                onClick={() => setPdfReadyToastOpen(false)}
+                className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 rounded-lg text-xs font-bold transition-colors"
+              >
+                Download
+              </a>
+              <button onClick={() => setPdfReadyToastOpen(false)} className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/40 hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -3517,7 +3541,7 @@ export default function App() {
       )}>
         <div className={cn("p-6 pb-2", isSidebarCollapsed && "px-4")}>
           <div className="flex items-center justify-between mb-8 group relative">
-            <div 
+            <div
               className={cn("flex items-center gap-3 cursor-pointer", isSidebarCollapsed && "w-full justify-center")}
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
@@ -3530,7 +3554,7 @@ export default function App() {
                 )}
               </div>
               {!isSidebarCollapsed && (
-                <motion.h1 
+                <motion.h1
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="font-extrabold text-base tracking-tighter whitespace-nowrap text-white select-none"
@@ -3542,35 +3566,35 @@ export default function App() {
           </div>
 
           <nav className="space-y-1">
-            <SidebarItem 
-              icon={<Settings size={18} />} 
-              label="Dashboard" 
-              active={activeTab === 'dashboard'} 
-              onClick={() => setActiveTab('dashboard')} 
+            <SidebarItem
+              icon={<Settings size={18} />}
+              label="Dashboard"
+              active={activeTab === 'dashboard'}
+              onClick={() => setActiveTab('dashboard')}
               collapsed={isSidebarCollapsed}
             />
-            <SidebarItem 
-              icon={<Layers size={18} />} 
-              label="PDF Builder" 
-              active={activeTab === 'builder'} 
-              onClick={() => setActiveTab('builder')} 
+            <SidebarItem
+              icon={<Layers size={18} />}
+              label="PDF Builder"
+              active={activeTab === 'builder'}
+              onClick={() => setActiveTab('builder')}
               collapsed={isSidebarCollapsed}
             />
-            <SidebarItem 
-              icon={<ImageIcon size={18} />} 
-              label="Asset Library" 
-              active={activeTab === 'assets'} 
+            <SidebarItem
+              icon={<ImageIcon size={18} />}
+              label="Asset Library"
+              active={activeTab === 'assets'}
               onClick={() => {
                 setActiveTab('assets');
                 setAssetViewMode('library'); // Or project, depending on what they were viewing, but library is fine
-              }} 
+              }}
               collapsed={isSidebarCollapsed}
             />
-            <SidebarItem 
-              icon={<Terminal size={18} />} 
-              label="System Console" 
-              active={activeTab === 'console'} 
-              onClick={() => setActiveTab('console')} 
+            <SidebarItem
+              icon={<Terminal size={18} />}
+              label="System Console"
+              active={activeTab === 'console'}
+              onClick={() => setActiveTab('console')}
               collapsed={isSidebarCollapsed}
             />
           </nav>
@@ -3584,11 +3608,11 @@ export default function App() {
                 <div className="flex justify-between items-center">
                   <span className="text-white/40 text-[10px]">Python</span>
                   {pythonStatus === null ? (
-                     <span className="text-white/40 font-mono text-[10px]">Checking...</span>
+                    <span className="text-white/40 font-mono text-[10px]">Checking...</span>
                   ) : pythonStatus.found ? (
-                     <span className="text-emerald-400 font-mono text-[10px] flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> {pythonStatus.version} ({pythonStatus.type})</span>
+                    <span className="text-emerald-400 font-mono text-[10px] flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> {pythonStatus.version} ({pythonStatus.type})</span>
                   ) : (
-                     <span className="text-rose-400 font-mono text-[10px] flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Python Not Found</span>
+                    <span className="text-rose-400 font-mono text-[10px] flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Python Not Found</span>
                   )}
                 </div>
                 <div className="flex justify-between items-center">
@@ -3601,9 +3625,9 @@ export default function App() {
             <div className="space-y-4 px-2 pt-2 border-t border-white/5">
               <p className="text-[10px] font-semibold text-white/20 uppercase tracking-widest">Support the Creators</p>
               <div className="space-y-3">
-                <a 
-                  href="https://www.paypal.com/donate/?hosted_button_id=ZH2XCSLXERBW8" 
-                  target="_blank" 
+                <a
+                  href="https://www.paypal.com/donate/?hosted_button_id=ZH2XCSLXERBW8"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="w-full flex flex-col group transition-all text-left"
                 >
@@ -3613,9 +3637,9 @@ export default function App() {
                   </div>
                   <span className="text-[10px] text-white/20 mt-0.5">SCM Creator</span>
                 </a>
-                <a 
-                  href="https://www.paypal.com/donate/?business=YB3JBRNMXGUWG&no_recurring=0&item_name=Thanks+for+supporting+SCMUI%21&currency_code=USD" 
-                  target="_blank" 
+                <a
+                  href="https://www.paypal.com/donate/?business=YB3JBRNMXGUWG&no_recurring=0&item_name=Thanks+for+supporting+SCMUI%21&currency_code=USD"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="w-full flex flex-col group transition-all text-left"
                 >
@@ -3641,369 +3665,369 @@ export default function App() {
       {/* Main Content */}
       <ErrorBoundary>
         <main className="flex-1 flex flex-col relative overflow-hidden pb-16 md:pb-0">
-        {/* Header */}
-        <header className="h-16 border-b border-white/5 px-4 md:px-8 flex items-center justify-between bg-[#0f0f13]/50 backdrop-blur-sm z-10 font-mono">
-          <div className="flex items-center gap-4">
-            {loadedProject && (
-              <div className="hidden sm:flex items-center gap-2">
-                <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Project</span>
-                <ChevronRight size={12} className="text-white/10" />
-                <span className="text-sm font-semibold text-white/60">{loadedProject}</span>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-2 md:gap-4 ml-auto">
-            {pdfReady && (
-              <div className="flex items-center gap-1.5 md:gap-2">
-                {cmdOptions.output_images ? (
-                  <button 
-                    onClick={async () => {
-                      try {
-                        const response = await fetch('/api/download-output-images');
-                        if (!response.ok) {
-                          const errorData = await response.json().catch(() => ({}));
-                          addLog(`[Error] ${errorData.message || "Failed to zip images."}`);
-                          return;
-                        }
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.setAttribute('download', 'output_images.zip');
-                        document.body.appendChild(link);
-                        link.click(); 
-                        link.remove();
-                        window.URL.revokeObjectURL(url);
-                      } catch (err: any) {
-                        addLog(`[Error] Network error occurred during download: ${err.message}`);
-                      }
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                    title="Download Images"
-                  >
-                    <Download size={14} />
-                    <span className="hidden md:inline">Download Images</span>
-                  </button>
-                ) : (
-                  <a 
-                    href="/api/project/download-pdf" 
-                    download="game.pdf"
-                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
-                    title="Download PDF"
-                  >
-                    <Download size={14} />
-                    <span className="hidden md:inline">Download PDF</span>
-                  </a>
-                )}
-              </div>
-            )}
-            <button 
-              onClick={generatePDF}
-              className="flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:shadow-none"
-            >
-              <Play size={14} className="fill-current" />
-              <span className="hidden sm:inline">Generate</span>
-            </button>
-            <div className="h-4 w-px bg-white/10 mx-1 md:mx-2" />
-            <button onClick={() => setShowThemeSettings(true)} className="text-white/40 hover:text-white transition-colors p-1">
-              <Settings size={18} />
-            </button>
-          </div>
-        </header>
-
-        {/* Tab Content */}
-        <div id="main-scroll-container" className="flex-1 overflow-y-auto p-4 md:p-8 relative min-h-0">
-          <AnimatePresence mode="wait">
-            {activeTab === 'dashboard' && (
-              <div className="flex flex-col gap-6">
-                {status?.isElectron && status?.integrityOk === false && (
-                   <motion.div 
-                     initial={{ opacity: 0, y: -20 }}
-                     animate={{ opacity: 1, y: 0 }}
-                     className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6"
-                   >
-                     <div className="flex items-start gap-4 text-left">
-                       <div className="p-3 bg-rose-500/20 rounded-xl border border-rose-500/40">
-                         <ShieldCheck className="text-rose-400" size={24} />
-                       </div>
-                       <div>
-                         <h3 className="text-lg font-bold text-white mb-1">Local Scripts Missing</h3>
-                         <p className="text-sm text-white/60 max-w-xl">
-                           The core Python scripts aren't present in your local app data directory. This usually happens if initialization failed during first run.
-                         </p>
-                       </div>
-                     </div>
-                     <button
-                       onClick={handleRepair}
-                       className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold transition-all flex items-center gap-2 whitespace-nowrap"
-                     >
-                       <RefreshCw size={18} className={isProcessing ? "animate-spin" : ""} />
-                       {isProcessing ? 'Restoring...' : 'Repair Scripts'}
-                     </button>
-                   </motion.div>
-                )}
-
-                <motion.div 
-                  key="dashboard"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="max-w-4xl space-y-6"
-                >
-                  <section className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 relative overflow-hidden group">
-                    <h2 className="text-2xl font-bold mb-2">Silhouette Master Studio</h2>
-                    <p className="text-white/60 max-w-xl leading-relaxed mb-6">
-                      High-performance card generation engine. Build custom PDFs with precision blade offset calibration.
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <button 
-                        onClick={() => setActiveTab('builder')}
-                        className="px-6 py-2.5 bg-primary-600 hover:bg-primary-500 rounded-xl font-semibold transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20"
-                      >
-                        <Layers size={18} />
-                        Launch PDF Builder
-                      </button>
-                      <a 
-                        href="https://alan-cha.github.io/silhouette-card-maker/tutorial/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-6 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl font-semibold border border-white/10 transition-all flex items-center gap-2 text-white/80"
-                      >
-                        <Book size={18} />
-                        Tutorial Guide
-                      </a>
-                    </div>
-                  </section>
-                </motion.div>
+          {/* Header */}
+          <header className="h-16 border-b border-white/5 px-4 md:px-8 flex items-center justify-between bg-[#0f0f13]/50 backdrop-blur-sm z-10 font-mono">
+            <div className="flex items-center gap-4">
+              {loadedProject && (
+                <div className="hidden sm:flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-white/20 uppercase tracking-widest">Project</span>
+                  <ChevronRight size={12} className="text-white/10" />
+                  <span className="text-sm font-semibold text-white/60">{loadedProject}</span>
+                </div>
+              )}
             </div>
-            )}
-
-            {activeTab === 'builder' && (
-              <motion.div 
-                key="builder"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8"
+            <div className="flex items-center gap-2 md:gap-4 ml-auto">
+              {pdfReady && (
+                <div className="flex items-center gap-1.5 md:gap-2">
+                  {cmdOptions.output_images ? (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const response = await fetch('/api/download-output-images');
+                          if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            addLog(`[Error] ${errorData.message || "Failed to zip images."}`);
+                            return;
+                          }
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const link = document.createElement('a');
+                          link.href = url;
+                          link.setAttribute('download', 'output_images.zip');
+                          document.body.appendChild(link);
+                          link.click();
+                          link.remove();
+                          window.URL.revokeObjectURL(url);
+                        } catch (err: any) {
+                          addLog(`[Error] Network error occurred during download: ${err.message}`);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                      title="Download Images"
+                    >
+                      <Download size={14} />
+                      <span className="hidden md:inline">Download Images</span>
+                    </button>
+                  ) : (
+                    <a
+                      href="/api/project/download-pdf"
+                      download="game.pdf"
+                      className="flex items-center gap-2 px-3 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-semibold transition-all active:scale-95"
+                      title="Download PDF"
+                    >
+                      <Download size={14} />
+                      <span className="hidden md:inline">Download PDF</span>
+                    </a>
+                  )}
+                </div>
+              )}
+              <button
+                onClick={generatePDF}
+                className="flex items-center gap-2 px-3 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:shadow-none"
               >
-                <div className="col-span-1 lg:col-span-3 space-y-8">
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-start select-none">
-                      <div>
-                        <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-                          PDF Generator
-                        </h2>
-                        <p className="text-white/40 leading-relaxed mt-2">Configure the layout engine with precise CLI arguments. Every change here updates the underlying command string.</p>
+                <Play size={14} className="fill-current" />
+                <span className="hidden sm:inline">Generate</span>
+              </button>
+              <div className="h-4 w-px bg-white/10 mx-1 md:mx-2" />
+              <button onClick={() => setShowThemeSettings(true)} className="text-white/40 hover:text-white transition-colors p-1">
+                <Settings size={18} />
+              </button>
+            </div>
+          </header>
+
+          {/* Tab Content */}
+          <div id="main-scroll-container" className="flex-1 overflow-y-auto p-4 md:p-8 relative min-h-0">
+            <AnimatePresence mode="wait">
+              {activeTab === 'dashboard' && (
+                <div className="flex flex-col gap-6">
+                  {status?.isElectron && status?.integrityOk === false && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6"
+                    >
+                      <div className="flex items-start gap-4 text-left">
+                        <div className="p-3 bg-rose-500/20 rounded-xl border border-rose-500/40">
+                          <ShieldCheck className="text-rose-400" size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-white mb-1">Local Scripts Missing</h3>
+                          <p className="text-sm text-white/60 max-w-xl">
+                            The core Python scripts aren't present in your local app data directory. This usually happens if initialization failed during first run.
+                          </p>
+                        </div>
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); setIsPdfPresetsOpen(true); }} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 cursor-pointer" title="CLI Print Options Presets">
-                         <Settings2 size={16} /> Presets
+                      <button
+                        onClick={handleRepair}
+                        className="px-6 py-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold transition-all flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <RefreshCw size={18} className={isProcessing ? "animate-spin" : ""} />
+                        {isProcessing ? 'Restoring...' : 'Repair Scripts'}
                       </button>
-                    </div>
-                  </div>
+                    </motion.div>
+                  )}
 
-                  <div className="space-y-8 pt-4">
-                    <div className="flex flex-col gap-4">
-                      <div 
-                        className="flex items-center gap-2 cursor-pointer select-none group w-fit"
-                        onClick={() => setIsPdfGeneratorCollapsed(!isPdfGeneratorCollapsed)}
-                      >
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400 group-hover:text-primary-300 transition-colors">General Settings & Rendering</h4>
-                        <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isPdfGeneratorCollapsed && "rotate-180")} />
+                  <motion.div
+                    key="dashboard"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="max-w-4xl space-y-6"
+                  >
+                    <section className="p-8 rounded-2xl bg-[#0f0f13] border border-white/5 relative overflow-hidden group">
+                      <h2 className="text-2xl font-bold mb-2">Silhouette Master Studio</h2>
+                      <p className="text-white/60 max-w-xl leading-relaxed mb-6">
+                        High-performance card generation engine. Build custom PDFs with precision blade offset calibration.
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setActiveTab('builder')}
+                          className="px-6 py-2.5 bg-primary-600 hover:bg-primary-500 rounded-xl font-semibold transition-all flex items-center gap-2 shadow-lg shadow-primary-600/20"
+                        >
+                          <Layers size={18} />
+                          Launch PDF Builder
+                        </button>
+                        <a
+                          href="https://alan-cha.github.io/silhouette-card-maker/tutorial/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-6 py-2.5 bg-white/5 hover:bg-white/10 rounded-xl font-semibold border border-white/10 transition-all flex items-center gap-2 text-white/80"
+                        >
+                          <Book size={18} />
+                          Tutorial Guide
+                        </a>
                       </div>
-                      
-                      <AnimatePresence>
-                        {!isPdfGeneratorCollapsed && (
-                          <motion.div 
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden"
-                          >
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            {/* General Settings */}
-                        <div className="space-y-4">
-                      <SelectGroup 
-                        label="Specialty Layout" 
-                        value={cmdOptions.specialty || 'none'} 
-                        onChange={(v) => setCmdOptions(p => ({...p, specialty: v}))}
-                        options={['none', 'letter-commander', 'a4-commander']} 
-                      />
-                      {cmdOptions.specialty && cmdOptions.specialty !== 'none' && (
-                        <p className="text-[10px] text-primary-300 bg-primary-500/10 border border-primary-500/20 rounded-lg p-2 leading-relaxed">
-                          Specialty layout active: 100-card Commander micro-deck on a single sheet. Overrides Card Size, Paper Size, and Registration.
-                        </p>
-                      )}
-                      <SelectGroup 
-                        label="Card Size" 
-                        value={cmdOptions.card_size} 
-                        onChange={(v) => setCmdOptions(p => ({...p, card_size: v}))}
-                        options={['standard', 'poker', 'bridge', 'american_mini', 'bridge_square', 'business', 'catan', 'credit', 'domino', 'domino_square', 'euro_business', 'euro_mini', 'japanese', 'jumbo', 'micro', 'mini', 'standard_double', 'tarot', '70mm_square']} 
-                      />
-                      <SelectGroup 
-                        label="Paper Size" 
-                        value={cmdOptions.paper_size} 
-                        onChange={(v) => setCmdOptions(p => ({...p, paper_size: v}))}
-                        options={['letter', 'legal', 'tabloid', 'a4', 'a3', 'arch_b']} 
-                      />
-                      <SelectGroup 
-                        label="Registration" 
-                        value={cmdOptions.registration} 
-                        onChange={(v) => setCmdOptions(p => ({...p, registration: v}))}
-                        options={['3', '4']} 
-                      />
-                      <SelectGroup 
-                        label="Reg. Mark Orientation" 
-                        value={cmdOptions.registration_orientation || 'default'} 
-                        onChange={(v) => setCmdOptions(p => ({...p, registration_orientation: v}))}
-                        options={['default', 'portrait', 'landscape']} 
-                      />
-                    </div>
+                    </section>
+                  </motion.div>
+                </div>
+              )}
 
-                    {/* Rendering Settings */}
+              {activeTab === 'builder' && (
+                <motion.div
+                  key="builder"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8"
+                >
+                  <div className="col-span-1 lg:col-span-3 space-y-8">
                     <div className="space-y-4">
-                      <SelectGroup 
-                        label="Fit Strategy" 
-                        value={cmdOptions.fit} 
-                        onChange={(v) => setCmdOptions(p => ({...p, fit: v}))}
-                        options={['stretch', 'crop']} 
-                      />
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5 flex-1">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">PPI</label>
-                          <input 
-                            type="number" 
-                            value={cmdOptions.ppi} 
-                            onChange={(e) => setCmdOptions(p => ({...p, ppi: parseInt(e.target.value) || 1200}))}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono"
-                          />
+                      <div className="flex justify-between items-start select-none">
+                        <div>
+                          <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+                            PDF Generator
+                          </h2>
+                          <p className="text-white/40 leading-relaxed mt-2">Configure the layout engine with precise CLI arguments. Every change here updates the underlying command string.</p>
                         </div>
-                        <div className="space-y-1.5 flex-1">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Quality</label>
-                          <input 
-                            type="number" 
-                            value={cmdOptions.quality} 
-                            onChange={(e) => setCmdOptions(p => ({...p, quality: parseInt(e.target.value) || 100}))}
-                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono"
-                          />
-                        </div>
-                        </div>
-                        </div>
-                        </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
+                        <button onClick={(e) => { e.stopPropagation(); setIsPdfPresetsOpen(true); }} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 cursor-pointer" title="CLI Print Options Presets">
+                          <Settings2 size={16} /> Presets
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Advanced Options */}
-                    <div className="flex flex-col gap-4 md:col-span-2 pt-2">
-                      <div 
-                        className="flex items-center gap-2 cursor-pointer select-none group w-fit"
-                        onClick={() => setIsAdvancedCollapsed(!isAdvancedCollapsed)}
-                      >
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400 group-hover:text-primary-300 transition-colors">Advanced</h4>
-                        <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isAdvancedCollapsed && "rotate-180")} />
+                    <div className="space-y-8 pt-4">
+                      <div className="flex flex-col gap-4">
+                        <div
+                          className="flex items-center gap-2 cursor-pointer select-none group w-fit"
+                          onClick={() => setIsPdfGeneratorCollapsed(!isPdfGeneratorCollapsed)}
+                        >
+                          <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400 group-hover:text-primary-300 transition-colors">General Settings & Rendering</h4>
+                          <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isPdfGeneratorCollapsed && "rotate-180")} />
+                        </div>
+
+                        <AnimatePresence>
+                          {!isPdfGeneratorCollapsed && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                {/* General Settings */}
+                                <div className="space-y-4">
+                                  <SelectGroup
+                                    label="Specialty Layout"
+                                    value={cmdOptions.specialty || 'none'}
+                                    onChange={(v) => setCmdOptions(p => ({ ...p, specialty: v }))}
+                                    options={['none', 'letter-commander', 'a4-commander']}
+                                  />
+                                  {cmdOptions.specialty && cmdOptions.specialty !== 'none' && (
+                                    <p className="text-[10px] text-primary-300 bg-primary-500/10 border border-primary-500/20 rounded-lg p-2 leading-relaxed">
+                                      Specialty layout active: 100-card Commander micro-deck on a single sheet. Overrides Card Size, Paper Size, and Registration.
+                                    </p>
+                                  )}
+                                  <SelectGroup
+                                    label="Card Size"
+                                    value={cmdOptions.card_size}
+                                    onChange={(v) => setCmdOptions(p => ({ ...p, card_size: v }))}
+                                    options={['standard', 'poker', 'bridge', 'american_mini', 'bridge_square', 'business', 'catan', 'credit', 'domino', 'domino_square', 'euro_business', 'euro_mini', 'japanese', 'jumbo', 'micro', 'mini', 'standard_double', 'tarot', '70mm_square']}
+                                  />
+                                  <SelectGroup
+                                    label="Paper Size"
+                                    value={cmdOptions.paper_size}
+                                    onChange={(v) => setCmdOptions(p => ({ ...p, paper_size: v }))}
+                                    options={['letter', 'legal', 'tabloid', 'a4', 'a3', 'arch_b']}
+                                  />
+                                  <SelectGroup
+                                    label="Registration"
+                                    value={cmdOptions.registration}
+                                    onChange={(v) => setCmdOptions(p => ({ ...p, registration: v }))}
+                                    options={['3', '4']}
+                                  />
+                                  <SelectGroup
+                                    label="Reg. Mark Orientation"
+                                    value={cmdOptions.registration_orientation || 'default'}
+                                    onChange={(v) => setCmdOptions(p => ({ ...p, registration_orientation: v }))}
+                                    options={['default', 'portrait', 'landscape']}
+                                  />
+                                </div>
+
+                                {/* Rendering Settings */}
+                                <div className="space-y-4">
+                                  <SelectGroup
+                                    label="Fit Strategy"
+                                    value={cmdOptions.fit}
+                                    onChange={(v) => setCmdOptions(p => ({ ...p, fit: v }))}
+                                    options={['stretch', 'crop']}
+                                  />
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1.5 flex-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">PPI</label>
+                                      <input
+                                        type="number"
+                                        value={cmdOptions.ppi}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, ppi: parseInt(e.target.value) || 1200 }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono"
+                                      />
+                                    </div>
+                                    <div className="space-y-1.5 flex-1">
+                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Quality</label>
+                                      <input
+                                        type="number"
+                                        value={cmdOptions.quality}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, quality: parseInt(e.target.value) || 100 }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 transition-all font-mono"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
-                      
-                      <AnimatePresence>
-                        {!isAdvancedCollapsed && (
-                          <motion.div 
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden"
-                          >
-                             <div className="space-y-4 pb-2 px-1 text-left">
+
+                      {/* Advanced Options */}
+                      <div className="flex flex-col gap-4 md:col-span-2 pt-2">
+                        <div
+                          className="flex items-center gap-2 cursor-pointer select-none group w-fit"
+                          onClick={() => setIsAdvancedCollapsed(!isAdvancedCollapsed)}
+                        >
+                          <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400 group-hover:text-primary-300 transition-colors">Advanced</h4>
+                          <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isAdvancedCollapsed && "rotate-180")} />
+                        </div>
+
+                        <AnimatePresence>
+                          {!isAdvancedCollapsed && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-4 pb-2 px-1 text-left">
                                 {/* Bleed & Edge Overrides Group */}
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
                                   {/* Title removed per request */}
                                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Crop Fronts</label>
-                                      <input 
-                                        type="text" 
-                                        placeholder="e.g. 3mm" 
-                                        value={cmdOptions.crop} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, crop: e.target.value}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 3mm"
+                                        value={cmdOptions.crop}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, crop: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Crop Backs</label>
-                                      <input 
-                                        type="text" 
-                                        placeholder="e.g. 3mm" 
-                                        value={cmdOptions.crop_backs} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, crop_backs: e.target.value}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 3mm"
+                                        value={cmdOptions.crop_backs}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, crop_backs: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Outer Bleed Fronts</label>
-                                      <input 
-                                        type="text" 
-                                        placeholder="e.g. 2mm" 
-                                        value={cmdOptions.extend_bleed} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, extend_bleed: e.target.value}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 2mm"
+                                        value={cmdOptions.extend_bleed}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_bleed: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Outer Bleed Backs</label>
-                                      <input 
-                                        type="text" 
-                                        placeholder="e.g. 2mm" 
-                                        value={cmdOptions.extend_bleed_backs} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, extend_bleed_backs: e.target.value}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 2mm"
+                                        value={cmdOptions.extend_bleed_backs}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_bleed_backs: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Edges Fronts</label>
-                                      <input 
-                                        type="text" 
-                                        placeholder="e.g. 3mm" 
-                                        value={cmdOptions.extend_edges} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, extend_edges: e.target.value}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 3mm"
+                                        value={cmdOptions.extend_edges}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_edges: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Edges Backs</label>
-                                      <input 
-                                        type="text" 
-                                        placeholder="e.g. 3mm" 
-                                        value={cmdOptions.extend_edges_backs} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, extend_edges_backs: e.target.value}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 3mm"
+                                        value={cmdOptions.extend_edges_backs}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_edges_backs: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Corners Fronts</label>
-                                      <input 
-                                        type="number" 
-                                        placeholder="0" 
-                                        value={cmdOptions.extend_corners} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, extend_corners: parseInt(e.target.value) || 0}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="number"
+                                        placeholder="0"
+                                        value={cmdOptions.extend_corners}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_corners: parseInt(e.target.value) || 0 }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Corners Backs</label>
-                                      <input 
-                                        type="text" 
-                                        placeholder="e.g. 3.5mm" 
-                                        value={cmdOptions.extend_corners_backs} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, extend_corners_backs: e.target.value}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 3.5mm"
+                                        value={cmdOptions.extend_corners_backs}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_corners_backs: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Skip Card Number</label>
-                                      <input 
-                                        type="text" 
-                                        placeholder="e.g. 0, 4" 
-                                        value={cmdOptions.skip} 
-                                        onChange={(e) => setCmdOptions(p => ({...p, skip: e.target.value}))} 
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. 0, 4"
+                                        value={cmdOptions.skip}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, skip: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
                                   </div>
@@ -4012,1016 +4036,1114 @@ export default function App() {
                                 {/* Label Group */}
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-2">
                                   <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Page Margin Label</label>
-                                  <input 
-                                    type="text" 
-                                    placeholder="e.g. My Custom Proxy Set - Print 1" 
-                                    value={cmdOptions.label} 
-                                    onChange={(e) => setCmdOptions(p => ({...p, label: e.target.value}))} 
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono" 
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. My Custom Proxy Set - Print 1"
+                                    value={cmdOptions.label}
+                                    onChange={(e) => setCmdOptions(p => ({ ...p, label: e.target.value }))}
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                   />
                                 </div>
-                             </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+
+                    <div className={cn("bg-[#0f0f13] border border-white/5 rounded-2xl p-6 transition-all duration-300", isCalibrationCollapsed ? "space-y-0" : "space-y-6")}>
+                      <div
+                        className="flex justify-between items-start pb-2 cursor-pointer select-none"
+                        onClick={() => setIsCalibrationCollapsed(!isCalibrationCollapsed)}
+                      >
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-primary-400 flex items-center gap-2 text-xl tracking-tight">
+                            <Layers size={20} />
+                            Calibration
+                          </h4>
+                          <a
+                            href="https://alan-cha.github.io/silhouette-card-maker/docs/offset/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-white/40 hover:text-primary-400 transition-colors underline underline-offset-4 decoration-white/10 hover:decoration-primary-400 block pt-1"
+                          >
+                            Adjust for printer misalignment
+                          </a>
+                        </div>
+                        <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
+                          <button onClick={() => setIsOffsetPresetsOpen(true)} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 whitespace-nowrap">
+                            <Settings2 size={16} /> Presets
+                          </button>
+                          <button
+                            onClick={() => setIsCalibrationCollapsed(!isCalibrationCollapsed)}
+                            className="p-2 hover:bg-white/5 rounded-xl text-white/40 hover:text-white transition-all transform shrink-0"
+                          >
+                            <ChevronDown size={18} className={cn("transition-transform duration-300", !isCalibrationCollapsed && "rotate-180")} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {!isCalibrationCollapsed && (
+                        <div className="space-y-6 pt-4 border-t border-white/5">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {/* Step 1 */}
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">1</div>
+                                <h5 className="text-xs font-bold text-white/60">Initial Print</h5>
+                              </div>
+                              <div className="space-y-1.5 w-full">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Paper Size</label>
+                                <div className="relative group">
+                                  <select
+                                    value={calibration.sheet}
+                                    onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
+                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 h-[34px] text-xs focus:outline-none focus:border-primary-500 transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/10"
+                                  >
+                                    {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#1a1a20]">{opt.label}</option>)}
+                                  </select>
+                                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-primary-400 transition-colors" />
+                                </div>
+                              </div>
+                              <div className="space-y-1.5 w-full">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
+                                <button
+                                  onClick={() => {
+                                    addLog(`[System] Opening calibration sheet: ${calibration.sheet}`);
+                                    window.open(`/api/project/export?file=calibration/${calibration.sheet}`, '_blank');
+                                  }}
+                                  className="w-full h-[34px] py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
+                                >
+                                  Print Calibration Sheet
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Step 2 */}
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">2</div>
+                                <h5 className="text-xs font-bold text-white/60">Adjust Offsets</h5>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5 w-full">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">X (MM)</label>
+                                  <input
+                                    type="number"
+                                    value={calibration.x}
+                                    onChange={(e) => setCalibration(p => ({ ...p, x: e.target.value }))}
+                                    className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner"
+                                  />
+                                </div>
+                                <div className="space-y-1.5 w-full">
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Y (MM)</label>
+                                  <input
+                                    type="number"
+                                    value={calibration.y}
+                                    onChange={(e) => setCalibration(p => ({ ...p, y: e.target.value }))}
+                                    className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5 w-full">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Angle (Deg)</label>
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={calibration.angle}
+                                  onChange={(e) => setCalibration(p => ({ ...p, angle: e.target.value }))}
+                                  className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Step 3 */}
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">3</div>
+                                <h5 className="text-xs font-bold text-white/60">Verify & Save</h5>
+                              </div>
+
+                              <div className="space-y-1.5 w-full">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
+                                <button
+                                  onClick={() => runCommand('offset_pdf.py', [
+                                    '--x_offset', calibration.x.toString(),
+                                    '--y_offset', calibration.y.toString(),
+                                    '--angle', calibration.angle.toString(),
+                                    '--save'
+                                  ], {
+                                    startMessage: 'Saving offset...',
+                                    calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
+                                  })}
+                                  className="w-full h-[34px] flex items-center justify-center bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all text-emerald-400"
+                                >
+                                  Save Offset
+                                </button>
+                              </div>
+
+                              <div className="space-y-1.5 w-full">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
+                                <button
+                                  onClick={() => runCommand('offset_pdf.py', [
+                                    '--pdf_path', `calibration/${calibration.sheet}`,
+                                    '--x_offset', calibration.x.toString(),
+                                    '--y_offset', calibration.y.toString(),
+                                    '--angle', calibration.angle.toString()
+                                  ], {
+                                    startMessage: 'Generating offset sheet...',
+                                    calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
+                                  })}
+                                  className="w-full h-[34px] flex items-center justify-center bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-xs font-bold transition-all text-primary-400"
+                                >
+                                  Generate Offset Sheet
+                                </button>
+                              </div>
+
+                              <div className="space-y-1.5 w-full">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
+                                <button
+                                  onClick={() => {
+                                    addLog(`[System] Opening verification PDF: ${calibration.sheet.replace('.pdf', '_offset.pdf')}`);
+                                    window.open(`/api/project/export?file=calibration/${calibration.sheet.replace('.pdf', '_offset.pdf')}`, '_blank');
+                                  }}
+                                  className="w-full h-[34px] flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
+                                >
+                                  Print Offset Sheet
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="col-span-1 lg:col-span-2 space-y-6">
+                    <div className="p-6 rounded-2xl bg-[#0f0f13] border border-white/5 sticky top-8">
+                      <div
+                        className="flex items-center justify-between mb-6 cursor-pointer group"
+                        onClick={() => setIsLiveCommandCollapsed(!isLiveCommandCollapsed)}
+                      >
+                        <h3 className="font-bold flex items-center gap-2 text-primary-400 group-hover:text-primary-300 transition-colors">
+                          <Terminal size={18} />
+                          Live Command Build
+                        </h3>
+                        <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isLiveCommandCollapsed && "rotate-180")} />
+                      </div>
+
+                      <AnimatePresence>
+                        {!isLiveCommandCollapsed && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden mb-6"
+                          >
+                            <div className="p-4 bg-primary-950/20 rounded-xl font-mono text-[11px] text-primary-300 leading-relaxed border border-primary-500/10 mb-4">
+                              python create_pdf.py <br />
+                              --card_size {cmdOptions.card_size} <br />
+                              --paper_size {cmdOptions.paper_size} <br />
+                              --registration {cmdOptions.registration} <br />
+                              --fit {cmdOptions.fit} <br />
+                              --ppi {cmdOptions.ppi} <br />
+                              --quality {cmdOptions.quality} <br />
+                              {cmdOptions.load_offset && "--load_offset"} <br />
+                              {cmdOptions.show_outline && "--show_outline"} <br />
+                              {cmdOptions.crop && `--crop ${cmdOptions.crop}`} <br />
+                              {cmdOptions.crop_backs && `--crop_backs ${cmdOptions.crop_backs}`} <br />
+                              {cmdOptions.label && `--label "${cmdOptions.label}"`} <br />
+                              {cmdOptions.skip && `--skip ${cmdOptions.skip}`} <br />
+                              {cmdOptions.extend_corners > 0 && `--extend_corners ${cmdOptions.extend_corners}`} <br />
+                              {cmdOptions.output_images && "--output_images"}
+                            </div>
+
+                            <div className="relative">
+                              <div className="flex justify-between items-center mb-2">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-primary-400/80">Raw Command</label>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const rawCmd = `python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`;
+                                    navigator.clipboard.writeText(rawCmd);
+                                    setCommandCopied(true);
+                                    setTimeout(() => setCommandCopied(false), 2000);
+                                  }}
+                                  className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider text-primary-400/60 hover:text-primary-300 transition-colors"
+                                >
+                                  {commandCopied ? <CheckCircle size={12} className="text-green-400" /> : <Copy size={12} />}
+                                  {commandCopied ? <span className="text-green-400">Copied!</span> : <span>Copy</span>}
+                                </button>
+                              </div>
+                              <textarea
+                                readOnly
+                                value={`python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`}
+                                className="w-full bg-primary-950/10 border border-primary-500/20 rounded-xl px-3 py-2 text-[10px] text-primary-300/80 font-mono resize-none focus:outline-none focus:border-primary-500/50 transition-colors selection:bg-primary-500/30"
+                                rows={4}
+                                onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                              />
+                            </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
-                    </div>
-                  </div>
 
-                  <div className={cn("bg-[#0f0f13] border border-white/5 rounded-2xl p-6 transition-all duration-300", isCalibrationCollapsed ? "space-y-0" : "space-y-6")}>
-                    <div 
-                      className="flex justify-between items-start pb-2 cursor-pointer select-none"
-                      onClick={() => setIsCalibrationCollapsed(!isCalibrationCollapsed)}
-                    >
-                      <div className="space-y-1">
-                        <h4 className="font-bold text-primary-400 flex items-center gap-2 text-xl tracking-tight">
-                          <Layers size={20} />
-                          Calibration
-                        </h4>
-                        <a 
-                          href="https://alan-cha.github.io/silhouette-card-maker/docs/offset/" 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-xs text-white/40 hover:text-primary-400 transition-colors underline underline-offset-4 decoration-white/10 hover:decoration-primary-400 block pt-1"
-                        >
-                          Adjust for printer misalignment
-                        </a>
+                      <div className="space-y-4 mb-8">
+                        <ToggleItem label="Apply Saved Offsets" checked={cmdOptions.load_offset} onChange={(v) => setCmdOptions(p => ({ ...p, load_offset: v }))} />
+                        <ToggleItem label="Show Cut Outline" checked={cmdOptions.show_outline} onChange={(v) => setCmdOptions(p => ({ ...p, show_outline: v }))} />
+                        <ToggleItem label="Borderless" checked={cmdOptions.borderless} onChange={(v) => setCmdOptions(p => ({ ...p, borderless: v }))} />
+                        <ToggleItem label="Only Fronts" checked={cmdOptions.only_fronts} onChange={(v) => setCmdOptions(p => ({ ...p, only_fronts: v }))} />
+                        <ToggleItem label="Output Images" checked={cmdOptions.output_images} onChange={(v) => setCmdOptions(p => ({ ...p, output_images: v }))} />
                       </div>
-                      <div className="flex items-center gap-4" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => setIsOffsetPresetsOpen(true)} className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 whitespace-nowrap">
-                           <Settings2 size={16} /> Presets
-                        </button>
-                        <button 
-                          onClick={() => setIsCalibrationCollapsed(!isCalibrationCollapsed)}
-                          className="p-2 hover:bg-white/5 rounded-xl text-white/40 hover:text-white transition-all transform shrink-0"
-                        >
-                          <ChevronDown size={18} className={cn("transition-transform duration-300", !isCalibrationCollapsed && "rotate-180")} />
-                        </button>
-                      </div>
-                    </div>
 
-                    {!isCalibrationCollapsed && (
-                      <div className="space-y-6 pt-4 border-t border-white/5">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Step 1 */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">1</div>
-                            <h5 className="text-xs font-bold text-white/60">Initial Print</h5>
-                          </div>
-                          <div className="space-y-1.5 w-full">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">Paper Size</label>
-                            <div className="relative group">
-                              <select 
-                                value={calibration.sheet}
-                                onChange={(e) => setCalibration(p => ({ ...p, sheet: e.target.value }))}
-                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 h-[34px] text-xs focus:outline-none focus:border-primary-500 transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/10"
-                              >
-                                {CALIBRATION_SHEETS.map((opt, i) => <option key={`${opt.value}-${i}`} value={opt.value} className="bg-[#1a1a20]">{opt.label}</option>)}
-                              </select>
-                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-primary-400 transition-colors" />
-                            </div>
-                          </div>
-                          <div className="space-y-1.5 w-full">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
-                            <button 
-                              onClick={() => {
-                                addLog(`[System] Opening calibration sheet: ${calibration.sheet}`);
-                                window.open(`/api/project/export?file=calibration/${calibration.sheet}`, '_blank');
-                              }}
-                              className="w-full h-[34px] py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
-                            >
-                              Print Calibration Sheet
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Step 2 */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">2</div>
-                            <h5 className="text-xs font-bold text-white/60">Adjust Offsets</h5>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1.5 w-full">
-                              <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">X (MM)</label>
-                              <input 
-                                type="number" 
-                                value={calibration.x} 
-                                onChange={(e) => setCalibration(p => ({ ...p, x: e.target.value }))}
-                                className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
-                              />
-                            </div>
-                            <div className="space-y-1.5 w-full">
-                              <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Y (MM)</label>
-                              <input 
-                                type="number" 
-                                value={calibration.y} 
-                                onChange={(e) => setCalibration(p => ({ ...p, y: e.target.value }))}
-                                className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-1.5 w-full">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/20 px-1">Angle (Deg)</label>
-                            <input 
-                              type="number" 
-                              step="0.1"
-                              value={calibration.angle} 
-                              onChange={(e) => setCalibration(p => ({ ...p, angle: e.target.value }))}
-                              className="w-full h-[34px] bg-white/[0.03] border border-white/5 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500/50 focus:bg-white/[0.05] transition-all text-white/80 font-mono shadow-inner" 
-                            />
-                          </div>
-                        </div>
-
-                        {/* Step 3 */}
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-primary-600/20 border border-primary-500/30 flex items-center justify-center text-[10px] font-bold text-primary-300">3</div>
-                            <h5 className="text-xs font-bold text-white/60">Verify & Save</h5>
-                          </div>
-
-                           <div className="space-y-1.5 w-full">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
-                            <button 
-                               onClick={() => runCommand('offset_pdf.py', [
-                                 '--x_offset', calibration.x.toString(),
-                                 '--y_offset', calibration.y.toString(),
-                                 '--angle', calibration.angle.toString(),
-                                 '--save'
-                               ], { 
-                                 startMessage: 'Saving offset...',
-                                 calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
-                               })}
-                               className="w-full h-[34px] flex items-center justify-center bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all text-emerald-400"
-                            >
-                               Save Offset
-                            </button>
-                          </div>
-
-                          <div className="space-y-1.5 w-full">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
-                            <button 
-                              onClick={() => runCommand('offset_pdf.py', [
-                                '--pdf_path', `calibration/${calibration.sheet}`,
-                                '--x_offset', calibration.x.toString(),
-                                '--y_offset', calibration.y.toString(),
-                                '--angle', calibration.angle.toString()
-                              ], { 
-                                startMessage: 'Generating offset sheet...',
-                                calibration: { x: calibration.x, y: calibration.y, angle: calibration.angle }
-                              })}
-                              className="w-full h-[34px] flex items-center justify-center bg-primary-600/10 hover:bg-primary-600/20 border border-primary-500/20 rounded-xl text-xs font-bold transition-all text-primary-400"
-                            >
-                              Generate Offset Sheet
-                            </button>
-                          </div>
-
-                          <div className="space-y-1.5 w-full">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-transparent px-1 select-none pointer-events-none hidden md:block">Spacer</label>
-                            <button 
-                               onClick={() => {
-                                 addLog(`[System] Opening verification PDF: ${calibration.sheet.replace('.pdf', '_offset.pdf')}`);
-                                 window.open(`/api/project/export?file=calibration/${calibration.sheet.replace('.pdf', '_offset.pdf')}`, '_blank');
-                               }}
-                               className="w-full h-[34px] flex items-center justify-center bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-white/80"
-                            >
-                              Print Offset Sheet
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="col-span-1 lg:col-span-2 space-y-6">
-                  <div className="p-6 rounded-2xl bg-[#0f0f13] border border-white/5 sticky top-8">
-                    <div 
-                      className="flex items-center justify-between mb-6 cursor-pointer group"
-                      onClick={() => setIsLiveCommandCollapsed(!isLiveCommandCollapsed)}
-                    >
-                      <h3 className="font-bold flex items-center gap-2 text-primary-400 group-hover:text-primary-300 transition-colors">
-                        <Terminal size={18} />
-                        Live Command Build
-                      </h3>
-                      <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isLiveCommandCollapsed && "rotate-180")} />
-                    </div>
-
-                    <AnimatePresence>
-                      {!isLiveCommandCollapsed && (
-                        <motion.div 
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="overflow-hidden mb-6"
-                        >
-                          <div className="p-4 bg-primary-950/20 rounded-xl font-mono text-[11px] text-primary-300 leading-relaxed border border-primary-500/10 mb-4">
-                             python create_pdf.py <br />
-                             --card_size {cmdOptions.card_size} <br />
-                             --paper_size {cmdOptions.paper_size} <br />
-                             --registration {cmdOptions.registration} <br />
-                             --fit {cmdOptions.fit} <br />
-                             --ppi {cmdOptions.ppi} <br />
-                             --quality {cmdOptions.quality} <br />
-                             {cmdOptions.load_offset && "--load_offset"} <br />
-                             {cmdOptions.show_outline && "--show_outline"} <br />
-                             {cmdOptions.crop && `--crop ${cmdOptions.crop}`} <br />
-                             {cmdOptions.crop_backs && `--crop_backs ${cmdOptions.crop_backs}`} <br />
-                             {cmdOptions.label && `--label "${cmdOptions.label}"`} <br />
-                             {cmdOptions.skip && `--skip ${cmdOptions.skip}`} <br />
-                             {cmdOptions.extend_corners > 0 && `--extend_corners ${cmdOptions.extend_corners}`} <br />
-                             {cmdOptions.output_images && "--output_images"}
-                          </div>
-
-                          <div className="relative">
-                             <div className="flex justify-between items-center mb-2">
-                               <label className="text-[10px] font-bold uppercase tracking-widest text-primary-400/80">Raw Command</label>
-                               <button 
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   const rawCmd = `python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`;
-                                   navigator.clipboard.writeText(rawCmd);
-                                   setCommandCopied(true);
-                                   setTimeout(() => setCommandCopied(false), 2000);
-                                 }}
-                                 className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider text-primary-400/60 hover:text-primary-300 transition-colors"
-                               >
-                                 {commandCopied ? <CheckCircle size={12} className="text-green-400" /> : <Copy size={12} />}
-                                 {commandCopied ? <span className="text-green-400">Copied!</span> : <span>Copy</span>}
-                               </button>
-                             </div>
-                             <textarea 
-                               readOnly
-                               value={`python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`}
-                               className="w-full bg-primary-950/10 border border-primary-500/20 rounded-xl px-3 py-2 text-[10px] text-primary-300/80 font-mono resize-none focus:outline-none focus:border-primary-500/50 transition-colors selection:bg-primary-500/30"
-                               rows={4}
-                               onClick={(e) => (e.target as HTMLTextAreaElement).select()}
-                             />
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-
-                    <div className="space-y-4 mb-8">
-                      <ToggleItem label="Apply Saved Offsets" checked={cmdOptions.load_offset} onChange={(v) => setCmdOptions(p => ({...p, load_offset: v}))} />
-                      <ToggleItem label="Show Cut Outline" checked={cmdOptions.show_outline} onChange={(v) => setCmdOptions(p => ({...p, show_outline: v}))} />
-                      <ToggleItem label="Borderless" checked={cmdOptions.borderless} onChange={(v) => setCmdOptions(p => ({...p, borderless: v}))} />
-                      <ToggleItem label="Only Fronts" checked={cmdOptions.only_fronts} onChange={(v) => setCmdOptions(p => ({...p, only_fronts: v}))} />
-                      <ToggleItem label="Output Images" checked={cmdOptions.output_images} onChange={(v) => setCmdOptions(p => ({...p, output_images: v}))} />
-                    </div>
-
-                    {pdfReady && (
-                      <div className="flex gap-2 mb-4">
-                        {cmdOptions.output_images ? (
-                          <button 
-                            onClick={async () => {
-                              try {
-                                const response = await fetch('/api/download-output-images');
-                                if (!response.ok) {
-                                  const errorData = await response.json().catch(() => ({}));
-                                  addLog(`[Error] ${errorData.message || "Failed to zip images."}`);
-                                  return;
-                                }
-                                const blob = await response.blob();
-                                const url = window.URL.createObjectURL(blob);
-                                const link = document.createElement('a');
-                                link.href = url;
-                                link.setAttribute('download', 'output_images.zip');
-                                document.body.appendChild(link);
-                                link.click(); 
-                                link.remove();
-                                window.URL.revokeObjectURL(url);
-                              } catch (err: any) {
-                                addLog(`[Error] Network error occurred during download: ${err.message}`);
-                              }
-                            }}
-                            className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
-                          >
-                            <Download size={20} />
-                            Download Images
-                          </button>
-                        ) : (
-                          <a 
-                            href="/api/project/download-pdf" 
-                            download="game.pdf"
-                            className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
-                          >
-                            <Download size={20} />
-                            Download PDF
-                          </a>
-                        )}
-                      </div>
-                    )}
-                    <button 
-                      onClick={generatePDF}
-                      className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-md transition-all active:scale-95"
-                    >
-                      <Play size={20} fill="currentColor" />
-                      Generate
-                    </button>
-
-                     <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
-                      <h4 className="text-sm font-bold text-white/80 mb-2">Cutting Templates</h4>
-                      <p className="text-xs text-white/40 pb-2">Templates matching your selected paper and card size.</p>
-                      <div className="flex gap-2">
-                         <button 
-                           onClick={() => handleDownloadTemplate('studio3')}
-                           className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white cursor-pointer"
-                         >
-                           Download .studio3
-                         </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {activeTab === 'console' && (
-              <motion.div 
-                key="console"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="h-full flex flex-col"
-              >
-                <div className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-6 font-mono text-sm overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
-                  {logs.map((log, i) => (
-                    <div key={`log-${i}`} className={cn(
-                      "mb-1 break-all",
-                      log.startsWith('[Error]') ? "text-rose-400" : 
-                      log.startsWith('[System]') ? "text-primary-400" :
-                      log.startsWith('$') ? "text-emerald-400" : "text-white/60"
-                    )}>
-                      {log}
-                    </div>
-                  ))}
-                  <div ref={consoleEndRef} />
-                </div>
-                <div className="mt-4 flex gap-4">
-                  <input 
-                    type="text" 
-                    placeholder="Enter command (e.g. build --fast)..."
-                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary-500/50 transition-all font-mono"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = e.currentTarget.value;
-                        if (val) {
-                          runCommand(val.split(' ')[0], val.split(' ').slice(1), { startMessage: `Running ${val.split(' ')[0]}...` });
-                          e.currentTarget.value = '';
-                        }
-                      }
-                    }}
-                  />
-                  <button onClick={() => setLogs([])} className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-mono text-xs text-white/40 hover:text-white transition-all uppercase tracking-widest">
-                    Clear Logs
-                  </button>
-                </div>
-              </motion.div>
-            )}
-
-
-
-            {activeTab === 'assets' && (
-              <motion.div 
-                key="assets"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="space-y-8"
-              >
-                <div className="flex flex-col gap-6">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="space-y-1">
-                      <h2 className="text-3xl font-bold tracking-tight">
-                        {assetViewMode === 'project' ? 'Project Workspace' : assetViewMode === 'library' ? 'Library' : 'Plugin Staging'}
-                      </h2>
-                      <p className="text-white/40">
-                        {assetViewMode === 'project' 
-                          ? 'Managing card assets currently staged for PDF generation.' 
-                          : assetViewMode === 'library'
-                          ? 'Source gallery of your card templates.'
-                          : 'Manage and sync cards from community database integrations.'}
-                      </p>
-                    </div>
-                    {assetViewMode === 'project' && (
-                      <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
-                        <button 
-                          onClick={() => setIsProjectPresetsOpen(true)}
-                          className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 text-white/70"
-                          title="Project Presets"
-                        >
-                          <Settings2 size={14} /> Presets
-                        </button>
-                        <input 
-                           type="file" 
-                           accept=".json" 
-                           className="hidden" 
-                           ref={importProjectRef} 
-                           onChange={handleImportProject} 
-                        />
-                        {(status?.assets?.fronts?.length > 0 || status?.assets?.backs?.length > 0) && (
-                          <button 
-                            onClick={clearProject}
-                            className="flex items-center gap-2 px-3 py-2 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 rounded-lg text-xs font-bold transition-all text-rose-500 active:scale-95"
-                            title="Clear Project Assets"
-                          >
-                            <Trash2 size={14} />
-                            Clear
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Primary Tab Switcher */}
-                  <div className="flex justify-center md:justify-end w-full">
-                    <div className="flex bg-[#07070a] p-1 border border-white/5 rounded-xl gap-1 w-full md:w-[380px] shadow-inner">
-                      <button 
-                        onClick={() => {
-                          setActiveTab('assets');
-                          setAssetViewMode('project');
-                          setSelectedAssets(new Set());
-                        }}
-                        className={cn(
-                          "flex-1 py-2 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
-                          assetViewMode === 'project' 
-                            ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" 
-                            : "text-white/40 hover:text-white hover:bg-white/5"
-                        )}
-                      >
-                        Workspace
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setActiveTab('assets');
-                          setAssetViewMode('library');
-                          setSelectedAssets(new Set());
-                        }}
-                        className={cn(
-                          "flex-1 py-1 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
-                          assetViewMode === 'library' 
-                            ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" 
-                            : "text-white/40 hover:text-white hover:bg-white/5"
-                        )}
-                      >
-                        Library
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setActiveTab('assets');
-                          setAssetViewMode('plugins');
-                          setSelectedAssets(new Set());
-                          if (assetFilter === 'back') setAssetFilter('all');
-                        }}
-                        className={cn(
-                          "flex-1 py-2 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
-                          assetViewMode === 'plugins' 
-                            ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" 
-                            : "text-white/40 hover:text-white hover:bg-white/5"
-                        )}
-                      >
-                        Plugins
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Consistent Toolbar */}
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-[#0f0f13] border border-white/5 rounded-2xl shadow-xl shadow-black/20">
-                    
-                    {/* Search bar */}
-                    <div className="relative w-full md:max-w-md flex-1">
-                      <Terminal size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
-                      <input 
-                        type="text" 
-                        placeholder="Search assets..."
-                        value={assetSearch}
-                        onChange={(e) => setAssetSearch(e.target.value)}
-                        className="w-full bg-black/40 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary-500/50 transition-all font-mono placeholder:text-white/10"
-                      />
-                    </div>
-
-                    {/* Right side controls: Action buttons, Refresh, Filters, Slider */}
-                    <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 w-full md:w-auto">
-                      <div className="flex flex-wrap items-center justify-center gap-2">
-                        {assetViewMode === 'plugins' && selectedAssets.size > 0 && (
-                          <>
-                            <button 
+                      {pdfReady && (
+                        <div className="flex gap-2 mb-4">
+                          {cmdOptions.output_images ? (
+                            <button
                               onClick={async () => {
-                                await performMoveOrCopy(Array.from(selectedAssets), 'project', 'plugins');
+                                try {
+                                  const response = await fetch('/api/download-output-images');
+                                  if (!response.ok) {
+                                    const errorData = await response.json().catch(() => ({}));
+                                    addLog(`[Error] ${errorData.message || "Failed to zip images."}`);
+                                    return;
+                                  }
+                                  const blob = await response.blob();
+                                  const url = window.URL.createObjectURL(blob);
+                                  const link = document.createElement('a');
+                                  link.href = url;
+                                  link.setAttribute('download', 'output_images.zip');
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  link.remove();
+                                  window.URL.revokeObjectURL(url);
+                                } catch (err: any) {
+                                  addLog(`[Error] Network error occurred during download: ${err.message}`);
+                                }
+                              }}
+                              className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                            >
+                              <Download size={20} />
+                              Download Images
+                            </button>
+                          ) : (
+                            <a
+                              href="/api/project/download-pdf"
+                              download="game.pdf"
+                              className="flex-1 py-4 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all active:scale-95 cursor-pointer"
+                            >
+                              <Download size={20} />
+                              Download PDF
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      <button
+                        onClick={generatePDF}
+                        className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-2xl font-bold flex items-center justify-center gap-3 shadow-md transition-all active:scale-95"
+                      >
+                        <Play size={20} fill="currentColor" />
+                        Generate
+                      </button>
+
+                      <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                        <h4 className="text-sm font-bold text-white/80 mb-2">Cutting Templates</h4>
+                        <p className="text-xs text-white/40 pb-2">Templates matching your selected paper and card size.</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleDownloadTemplate('studio3')}
+                            className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white cursor-pointer"
+                          >
+                            Download .studio3
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {activeTab === 'console' && (
+                <motion.div
+                  key="console"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="h-full flex flex-col"
+                >
+                  <div className="flex-1 bg-black/40 rounded-2xl border border-white/5 p-6 font-mono text-sm overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
+                    {logs.map((log, i) => (
+                      <div key={`log-${i}`} className={cn(
+                        "mb-1 break-all",
+                        log.startsWith('[Error]') ? "text-rose-400" :
+                          log.startsWith('[System]') ? "text-primary-400" :
+                            log.startsWith('$') ? "text-emerald-400" : "text-white/60"
+                      )}>
+                        {log}
+                      </div>
+                    ))}
+                    <div ref={consoleEndRef} />
+                  </div>
+                  <div className="mt-4 flex gap-4">
+                    <input
+                      type="text"
+                      placeholder="Enter command (e.g. build --fast)..."
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary-500/50 transition-all font-mono"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = e.currentTarget.value;
+                          if (val) {
+                            runCommand(val.split(' ')[0], val.split(' ').slice(1), { startMessage: `Running ${val.split(' ')[0]}...` });
+                            e.currentTarget.value = '';
+                          }
+                        }
+                      }}
+                    />
+                    <button onClick={() => setLogs([])} className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-mono text-xs text-white/40 hover:text-white transition-all uppercase tracking-widest">
+                      Clear Logs
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+
+
+              {activeTab === 'assets' && (
+                <motion.div
+                  key="assets"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="space-y-8"
+                >
+                  <div className="flex flex-col gap-6">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <h2 className="text-3xl font-bold tracking-tight">
+                          {assetViewMode === 'project' ? 'Project Workspace' : assetViewMode === 'library' ? 'Library' : 'Plugin Staging'}
+                        </h2>
+                        <p className="text-white/40">
+                          {assetViewMode === 'project'
+                            ? 'Managing card assets currently staged for PDF generation.'
+                            : assetViewMode === 'library'
+                              ? 'Source gallery of your card templates.'
+                              : 'Manage and sync cards from community database integrations.'}
+                        </p>
+                      </div>
+                      {assetViewMode === 'project' && (
+                        <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+                          <button
+                            onClick={() => setIsProjectPresetsOpen(true)}
+                            className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 text-white/70"
+                            title="Project Presets"
+                          >
+                            <Settings2 size={14} /> Presets
+                          </button>
+                          <input
+                            type="file"
+                            accept=".json"
+                            className="hidden"
+                            ref={importProjectRef}
+                            onChange={handleImportProject}
+                          />
+                          {(status?.assets?.fronts?.length > 0 || status?.assets?.backs?.length > 0) && (
+                            <button
+                              onClick={clearProject}
+                              className="flex items-center gap-2 px-3 py-2 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 rounded-lg text-xs font-bold transition-all text-rose-500 active:scale-95"
+                              title="Clear Project Assets"
+                            >
+                              <Trash2 size={14} />
+                              Clear
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Primary Tab Switcher */}
+                    <div className="flex justify-center md:justify-end w-full">
+                      <div className="flex bg-[#07070a] p-1 border border-white/5 rounded-xl gap-1 w-full md:w-[380px] shadow-inner">
+                        <button
+                          onClick={() => {
+                            setActiveTab('assets');
+                            setAssetViewMode('project');
+                            setSelectedAssets(new Set());
+                          }}
+                          className={cn(
+                            "flex-1 py-2 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
+                            assetViewMode === 'project'
+                              ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20"
+                              : "text-white/40 hover:text-white hover:bg-white/5"
+                          )}
+                        >
+                          Workspace
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveTab('assets');
+                            setAssetViewMode('library');
+                            setSelectedAssets(new Set());
+                          }}
+                          className={cn(
+                            "flex-1 py-1 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
+                            assetViewMode === 'library'
+                              ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20"
+                              : "text-white/40 hover:text-white hover:bg-white/5"
+                          )}
+                        >
+                          Library
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveTab('assets');
+                            setAssetViewMode('plugins');
+                            setSelectedAssets(new Set());
+                            if (assetFilter === 'back') setAssetFilter('all');
+                          }}
+                          className={cn(
+                            "flex-1 py-2 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
+                            assetViewMode === 'plugins'
+                              ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20"
+                              : "text-white/40 hover:text-white hover:bg-white/5"
+                          )}
+                        >
+                          Plugins
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Consistent Toolbar */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-[#0f0f13] border border-white/5 rounded-2xl shadow-xl shadow-black/20">
+
+                      {/* Search bar */}
+                      <div className="relative w-full md:max-w-md flex-1">
+                        <Terminal size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20" />
+                        <input
+                          type="text"
+                          placeholder="Search assets..."
+                          value={assetSearch}
+                          onChange={(e) => setAssetSearch(e.target.value)}
+                          className="w-full bg-black/40 border border-white/5 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-primary-500/50 transition-all font-mono placeholder:text-white/10"
+                        />
+                      </div>
+
+                      {/* Right side controls: Action buttons, Refresh, Filters, Slider */}
+                      <div className="flex flex-wrap items-center justify-start md:justify-end gap-3 w-full md:w-auto">
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          {assetViewMode === 'plugins' && selectedAssets.size > 0 && (
+                            <>
+                              <button
+                                onClick={async () => {
+                                  await performMoveOrCopy(Array.from(selectedAssets), 'project', 'plugins');
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/40 text-primary-400 border border-primary-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
+                              >
+                                <FolderOpen size={14} />
+                                Add to Workspace
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  await performMoveOrCopy(Array.from(selectedAssets), 'library', 'plugins');
+                                }}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
+                              >
+                                <FolderOpen size={14} />
+                                Add to Library
+                              </button>
+                            </>
+                          )}
+
+                          {assetViewMode === 'library' && selectedAssets.size > 0 && (
+                            <button
+                              onClick={async () => {
+                                await performMoveOrCopy(Array.from(selectedAssets), 'project', 'library');
                               }}
                               className="flex items-center gap-2 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/40 text-primary-400 border border-primary-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
                             >
                               <FolderOpen size={14} />
                               Add to Workspace
                             </button>
-                            <button 
+                          )}
+
+                          {assetViewMode === 'project' && selectedAssets.size > 0 && (
+                            <button
                               onClick={async () => {
-                                await performMoveOrCopy(Array.from(selectedAssets), 'library', 'plugins');
+                                await performMoveOrCopy(Array.from(selectedAssets), 'library', 'project');
                               }}
                               className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
                             >
                               <FolderOpen size={14} />
                               Add to Library
                             </button>
-                          </>
-                        )}
+                          )}
+                        </div>
 
-                        {assetViewMode === 'library' && selectedAssets.size > 0 && (
-                          <button 
-                            onClick={async () => {
-                              await performMoveOrCopy(Array.from(selectedAssets), 'project', 'library');
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 bg-primary-600/20 hover:bg-primary-600/40 text-primary-400 border border-primary-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
+                        {assetViewMode === 'project' && (
+                          <button
+                            onClick={() => setIsProjectPresetsOpen(true)}
+                            className="px-3.5 py-2 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                            title="Manage Saved Decks (Save, Load, Overwrite, Export, Import)"
                           >
-                            <FolderOpen size={14} />
-                            Add to Workspace
+                            <Package size={14} />
+                            <span>Saved Decks</span>
                           </button>
                         )}
 
-                        {assetViewMode === 'project' && selectedAssets.size > 0 && (
-                          <button 
-                            onClick={async () => {
-                              await performMoveOrCopy(Array.from(selectedAssets), 'library', 'project');
-                            }}
-                            className="flex items-center gap-2 px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold transition-all active:scale-95"
-                          >
-                            <FolderOpen size={14} />
-                            Add to Library
-                          </button>
-                        )}
-                      </div>
-
-                      {assetViewMode === 'project' && (
-                        <button 
-                          onClick={() => setIsProjectPresetsOpen(true)}
-                          className="px-3.5 py-2 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-                          title="Manage Saved Decks (Save, Load, Overwrite, Export, Import)"
+                        <button
+                          onClick={fetchStatus}
+                          className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all shadow-inner shrink-0 cursor-pointer"
+                          title="Refresh Assets"
                         >
-                          <Package size={14} />
-                          <span>Saved Decks</span>
+                          <RefreshCw size={16} className={cn(isRefreshing && "animate-spin")} />
                         </button>
-                      )}
 
-                      <button 
-                        onClick={fetchStatus}
-                        className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all shadow-inner shrink-0 cursor-pointer"
-                        title="Refresh Assets"
-                      >
-                        <RefreshCw size={16} className={cn(isRefreshing && "animate-spin")} />
-                      </button>
-
-                      <div className="flex items-center bg-black/40 border border-white/5 rounded-xl p-1 shrink-0">
-                        <button 
-                          onClick={() => setAssetFilter('all')}
-                          className={cn(
-                            "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
-                            assetFilter === 'all' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          All
-                        </button>
-                        <button 
-                          onClick={() => setAssetFilter('front')}
-                          className={cn(
-                            "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
-                            assetFilter === 'front' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          Fronts
-                        </button>
-                        {assetViewMode !== 'plugins' && (
-                          <button 
-                            onClick={() => setAssetFilter('back')}
+                        <div className="flex items-center bg-black/40 border border-white/5 rounded-xl p-1 shrink-0">
+                          <button
+                            onClick={() => setAssetFilter('all')}
                             className={cn(
                               "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
-                              assetFilter === 'back' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+                              assetFilter === 'all' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
                             )}
                           >
-                            Backs
+                            All
                           </button>
-                        )}
-                      </div>
+                          <button
+                            onClick={() => setAssetFilter('front')}
+                            className={cn(
+                              "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
+                              assetFilter === 'front' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+                            )}
+                          >
+                            Fronts
+                          </button>
+                          {assetViewMode !== 'plugins' && (
+                            <button
+                              onClick={() => setAssetFilter('back')}
+                              className={cn(
+                                "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
+                                assetFilter === 'back' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+                              )}
+                            >
+                              Backs
+                            </button>
+                          )}
+                        </div>
 
-                      <div className="hidden sm:block h-6 w-px bg-white/5" />
+                        <div className="hidden sm:block h-6 w-px bg-white/5" />
 
-                      {/* Card Size Selector Slider */}
-                      <div className="flex items-center justify-center gap-3 bg-[#0a0a0d] border border-white/5 rounded-xl px-3 sm:px-4 py-1.5 shrink-0 select-none mx-auto md:mx-0">
-                        <LayoutGrid size={13} className="text-white/40" />
-                        <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-widest text-white/40">Card Size</span>
-                        <input
-                          type="range"
-                          min="80"
-                          max="320"
-                          step="10"
-                          value={cardWidth}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            setCardWidth(val);
-                            localStorage.setItem('scm_card_width', val.toString());
-                          }}
-                          className="w-24 accent-primary-500 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer focus:outline-none"
-                        />
-                        <span className="text-[10px] font-mono text-white/50 w-8 text-right font-semibold">{cardWidth}px</span>
+                        {/* Card Size Selector Slider */}
+                        <div className="flex items-center justify-center gap-3 bg-[#0a0a0d] border border-white/5 rounded-xl px-3 sm:px-4 py-1.5 shrink-0 select-none mx-auto md:mx-0">
+                          <LayoutGrid size={13} className="text-white/40" />
+                          <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-widest text-white/40">Card Size</span>
+                          <input
+                            type="range"
+                            min="80"
+                            max="320"
+                            step="10"
+                            value={cardWidth}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setCardWidth(val);
+                              localStorage.setItem('scm_card_width', val.toString());
+                            }}
+                            className="w-24 accent-primary-500 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer focus:outline-none"
+                          />
+                          <span className="text-[10px] font-mono text-white/50 w-8 text-right font-semibold">{cardWidth}px</span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {assetViewMode === 'plugins' && (
-                  <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 relative overflow-hidden group">
-                    <div className="relative z-10 space-y-4">
-                      <div className="flex items-center justify-between cursor-pointer group" onClick={() => setPluginBoxCollapsed(!pluginBoxCollapsed)}>
-                        <div className="flex items-center gap-4">
-                          <h3 className="font-bold text-lg flex items-center gap-2">
-                            <Package size={20} className="text-primary-400" /> Game Plugins
-                          </h3>
-                        </div>
-                        <ChevronDown size={20} className={cn("text-white/40 group-hover:text-white transition-all duration-300", pluginBoxCollapsed && "rotate-180")} />
-                      </div>
-                      
-                      {!pluginBoxCollapsed && (
-                        <div className="flex flex-col md:flex-row gap-6 items-stretch border-t border-white/5 pt-4">
-                          <div className="w-full md:w-1/3 space-y-4">
-                            <p className="text-white/40 text-sm leading-relaxed">
-                              Fetch card data directly from community database APIs.
-                            </p>
-
-                        <div className="space-y-4 pt-2">
-                          <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Game</label>
-                            <div className="relative">
-                              <select
-                                 value={pluginState.selectedPlugin.id}
-                                 onChange={(e) => {
-                                   const p = PLUGINS.find(pl => pl.id === e.target.value)!;
-                                   setPluginState({ ...pluginState, selectedPlugin: p, format: p.formats[0], options: {} });
-                                 }}
-                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
-                              >
-                                 {PLUGINS.map((p, i) => <option key={`${p.id}-${i}`} value={p.id} className="bg-[#1a1a20]">{p.name}</option>)}
-                              </select>
-                              <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
-                            </div>
-                            
-                            <div className="mt-2 flex flex-wrap gap-3 items-center">
-                              <button onClick={() => fetchReadme(pluginState.selectedPlugin)} className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors">
-                                <Book size={12} /> Readme
-                              </button>
-                              {pluginState.selectedPlugin.websites?.map((site, idx) => (
-                                <a key={idx} href={site.url} target="_blank" rel="noopener noreferrer" className="text-xs text-white/50 hover:text-white/80 flex items-center gap-1 transition-colors">
-                                  <ExternalLink size={12} /> {site.name}
-                                </a>
-                              ))}
-                            </div>
+                  {assetViewMode === 'plugins' && (
+                    <div className="bg-[#0f0f13] border border-white/5 rounded-2xl p-6 relative overflow-hidden group">
+                      <div className="relative z-10 space-y-4">
+                        <div className="flex items-center justify-between cursor-pointer group" onClick={() => setPluginBoxCollapsed(!pluginBoxCollapsed)}>
+                          <div className="flex items-center gap-4">
+                            <h3 className="font-bold text-lg flex items-center gap-2">
+                              <Package size={20} className="text-primary-400" /> Game Plugins
+                            </h3>
                           </div>
+                          <ChevronDown size={20} className={cn("text-white/40 group-hover:text-white transition-all duration-300", pluginBoxCollapsed && "rotate-180")} />
+                        </div>
 
-                          <div>
-                            {pluginState.selectedPlugin.id === 'custom_script_upload' ? (
-                               <div className="space-y-4">
-                                  {customScripts.length > 0 && (
-                                    <div>
-                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Saved Scripts</label>
-                                      <div className="flex items-center gap-2">
-                                        <div className="relative flex-1">
-                                          <select 
-                                            value={pluginState.format === 'script' && customScripts.length > 0 ? customScripts[0] : pluginState.format} 
-                                            onChange={(e) => setPluginState(prev => ({ ...prev, format: e.target.value }))}
-                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
-                                          >
-                                            {customScripts.map(s => <option key={s} value={s} className="bg-[#1a1a20]">{s}</option>)}
-                                          </select>
-                                          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                        {!pluginBoxCollapsed && (
+                          <div className="flex flex-col md:flex-row gap-6 items-stretch border-t border-white/5 pt-4">
+                            <div className="w-full md:w-1/3 space-y-4">
+                              <p className="text-white/40 text-sm leading-relaxed">
+                                Fetch card data directly from community database APIs.
+                              </p>
+
+                              <div className="space-y-4 pt-2">
+                                <div>
+                                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Game</label>
+                                  <div className="relative">
+                                    <select
+                                      value={pluginState.selectedPlugin.id}
+                                      onChange={(e) => {
+                                        const p = PLUGINS.find(pl => pl.id === e.target.value)!;
+                                        setPluginState({ ...pluginState, selectedPlugin: p, format: p.formats[0], options: {} });
+                                      }}
+                                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
+                                    >
+                                      {PLUGINS.map((p, i) => <option key={`${p.id}-${i}`} value={p.id} className="bg-[#1a1a20]">{p.name}</option>)}
+                                    </select>
+                                    <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                                  </div>
+
+                                  <div className="mt-2 flex flex-wrap gap-3 items-center">
+                                    <button onClick={() => fetchReadme(pluginState.selectedPlugin)} className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors">
+                                      <Book size={12} /> Readme
+                                    </button>
+                                    {pluginState.selectedPlugin.websites?.map((site, idx) => (
+                                      <a key={idx} href={site.url} target="_blank" rel="noopener noreferrer" className="text-xs text-white/50 hover:text-white/80 flex items-center gap-1 transition-colors">
+                                        <ExternalLink size={12} /> {site.name}
+                                      </a>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div>
+                                  {pluginState.selectedPlugin.id === 'custom_script_upload' ? (
+                                    <div className="space-y-4">
+                                      {customScripts.length > 0 && (
+                                        <div>
+                                          <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Saved Scripts</label>
+                                          <div className="flex items-center gap-2">
+                                            <div className="relative flex-1">
+                                              <select
+                                                value={pluginState.format === 'script' && customScripts.length > 0 ? customScripts[0] : pluginState.format}
+                                                onChange={(e) => setPluginState(prev => ({ ...prev, format: e.target.value }))}
+                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
+                                              >
+                                                {customScripts.map(s => <option key={s} value={s} className="bg-[#1a1a20]">{s}</option>)}
+                                              </select>
+                                              <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                                            </div>
+                                            <button
+                                              onClick={async () => {
+                                                const currentVal = pluginState.format === 'script' && customScripts.length > 0 ? customScripts[0] : pluginState.format;
+                                                if (!currentVal || currentVal === 'script') return;
+                                                try {
+                                                  await fetch('/api/custom-scripts/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: currentVal }) });
+                                                  await fetchCustomScripts();
+                                                  const remaining = customScripts.filter(s => s !== currentVal);
+                                                  const newFormat = remaining.length > 0 ? remaining[0] : 'script';
+                                                  setPluginState(prev => ({ ...prev, format: newFormat }));
+                                                } catch (e) { }
+                                              }}
+                                              className="p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg transition-colors border border-red-500/20"
+                                              title="Delete Script"
+                                            >
+                                              <Trash2 size={16} />
+                                            </button>
+                                          </div>
                                         </div>
-                                        <button 
-                                          onClick={async () => {
-                                            const currentVal = pluginState.format === 'script' && customScripts.length > 0 ? customScripts[0] : pluginState.format;
-                                            if (!currentVal || currentVal === 'script') return;
-                                            try {
-                                              await fetch('/api/custom-scripts/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: currentVal }) });
-                                              await fetchCustomScripts();
-                                              const remaining = customScripts.filter(s => s !== currentVal);
-                                              const newFormat = remaining.length > 0 ? remaining[0] : 'script';
-                                              setPluginState(prev => ({ ...prev, format: newFormat }));
-                                            } catch (e) {}
-                                          }}
-                                          className="p-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg transition-colors border border-red-500/20"
-                                          title="Delete Script"
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                  <div>
-                                    <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
-                                      New Script (.py)
-                                    </label>
-                                    <div className="relative">
-                                      <input 
-                                        id="custom-script-upload"
-                                        type="file" 
-                                        accept=".py"
-                                        onChange={async (e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                              setTaskProgress({ current: 0, total: 1, message: `Uploading ${file.name}...` });
-                                              const fd = new FormData();
-                                              fd.append('file', file);
-                                              try {
+                                      )}
+                                      <div>
+                                        <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">
+                                          New Script (.py)
+                                        </label>
+                                        <div className="relative">
+                                          <input
+                                            id="custom-script-upload"
+                                            type="file"
+                                            accept=".py"
+                                            onChange={async (e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                setTaskProgress({ current: 0, total: 1, message: `Uploading ${file.name}...` });
+                                                const fd = new FormData();
+                                                fd.append('file', file);
+                                                try {
                                                   const res = await fetch('/api/custom-scripts/upload', { method: 'POST', body: fd });
                                                   const data = await res.json();
                                                   if (data.success) {
-                                                      await fetchCustomScripts();
-                                                      setPluginState(prev => ({ ...prev, format: data.filename }));
-                                                      addLog(`[System] Uploaded ${data.filename}`);
+                                                    await fetchCustomScripts();
+                                                    setPluginState(prev => ({ ...prev, format: data.filename }));
+                                                    addLog(`[System] Uploaded ${data.filename}`);
                                                   }
-                                              } catch(err) {
+                                                } catch (err) {
                                                   addLog(`[Error] Failed to upload script: ${err}`);
+                                                }
+                                                setTaskProgress(null);
                                               }
-                                              setTaskProgress(null);
-                                          }
-                                          const input = document.getElementById('custom-script-upload') as HTMLInputElement;
-                                          if (input) { input.value = ''; }
-                                        }}
-                                        className="hidden"
-                                      />
-                                      <label htmlFor="custom-script-upload" className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 border-dashed hover:border-primary-500/50 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-semibold text-white/70 hover:text-white group">
-                                        <Upload size={16} className="text-white/40 group-hover:text-primary-400 transition-colors" />
-                                        Select a .py file to upload
-                                      </label>
-                                    </div>
-                                  </div>
-                               </div>
-                            ) : (
-                              <SelectGroup 
-                                label="Format"
-                                value={pluginState.format} 
-                                onChange={(v) => setPluginState(prev => ({ ...prev, format: v }))}
-                                options={pluginState.selectedPlugin.formats} 
-                              />
-                            )}
-                          </div>
-
-                          {pluginState.selectedPlugin.options.length > 0 && (
-                            <div className="pt-2">
-                              <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Options</label>
-                              <div className="space-y-2">
-                                 {pluginState.selectedPlugin.options.map((opt, i) => (
-                                   <div key={`${opt.flag}-${i}`}>
-                                     {opt.type === 'toggle' ? (
-                                       <ToggleItem 
-                                         label={opt.label} 
-                                         checked={!!pluginState.options[opt.flag]} 
-                                         onChange={(v) => setPluginState(prev => ({
-                                           ...prev,
-                                           options: { ...prev.options, [opt.flag]: v }
-                                         }))} 
-                                       />
-                                     ) : opt.type === 'text' ? (
-                                        <div className="space-y-1.5">
-                                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 block">{opt.label}</span>
-                                          <input 
-                                            type="text" 
-                                            value={(pluginState.options[opt.flag] as string) || ''} 
-                                            onChange={(e) => setPluginState(prev => ({
-                                              ...prev,
-                                              options: { ...prev.options, [opt.flag]: e.target.value }
-                                            }))}
-                                            placeholder="e.g. eld, woe"
-                                            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                                              const input = document.getElementById('custom-script-upload') as HTMLInputElement;
+                                              if (input) { input.value = ''; }
+                                            }}
+                                            className="hidden"
                                           />
+                                          <label htmlFor="custom-script-upload" className="w-full py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 border-dashed hover:border-primary-500/50 rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all text-xs font-semibold text-white/70 hover:text-white group">
+                                            <Upload size={16} className="text-white/40 group-hover:text-primary-400 transition-colors" />
+                                            Select a .py file to upload
+                                          </label>
                                         </div>
-                                     ) : (
-                                       <div className="relative">
-                                         <select
-                                           value={pluginState.options[opt.flag] || opt.choices?.[0]}
-                                           onChange={(e) => setPluginState(prev => ({
-                                             ...prev,
-                                             options: { ...prev.options, [opt.flag]: e.target.value }
-                                           }))}
-                                           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 appearance-none focus:outline-none focus:border-primary-500"
-                                         >
-                                           {opt.choices?.map((c, idx) => <option key={`${c}-${idx}`} value={c} className="bg-[#1a1a20]">{c}</option>)}
-                                         </select>
-                                         <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
-                                       </div>
-                                     )}
-                                   </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="hidden md:block w-px bg-white/5" />
-
-                      <div className="w-full md:w-2/3 flex flex-col mt-4 md:mt-0">
-                         <div className="flex items-center justify-between mb-4">
-                            <label className="text-xs font-semibold text-white/40">Decklist Content</label>
-                            <div className="flex items-center gap-2">
-                              <button onClick={(e) => { e.stopPropagation(); setIsPluginPresetsOpen(true); }} className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 text-white/70">
-                                <Settings2 size={14} /> Presets
-                              </button>
-                            </div>
-                          </div>
-                          <div 
-                            className={`relative flex-1 flex flex-col mb-4 bg-black/40 border-2 border-dashed ${pluginFile ? 'border-primary-500' : 'border-white/10 hover:border-white/30'} rounded-xl transition-all shadow-inner group min-h-[160px]`}
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                                setPluginFile(e.dataTransfer.files[0]);
-                                setPluginState(prev => ({ ...prev, decklist: "" }));
-                              }
-                            }}
-                          >
-                            {pluginFile ? (
-                              <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
-                                <div className="p-4 bg-primary-500/10 rounded-full mb-3 text-primary-400">
-                                  <FileText size={32} />
-                                </div>
-                                <span className="font-mono text-sm font-bold text-white/80 mb-1">{pluginFile.name}</span>
-                                <span className="text-xs text-white/40">{(pluginFile.size / 1024).toFixed(1)} KB</span>
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPluginFile(null);
-                                  }}
-                                  className="mt-4 px-3 py-1.5 bg-red-500/20 text-red-500 hover:bg-red-500/30 rounded-lg text-xs font-bold transition-colors"
-                                >
-                                  Remove File
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                <textarea 
-                                  value={pluginState.decklist}
-                                  onChange={(e) => setPluginState(prev => ({ ...prev, decklist: e.target.value }))}
-                                  placeholder=""
-                                  className="absolute inset-0 w-full h-full bg-transparent p-4 text-sm font-mono focus:outline-none transition-all resize-none placeholder-white/20"
-                                />
-                                <div className="absolute right-4 bottom-4 pointer-events-none opacity-20 group-hover:opacity-40 transition-opacity">
-                                  <Upload size={24} />
-                                </div>
-                              </>
-                            )}
-                            <div className="absolute top-4 right-4 z-10 flex gap-2">
-                               {/* Hidden file input */}
-                               <input 
-                                  type="file" 
-                                  className="hidden" 
-                                  id="plugin-file-upload"
-                                  onChange={(e) => {
-                                      if (e.target.files && e.target.files.length > 0) {
-                                          setPluginFile(e.target.files[0]);
-                                          setPluginState(prev => ({ ...prev, decklist: "" }));
-                                      }
-                                  }}
-                               />
-                               {!pluginFile && (
-                                   <button 
-                                        onClick={() => document.getElementById('plugin-file-upload')?.click()}
-                                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 backdrop-blur-md"
-                                   >
-                                        <Upload size={14} /> Upload File
-                                   </button>
-                               )}
-                            </div>
-                          </div>
-
-                          {FORMAT_HINTS[pluginState.format] && (
-                            <div className="mb-4 text-xs text-white/50 bg-white/[0.02] border border-white/5 rounded-xl p-3 flex items-start gap-2.5">
-                              <AlertCircle size={14} className="text-primary-400 mt-0.5 shrink-0" />
-                              <div className="space-y-1">
-                                <span className="font-bold text-white/70 block uppercase tracking-wider text-[10px]">Format Guideline</span>
-                                <p className="leading-relaxed">{FORMAT_HINTS[pluginState.format]}</p>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Direct Card & Backing Ingestion from MPC / Scryfall (Only for MTG) */}
-                          {pluginState.selectedPlugin.id === 'mtg' && (
-                            <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
-                              <div className="space-y-0.5 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <PlusCircle size={16} className="text-primary-400" />
-                                  <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
-                                </div>
-                                <p className="text-[11px] text-white/50">Search any card or backing by name and add directly into your project workspace without needing a decklist.</p>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setArtTargetCard(null);
-                                    setIsBacksOnlyModal(false);
-                                    setArtSourceTab('scryfall');
-                                    if (!artQuery) setArtQuery('Black Lotus');
-                                    setIsArtPickerOpen(true);
-                                    handleSearchArt(artQuery || 'Black Lotus');
-                                  }}
-                                  className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
-                                >
-                                  <PlusCircle size={15} /> Add Cards from Scryfall / MPC
-                                </button>
-
-                              </div>
-                            </div>
-                          )}
-
-                          {/* UPSCAYL AI Super-Resolution Engine Subsection */}
-                          <div className="mb-4 bg-white/[0.03] border border-white/10 hover:border-primary-500/30 rounded-2xl overflow-hidden transition-all shadow-lg">
-                            {/* Subsection Header */}
-                            <div 
-                              onClick={() => toggleUpscaleSectionExpanded(!upscaleSectionExpanded)}
-                              className="p-4 flex items-center justify-between cursor-pointer select-none group"
-                            >
-                              <div>
-                                <span className="text-xs font-bold text-white block">Upscayl AI Engine</span>
-                                <span className="text-[11px] text-white/50 block">
-                                  GPU-accelerated super-resolution using native Upscayl AI neural models
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <ChevronDown 
-                                  size={18} 
-                                  className={cn("text-white/40 group-hover:text-white transition-transform duration-300", upscaleSectionExpanded && "rotate-180")} 
-                                />
-                              </div>
-                            </div>
-
-                            {/* Subsection Expanded Body */}
-                            {upscaleSectionExpanded && (
-                              <div className="p-4 border-t border-white/5 bg-black/25 space-y-3.5">
-                                {/* 2-Column Responsive Grid */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                                  {/* Column 1: Output Scale & Model */}
-                                  <div className="space-y-3">
-                                    <div>
-                                      <div className="flex items-center justify-between mb-1.5">
-                                        <label className="text-[10px] font-bold uppercase tracking-widest text-white/50">
-                                          Output Scale Multiplier
-                                        </label>
-                                        <span className="text-[10px] font-mono text-primary-400 font-bold">
-                                          {upscaleConfig.scaleFactor === 2 ? '2x HD' : upscaleConfig.scaleFactor === 3 ? '3x Quad HD' : '4x Ultra HD'}
-                                        </span>
-                                      </div>
-                                      <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#121318] border border-white/10 rounded-xl">
-                                        {([2, 3, 4] as const).map(scale => (
-                                          <button
-                                            key={scale}
-                                            type="button"
-                                            onClick={() => updateUpscaleConfig({ scaleFactor: scale })}
-                                            className={cn(
-                                              "py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none",
-                                              upscaleConfig.scaleFactor === scale
-                                                ? "bg-primary-600 text-white shadow-md shadow-primary-600/30"
-                                                : "text-white/60 hover:text-white hover:bg-white/5"
-                                            )}
-                                          >
-                                            <span>{scale}x AI Scale</span>
-                                          </button>
-                                        ))}
                                       </div>
                                     </div>
+                                  ) : (
+                                    <SelectGroup
+                                      label="Format"
+                                      value={pluginState.format}
+                                      onChange={(v) => setPluginState(prev => ({ ...prev, format: v }))}
+                                      options={pluginState.selectedPlugin.formats}
+                                    />
+                                  )}
+                                </div>
 
-                                    <div>
-                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1.5">
-                                        Neural Model Architecture
-                                      </label>
-                                      <div className="relative">
-                                        <select
-                                          value={upscaleConfig.model}
-                                          onChange={(e) => updateUpscaleConfig({ model: e.target.value as any })}
-                                          className="w-full bg-[#121318] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors cursor-pointer"
-                                        >
-                                          <option value="high-fidelity-4x" className="bg-[#14151b]">High Fidelity 4x (Cards, Text & Borders)</option>
-                                          <option value="digital-art-4x" className="bg-[#14151b]">Digital Art 4x (Anime & Illustrations)</option>
-                                          <option value="ultrasharp-4x" className="bg-[#14151b]">UltraSharp 4x (Maximum Crispness)</option>
-                                          <option value="remacri-4x" className="bg-[#14151b]">Remacri 4x (Photoreal Textures)</option>
-                                          <option value="ultramix-balanced-4x" className="bg-[#14151b]">UltraMix Balanced 4x (Smooth Blend)</option>
-                                          <option value="upscayl-standard-4x" className="bg-[#14151b]">Upscayl Standard 4x (General AI)</option>
-                                          <option value="upscayl-lite-4x" className="bg-[#14151b]">Upscayl Lite 4x (Fast Inference)</option>
-                                        </select>
-                                        <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
-                                      </div>
+                                {pluginState.selectedPlugin.options.length > 0 && (
+                                  <div className="pt-2">
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-2">Options</label>
+                                    <div className="space-y-2">
+                                      {pluginState.selectedPlugin.options.map((opt, i) => (
+                                        <div key={`${opt.flag}-${i}`}>
+                                          {opt.type === 'toggle' ? (
+                                            <ToggleItem
+                                              label={opt.label}
+                                              checked={!!pluginState.options[opt.flag]}
+                                              onChange={(v) => setPluginState(prev => ({
+                                                ...prev,
+                                                options: { ...prev.options, [opt.flag]: v }
+                                              }))}
+                                            />
+                                          ) : opt.type === 'text' ? (
+                                            <div className="space-y-1.5">
+                                              <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 block">{opt.label}</span>
+                                              <input
+                                                type="text"
+                                                value={(pluginState.options[opt.flag] as string) || ''}
+                                                onChange={(e) => setPluginState(prev => ({
+                                                  ...prev,
+                                                  options: { ...prev.options, [opt.flag]: e.target.value }
+                                                }))}
+                                                placeholder="e.g. eld, woe"
+                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                                              />
+                                            </div>
+                                          ) : (
+                                            <div className="relative">
+                                              <select
+                                                value={pluginState.options[opt.flag] || opt.choices?.[0]}
+                                                onChange={(e) => setPluginState(prev => ({
+                                                  ...prev,
+                                                  options: { ...prev.options, [opt.flag]: e.target.value }
+                                                }))}
+                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 appearance-none focus:outline-none focus:border-primary-500"
+                                              >
+                                                {opt.choices?.map((c, idx) => <option key={`${c}-${idx}`} value={c} className="bg-[#1a1a20]">{c}</option>)}
+                                              </select>
+                                              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none" />
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
                                     </div>
                                   </div>
+                                )}
+                              </div>
+                            </div>
 
-                                  {/* Column 2: Parameters */}
-                                  <div className="space-y-3">
-                                    <div>
-                                      <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1.5">
-                                        Neural Parameters
-                                      </label>
-                                      <div className="grid grid-cols-1 gap-2">
+                            <div className="hidden md:block w-px bg-white/5" />
+
+                            <div className="w-full md:w-2/3 flex flex-col mt-4 md:mt-0">
+                              <div className="flex items-center justify-between mb-4">
+                                <label className="text-xs font-semibold text-white/40">Decklist Content</label>
+                                <div className="flex items-center gap-2">
+                                  <button onClick={(e) => { e.stopPropagation(); setIsPluginPresetsOpen(true); }} className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 text-white/70">
+                                    <Settings2 size={14} /> Presets
+                                  </button>
+                                </div>
+                              </div>
+                              <div
+                                className={`relative flex-1 flex flex-col mb-4 bg-black/40 border-2 border-dashed ${pluginFile ? 'border-primary-500' : 'border-white/10 hover:border-white/30'} rounded-xl transition-all shadow-inner group min-h-[160px]`}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                                    setPluginFile(e.dataTransfer.files[0]);
+                                    setPluginState(prev => ({ ...prev, decklist: "" }));
+                                  }
+                                }}
+                              >
+                                {pluginFile ? (
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center p-4">
+                                    <div className="p-4 bg-primary-500/10 rounded-full mb-3 text-primary-400">
+                                      <FileText size={32} />
+                                    </div>
+                                    <span className="font-mono text-sm font-bold text-white/80 mb-1">{pluginFile.name}</span>
+                                    <span className="text-xs text-white/40">{(pluginFile.size / 1024).toFixed(1)} KB</span>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPluginFile(null);
+                                      }}
+                                      className="mt-4 px-3 py-1.5 bg-red-500/20 text-red-500 hover:bg-red-500/30 rounded-lg text-xs font-bold transition-colors"
+                                    >
+                                      Remove File
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <textarea
+                                      value={pluginState.decklist}
+                                      onChange={(e) => setPluginState(prev => ({ ...prev, decklist: e.target.value }))}
+                                      placeholder=""
+                                      className="absolute inset-0 w-full h-full bg-transparent p-4 text-sm font-mono focus:outline-none transition-all resize-none placeholder-white/20"
+                                    />
+                                    <div className="absolute right-4 bottom-4 pointer-events-none opacity-20 group-hover:opacity-40 transition-opacity">
+                                      <Upload size={24} />
+                                    </div>
+                                  </>
+                                )}
+                                <div className="absolute top-4 right-4 z-10 flex gap-2">
+                                  {/* Hidden file input */}
+                                  <input
+                                    type="file"
+                                    className="hidden"
+                                    id="plugin-file-upload"
+                                    onChange={(e) => {
+                                      if (e.target.files && e.target.files.length > 0) {
+                                        setPluginFile(e.target.files[0]);
+                                        setPluginState(prev => ({ ...prev, decklist: "" }));
+                                      }
+                                    }}
+                                  />
+                                  {!pluginFile && (
+                                    <button
+                                      onClick={() => document.getElementById('plugin-file-upload')?.click()}
+                                      className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 backdrop-blur-md"
+                                    >
+                                      <Upload size={14} /> Upload File
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {FORMAT_HINTS[pluginState.format] && (
+                                <div className="mb-4 text-xs text-white/50 bg-white/[0.02] border border-white/5 rounded-xl p-3 flex items-start gap-2.5">
+                                  <AlertCircle size={14} className="text-primary-400 mt-0.5 shrink-0" />
+                                  <div className="space-y-1">
+                                    <span className="font-bold text-white/70 block uppercase tracking-wider text-[10px]">Format Guideline</span>
+                                    <p className="leading-relaxed">{FORMAT_HINTS[pluginState.format]}</p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Direct Card & Backing Ingestion from MPC / Scryfall (Only for MTG) */}
+                              {pluginState.selectedPlugin.id === 'mtg' && (
+                                <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+                                  <div className="space-y-0.5 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <PlusCircle size={16} className="text-primary-400" />
+                                      <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
+                                    </div>
+                                    <p className="text-[11px] text-white/50">Search any card or backing by name and add directly into your project workspace without needing a decklist.</p>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setArtTargetCard(null);
+                                        setIsBacksOnlyModal(false);
+                                        setArtSourceTab('scryfall');
+                                        if (!artQuery) setArtQuery('Black Lotus');
+                                        setIsArtPickerOpen(true);
+                                        handleSearchArt(artQuery || 'Black Lotus');
+                                      }}
+                                      className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
+                                    >
+                                      <PlusCircle size={15} /> Add Cards from Scryfall / MPC
+                                    </button>
+
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* UPSCAYL AI Super-Resolution Engine Subsection */}
+                              <div className="mb-4 bg-white/[0.03] border border-white/10 hover:border-primary-500/30 rounded-2xl overflow-hidden transition-all shadow-lg">
+                                {/* Subsection Header */}
+                                <div
+                                  onClick={() => toggleUpscaleSectionExpanded(!upscaleSectionExpanded)}
+                                  className="p-4 flex items-center justify-between cursor-pointer select-none group"
+                                >
+                                  <div>
+                                    <span className="text-xs font-bold text-white block">Upscayl AI Engine</span>
+                                    <span className="text-[11px] text-white/50 block">
+                                      GPU-accelerated super-resolution using native Upscayl AI neural models
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <ChevronDown
+                                      size={18}
+                                      className={cn("text-white/40 group-hover:text-white transition-transform duration-300", upscaleSectionExpanded && "rotate-180")}
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Subsection Expanded Body */}
+                                {upscaleSectionExpanded && (() => {
+                                  const baseVramPerWorker = upscaleConfig.tileSize === 256 ? 650 : upscaleConfig.tileSize === 512 ? 1000 : upscaleConfig.tileSize === 1024 ? 1500 : 2000;
+                                  const ttaMultiplier = upscaleConfig.tta ? 1.25 : 1;
+                                  const estimatedVramMB = Math.round((upscaleConfig.workers || 1) * baseVramPerWorker * ttaMultiplier);
+                                  const detectedGpu = upscaylStatus?.gpu;
+                                  const totalVramMB = detectedGpu?.totalVramMB || 8192;
+                                  const freeVramMB = detectedGpu?.freeVramMB || 4096;
+                                  const isVramCritical = !!detectedGpu?.detected && (estimatedVramMB > totalVramMB);
+                                  const isVramWarning = !!detectedGpu?.detected && !isVramCritical && (estimatedVramMB > freeVramMB);
+
+                                  return (
+                                    <div className="p-4 border-t border-white/5 bg-black/25 space-y-3.5">
+                                      {/* Hardware Status Banner */}
+                                      {detectedGpu?.detected && (
+                                        <div className="p-3 bg-[#121318] border border-white/10 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-sm">
+                                          <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className="w-8 h-8 rounded-lg bg-primary-500/10 border border-primary-500/30 flex items-center justify-center text-primary-400 shrink-0">
+                                              <Cpu size={16} />
+                                            </div>
+                                            <div className="min-w-0">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-xs font-bold text-white truncate">{detectedGpu.name}</span>
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-semibold uppercase tracking-wider shrink-0">
+                                                  Vulkan GPU
+                                                </span>
+                                              </div>
+                                              <span className="text-[10px] text-white/50 block">
+                                                {((detectedGpu.totalVramMB || 0) / 1024).toFixed(1)} GB Total VRAM · {((detectedGpu.freeVramMB || 0) / 1024).toFixed(1)} GB Currently Free
+                                              </span>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <div className="w-24 sm:w-28 bg-white/5 h-2 rounded-full overflow-hidden border border-white/10">
+                                              <div
+                                                className="bg-gradient-to-r from-emerald-500 to-primary-500 h-full rounded-full transition-all"
+                                                style={{
+                                                  width: `${Math.min(100, Math.max(5, ((detectedGpu.freeVramMB || 1) / (detectedGpu.totalVramMB || 1)) * 100))}%`
+                                                }}
+                                              />
+                                            </div>
+                                            <span className="text-[10px] font-mono text-white/70 font-bold shrink-0">
+                                              {Math.round(((detectedGpu.freeVramMB || 1) / (detectedGpu.totalVramMB || 1)) * 100)}% Free
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Row 1: Scale & Model Architecture */}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                        {/* Output Scale */}
+                                        <div>
+                                          <div className="flex items-center justify-between mb-1.5">
+                                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+                                              Output Scale Multiplier
+                                            </label>
+                                            <span className="text-[10px] font-mono text-primary-400 font-bold">
+                                              {upscaleConfig.scaleFactor === 2 ? '2x HD' : upscaleConfig.scaleFactor === 3 ? '3x Quad HD' : '4x Ultra HD'}
+                                            </span>
+                                          </div>
+                                          <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#121318] border border-white/10 rounded-xl">
+                                            {([2, 3, 4]).map(scale => (
+                                              <button
+                                                key={scale}
+                                                type="button"
+                                                onClick={() => updateUpscaleConfig({ scaleFactor: scale })}
+                                                className={cn(
+                                                  "py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none",
+                                                  upscaleConfig.scaleFactor === scale
+                                                    ? "bg-primary-600 text-white shadow-md shadow-primary-600/30"
+                                                    : "text-white/60 hover:text-white hover:bg-white/5"
+                                                )}
+                                              >
+                                                <span>{scale}x AI Scale</span>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+
+                                        {/* Neural Model */}
+                                        <div>
+                                          <label className="text-[10px] font-bold uppercase tracking-widest text-white/50 block mb-1.5">
+                                            Neural Model Architecture
+                                          </label>
+                                          <div className="relative">
+                                            <select
+                                              value={upscaleConfig.model}
+                                              onChange={(e) => updateUpscaleConfig({ model: e.target.value })}
+                                              className="w-full bg-[#121318] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors cursor-pointer"
+                                            >
+                                              <option value="high-fidelity-4x" className="bg-[#14151b]">High Fidelity 4x (Cards, Text & Borders)</option>
+                                              <option value="digital-art-4x" className="bg-[#14151b]">Digital Art 4x (Anime & Illustrations)</option>
+                                              <option value="ultrasharp-4x" className="bg-[#14151b]">UltraSharp 4x (Maximum Crispness)</option>
+                                              <option value="remacri-4x" className="bg-[#14151b]">Remacri 4x (Photoreal Textures)</option>
+                                              <option value="ultramix-balanced-4x" className="bg-[#14151b]">UltraMix Balanced 4x (Smooth Blend)</option>
+                                              <option value="upscayl-standard-4x" className="bg-[#14151b]">Upscayl Standard 4x (General AI)</option>
+                                              <option value="upscayl-lite-4x" className="bg-[#14151b]">Upscayl Lite 4x (Fast Inference)</option>
+                                            </select>
+                                            <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Row 2: Concurrency & VRAM Management */}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                        {/* Concurrency / Parallel Workers */}
+                                        <div>
+                                          <div className="flex items-center justify-between mb-1.5">
+                                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+                                              Parallel Workers (GPU Concurrency)
+                                            </label>
+                                            <span className="text-[10px] font-mono text-primary-400 font-bold">
+                                              {upscaleConfig.workers || 1} Card{(upscaleConfig.workers || 1) === 1 ? '' : 's'} at once
+                                            </span>
+                                          </div>
+                                          <div className="grid grid-cols-4 gap-1.5 p-1 bg-[#121318] border border-white/10 rounded-xl">
+                                            {[1, 2, 3, 4].map(w => (
+                                              <button
+                                                key={w}
+                                                type="button"
+                                                onClick={() => updateUpscaleConfig({ workers: w })}
+                                                className={cn(
+                                                  "py-1.5 px-1 rounded-lg text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer select-none",
+                                                  (upscaleConfig.workers || 1) === w
+                                                    ? "bg-primary-600 text-white shadow-md shadow-primary-600/30"
+                                                    : "text-white/60 hover:text-white hover:bg-white/5"
+                                                )}
+                                              >
+                                                <span>{w} Card{w === 1 ? '' : 's'}</span>
+                                                <span className="text-[9px] opacity-70 font-mono">~{w * 2}GB</span>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        </div>
+
+                                        {/* Tile Size (VRAM Memory Footprint) */}
+                                        <div>
+                                          <div className="flex items-center justify-between mb-1.5">
+                                            <label className="text-[10px] font-bold uppercase tracking-widest text-white/50">
+                                              Tile Size (VRAM Ceiling)
+                                            </label>
+                                            <span className="text-[10px] font-mono text-primary-400 font-bold">
+                                              {upscaleConfig.tileSize === 0 ? 'Auto / Full Card' : `${upscaleConfig.tileSize}px Tiles`}
+                                            </span>
+                                          </div>
+                                          <div className="relative">
+                                            <select
+                                              value={upscaleConfig.tileSize || 0}
+                                              onChange={(e) => updateUpscaleConfig({ tileSize: Number(e.target.value) })}
+                                              className="w-full bg-[#121318] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors cursor-pointer"
+                                            >
+                                              <option value={0} className="bg-[#14151b]">Auto / Full (Best Quality & Speed · ~2 GB/card)</option>
+                                              <option value={1024} className="bg-[#14151b]">1024px Tiles (Balanced Memory · ~1.5 GB/card)</option>
+                                              <option value={512} className="bg-[#14151b]">512px Tiles (Low VRAM Mode · ~1.0 GB/card)</option>
+                                              <option value={256} className="bg-[#14151b]">256px Tiles (Minimal VRAM Mode · ~600 MB/card)</option>
+                                            </select>
+                                            <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* Row 3: Neural Parameters (TTA & Dimension Clamp) */}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                                         {/* TTA Mode */}
-                                        <div 
+                                        <div
                                           onClick={() => updateUpscaleConfig({ tta: !upscaleConfig.tta })}
                                           className={cn(
                                             "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
@@ -5030,474 +5152,505 @@ export default function App() {
                                           title="8x rotational passes to eliminate AI artifacts"
                                         >
                                           <div className="min-w-0 pr-1">
-                                            <span className="text-xs font-semibold block truncate">TTA Quality</span>
-                                            <span className="text-[9px] opacity-60 block truncate">8x anti-artifact pass</span>
+                                            <span className="text-xs font-semibold block truncate">TTA Quality (Rotational Passes)</span>
+                                            <span className="text-[9px] opacity-60 block truncate">8x anti-artifact passes (+25% VRAM)</span>
                                           </div>
                                           <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.tta ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
                                             {upscaleConfig.tta && <Check size={12} />}
                                           </div>
                                         </div>
 
-                                        {/* Max Dimension Clamp */}
-                                        <div 
+                                        {/* Max Resolution Cap */}
+                                        <div
                                           onClick={() => updateUpscaleConfig({ maxDimension: upscaleConfig.maxDimension === 4096 ? 8192 : 4096 })}
                                           className={cn(
                                             "p-2.5 rounded-xl border flex items-center justify-between cursor-pointer select-none transition-all",
                                             upscaleConfig.maxDimension === 4096 ? "bg-primary-500/10 border-primary-500/30 text-white" : "bg-[#121318] border-white/10 text-white/60 hover:border-white/20"
                                           )}
-                                          title="Limits output dimension to prevent GPU VRAM overflow"
+                                          title="Caps output dimension to 4K (4096px) or allows up to 8K (8192px)"
                                         >
                                           <div className="min-w-0 pr-1">
-                                            <span className="text-xs font-semibold block truncate">VRAM Clamp</span>
-                                            <span className="text-[9px] opacity-60 block truncate">{upscaleConfig.maxDimension}px limit</span>
+                                            <span className="text-xs font-semibold block truncate">Max Resolution Cap</span>
+                                            <span className="text-[9px] opacity-60 block truncate">{upscaleConfig.maxDimension === 4096 ? '4096px (4K Cap)' : '8192px (8K Cap)'}</span>
                                           </div>
                                           <div className={cn("w-4 h-4 rounded-md border flex items-center justify-center shrink-0", upscaleConfig.maxDimension === 4096 ? "bg-primary-600 border-primary-500 text-white" : "border-white/20")}>
                                             {upscaleConfig.maxDimension === 4096 && <Check size={12} />}
                                           </div>
                                         </div>
                                       </div>
+
+                                      {/* Dynamic VRAM Advisory Banner */}
+                                      {isVramCritical ? (
+                                        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2.5">
+                                          <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5" />
+                                          <div className="min-w-0 text-[11px] leading-relaxed">
+                                            <span className="font-bold text-rose-300 block">Critical: Estimated VRAM Exceeds Total Capacity</span>
+                                            <span className="text-rose-200/80">
+                                              Selected settings estimate <strong>~{(estimatedVramMB / 1024).toFixed(1)} GB VRAM</strong>, which exceeds your GPU's total capacity ({(totalVramMB / 1024).toFixed(1)} GB). Reduce parallel workers or select a smaller tile size to avoid GPU driver crashes.
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ) : isVramWarning ? (
+                                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5">
+                                          <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                                          <div className="min-w-0 text-[11px] leading-relaxed">
+                                            <span className="font-bold text-amber-300 block">Caution: High VRAM Pressure</span>
+                                            <span className="text-amber-200/80">
+                                              Selected settings estimate <strong>~{(estimatedVramMB / 1024).toFixed(1)} GB VRAM</strong>, while only <strong>{(freeVramMB / 1024).toFixed(1)} GB</strong> is currently free. Close background GPU apps or reduce workers if you experience stuttering.
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between text-[11px]">
+                                          <div className="flex items-center gap-2">
+                                            <CheckCircle size={14} className="text-emerald-400 shrink-0" />
+                                            <span className="text-emerald-200/80">
+                                              Hardware Check: Estimated <strong>~{(estimatedVramMB / 1024).toFixed(1)} GB VRAM</strong> fits comfortably within <strong>{(freeVramMB / 1024).toFixed(1)} GB free VRAM</strong>.
+                                            </span>
+                                          </div>
+                                          <span className="text-[10px] text-emerald-400/80 font-mono font-bold shrink-0">Optimal</span>
+                                        </div>
+                                      )}
+                                    
+                                      {/* Direct Trigger Buttons - Balanced 50/50 layout */}
+                                      <div className="pt-2.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 border-t border-white/5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUpscale(undefined, true)}
+                                          className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center shadow-lg shadow-primary-600/25 active:scale-[0.98] cursor-pointer whitespace-nowrap min-w-0"
+                                        >
+                                          <span className="truncate">Upscale All Cards Now</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={selectedAssets.size === 0}
+                                          onClick={() => handleUpscale(Array.from(selectedAssets), false)}
+                                          className={cn(
+                                            "flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border whitespace-nowrap min-w-0",
+                                            selectedAssets.size > 0
+                                              ? "bg-white/10 hover:bg-white/15 text-white border-white/20 active:scale-[0.98] cursor-pointer"
+                                              : "bg-white/[0.02] text-white/30 border-white/5 cursor-not-allowed"
+                                          )}
+                                        >
+                                          <CheckSquare size={15} className="shrink-0" />
+                                          <span className="truncate">Upscayl Selected ({selectedAssets.size})</span>
+                                        </button>
+                                      </div>
                                     </div>
-                                  </div>
-                                </div>
-
-                                {/* Direct Trigger Buttons - Balanced 50/50 layout */}
-                                <div className="pt-2.5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 border-t border-white/5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUpscale(undefined, true)}
-                                    className="flex-1 py-3 px-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center shadow-lg shadow-primary-600/25 active:scale-[0.98] cursor-pointer whitespace-nowrap min-w-0"
-                                  >
-                                    <span className="truncate">Upscale All Cards Now</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={selectedAssets.size === 0}
-                                    onClick={() => handleUpscale(Array.from(selectedAssets), false)}
-                                    className={cn(
-                                      "flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border whitespace-nowrap min-w-0",
-                                      selectedAssets.size > 0
-                                        ? "bg-white/10 hover:bg-white/15 text-white border-white/20 active:scale-[0.98] cursor-pointer"
-                                        : "bg-white/[0.02] text-white/30 border-white/5 cursor-not-allowed"
-                                    )}
-                                  >
-                                    <CheckSquare size={15} className="shrink-0" />
-                                    <span className="truncate">Upscayl Selected ({selectedAssets.size})</span>
-                                  </button>
-                                </div>
+                                  );
+                                })()}
                               </div>
-                            )}
-                          </div>
 
-                          <button 
-                            onClick={async () => {
-                              if (pluginState.selectedPlugin.id === 'custom_script_upload' && (!pluginState.format || pluginState.format === 'script')) {
-                                  addLog(`[Error] Please upload or select a .py script file in the Format section first.`);
-                                  setTaskProgress(null);
-                                  return;
-                              }
+                              <button
+                                onClick={async () => {
+                                  if (pluginState.selectedPlugin.id === 'custom_script_upload' && (!pluginState.format || pluginState.format === 'script')) {
+                                    addLog(`[Error] Please upload or select a .py script file in the Format section first.`);
+                                    setTaskProgress(null);
+                                    return;
+                                  }
 
-                              const isUrlFormat = pluginState.format === 'url' || pluginState.format.includes('url');
-                              const isDirectInput = isUrlFormat || pluginState.format === 'elestrals' || pluginState.format === 'ydke';
+                                  const isUrlFormat = pluginState.format === 'url' || pluginState.format.includes('url');
+                                  const isDirectInput = isUrlFormat || pluginState.format === 'elestrals' || pluginState.format === 'ydke';
 
-                              let targetInput = '';
-                              let uploadedPluginFilePath: string | undefined = undefined;
+                                  let targetInput = '';
+                                  let uploadedPluginFilePath: string | undefined = undefined;
 
-                              // If URL format is selected, ignore any previously staged pluginFile
-                              const effectivePluginFile = isUrlFormat ? null : pluginFile;
+                                  // If URL format is selected, ignore any previously staged pluginFile
+                                  const effectivePluginFile = isUrlFormat ? null : pluginFile;
 
-                              if (effectivePluginFile) {
-                                  addLog(`[System] Uploading plugin file ${effectivePluginFile.name}...`);
-                                  const fd = new FormData();
-                                  fd.append('file', effectivePluginFile);
-                                  try {
+                                  if (effectivePluginFile) {
+                                    addLog(`[System] Uploading plugin file ${effectivePluginFile.name}...`);
+                                    const fd = new FormData();
+                                    fd.append('file', effectivePluginFile);
+                                    try {
                                       const uploadRes = await fetch('/api/plugin/upload-file', {
-                                          method: 'POST',
-                                          body: fd
+                                        method: 'POST',
+                                        body: fd
                                       });
                                       const uploadData = await uploadRes.json();
                                       if (uploadData.success) {
-                                          targetInput = uploadData.path;
-                                          uploadedPluginFilePath = uploadData.path;
+                                        targetInput = uploadData.path;
+                                        uploadedPluginFilePath = uploadData.path;
                                       } else {
-                                          addLog(`[Error] Failed to upload plugin file: ${uploadData.error}`);
-                                          return;
+                                        addLog(`[Error] Failed to upload plugin file: ${uploadData.error}`);
+                                        return;
                                       }
-                                  } catch (e) {
+                                    } catch (e) {
                                       addLog(`[Error] Failed to upload plugin file: ${e}`);
                                       return;
-                                  }
-                              } else {
-                                  const rawInput = (pluginState.decklist || '').trim();
-
-                                  // Validate URL format input before executing
-                                  if (isUrlFormat) {
-                                    if (!rawInput) {
-                                      addLog(`[Error] Please enter a valid decklist URL (e.g. Moxfield, Archidekt, Scryfall) in the input area first.`);
-                                      setTaskProgress({ current: 0, total: 1, message: 'Please enter a URL first.' });
-                                      setTimeout(() => setTaskProgress(null), 2500);
-                                      return;
                                     }
-                                    // Extract clean first line URL without quotes or whitespace
-                                    const cleanUrl = rawInput.split(/[\r\n]+/)[0].trim().replace(/^["']|["']$/g, '');
-                                    targetInput = cleanUrl;
                                   } else {
-                                    // 1. Save decklist
-                                    addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
-                                    try {
-                                      await fetch('/api/project/save-decklist', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ content: pluginState.decklist })
-                                      });
-                                    } catch (err) {
-                                      addLog(`[Error] Failed to stage decklist: ${err}`);
-                                      return;
-                                    }
+                                    const rawInput = (pluginState.decklist || '').trim();
 
-                                    targetInput = isDirectInput ? rawInput : `game/decklist/current.txt`;
-                                  }
-                              }
-
-                              // 2. Build and run command
-                              let args: string[] = [];
-                              let targetCommand = `plugins/${pluginState.selectedPlugin.id}/fetch.py`;
-
-                              if (pluginState.selectedPlugin.id === 'custom_script_upload') {
-                                targetCommand = `__CUSTOM_SCRIPT__:${pluginState.format}`;
-                                const userArgsStr = pluginState.options['--args'] as string || '';
-                                const userArgs = userArgsStr.split(' ').filter(a => a.trim() !== '');
-                                args = [...userArgs, targetInput];
-                              } else {
-                                args = [targetInput, pluginState.format];
-                                Object.entries(pluginState.options).forEach(([flag, val]) => {
-                                  if (val === true) {
-                                    args.push(flag);
-                                  } else if (typeof val === 'string' && val.trim() !== "") {
-                                    if ((flag === '-s' || flag === '--ignore_set') && val.includes(',')) {
-                                      val.split(',').forEach(item => {
-                                        const trimmed = item.trim();
-                                        if (trimmed) {
-                                          args.push(flag);
-                                          args.push(trimmed);
-                                        }
-                                      });
+                                    // Validate URL format input before executing
+                                    if (isUrlFormat) {
+                                      if (!rawInput) {
+                                        addLog(`[Error] Please enter a valid decklist URL (e.g. Moxfield, Archidekt, Scryfall) in the input area first.`);
+                                        setTaskProgress({ current: 0, total: 1, message: 'Please enter a URL first.' });
+                                        setTimeout(() => setTaskProgress(null), 2500);
+                                        return;
+                                      }
+                                      // Extract clean first line URL without quotes or whitespace
+                                      const cleanUrl = rawInput.split(/[\r\n]+/)[0].trim().replace(/^["']|["']$/g, '');
+                                      targetInput = cleanUrl;
                                     } else {
-                                      args.push(flag);
-                                      args.push(val.trim());
+                                      // 1. Save decklist
+                                      addLog(`[System] Staging decklist for ${pluginState.selectedPlugin.name}...`);
+                                      try {
+                                        await fetch('/api/project/save-decklist', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ content: pluginState.decklist })
+                                        });
+                                      } catch (err) {
+                                        addLog(`[Error] Failed to stage decklist: ${err}`);
+                                        return;
+                                      }
+
+                                      targetInput = isDirectInput ? rawInput : `game/decklist/current.txt`;
                                     }
                                   }
-                                });
-                              }
-                              
-                              const tempDirId = crypto.randomUUID();
-                              const result = await runCommand(targetCommand, args, {
-                                isPluginFetch: pluginState.selectedPlugin.id === 'custom_script_upload',
-                                startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
-                                hideProgressOnComplete: true,
-                                tempDirId,
-                                uploadedPluginFilePath,
-                                upscaleOptions: upscaleConfig
-                              });
-                              
-                              if (result && result.fetchedFiles) {
-                                  const collisions: string[] = [];
-                                  const fronts = Array.isArray(result.fetchedFiles.fronts) ? result.fetchedFiles.fronts : [];
-                                  const backs = Array.isArray(result.fetchedFiles.backs) ? result.fetchedFiles.backs : [];
-                                  const double_sided = Array.isArray(result.fetchedFiles.double_sided) ? result.fetchedFiles.double_sided : [];
-                                  const totalFetched = fronts.length + backs.length + double_sided.length;
 
-                                  if (totalFetched === 0) {
+                                  // 2. Build and run command
+                                  let args: string[] = [];
+                                  let targetCommand = `plugins/${pluginState.selectedPlugin.id}/fetch.py`;
+
+                                  if (pluginState.selectedPlugin.id === 'custom_script_upload') {
+                                    targetCommand = `__CUSTOM_SCRIPT__:${pluginState.format}`;
+                                    const userArgsStr = pluginState.options['--args'] as string || '';
+                                    const userArgs = userArgsStr.split(' ').filter(a => a.trim() !== '');
+                                    args = [...userArgs, targetInput];
+                                  } else {
+                                    args = [targetInput, pluginState.format];
+                                    Object.entries(pluginState.options).forEach(([flag, val]) => {
+                                      if (val === true) {
+                                        args.push(flag);
+                                      } else if (typeof val === 'string' && val.trim() !== "") {
+                                        if ((flag === '-s' || flag === '--ignore_set') && val.includes(',')) {
+                                          val.split(',').forEach(item => {
+                                            const trimmed = item.trim();
+                                            if (trimmed) {
+                                              args.push(flag);
+                                              args.push(trimmed);
+                                            }
+                                          });
+                                        } else {
+                                          args.push(flag);
+                                          args.push(val.trim());
+                                        }
+                                      }
+                                    });
+                                  }
+
+                                  const tempDirId = crypto.randomUUID();
+                                  const result = await runCommand(targetCommand, args, {
+                                    isPluginFetch: pluginState.selectedPlugin.id === 'custom_script_upload',
+                                    startMessage: `Fetching artwork for ${pluginState.selectedPlugin.name}...`,
+                                    hideProgressOnComplete: true,
+                                    tempDirId,
+                                    uploadedPluginFilePath,
+                                    upscaleOptions: upscaleConfig
+                                  });
+
+                                  if (result && result.fetchedFiles) {
+                                    const collisions: string[] = [];
+                                    const fronts = Array.isArray(result.fetchedFiles.fronts) ? result.fetchedFiles.fronts : [];
+                                    const backs = Array.isArray(result.fetchedFiles.backs) ? result.fetchedFiles.backs : [];
+                                    const double_sided = Array.isArray(result.fetchedFiles.double_sided) ? result.fetchedFiles.double_sided : [];
+                                    const totalFetched = fronts.length + backs.length + double_sided.length;
+
+                                    if (totalFetched === 0) {
                                       addLog(`[Warning] No cards were found or fetched. Please verify that the deck/URL is public and valid.`);
                                       setTaskProgress({ current: 0, total: 1, message: 'No cards found.' });
                                       setTimeout(() => setTaskProgress(null), 2500);
                                       return;
-                                  }
+                                    }
 
-                                  const targetFronts = status?.plugins?.fronts || [];
-                                  const targetBacks = status?.plugins?.backs || [];
-                                  const targetDob = status?.plugins?.double_sided || [];
-                                  
-                                  fronts.forEach(f => { if(targetFronts.includes(f)) collisions.push(`front:${f}`); });
-                                  backs.forEach(f => { if(targetBacks.includes(f)) collisions.push(`back:${f}`); });
-                                  double_sided.forEach(f => { if(targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
-                                  
-                                  if (collisions.length > 0) {
+                                    const targetFronts = status?.plugins?.fronts || [];
+                                    const targetBacks = status?.plugins?.backs || [];
+                                    const targetDob = status?.plugins?.double_sided || [];
+
+                                    fronts.forEach(f => { if (targetFronts.includes(f)) collisions.push(`front:${f}`); });
+                                    backs.forEach(f => { if (targetBacks.includes(f)) collisions.push(`back:${f}`); });
+                                    double_sided.forEach(f => { if (targetDob.includes(f)) collisions.push(`double_sided:${f}`); });
+
+                                    if (collisions.length > 0) {
                                       setTaskProgress(null);
                                       setFetchConflictData({ tempDirId, collisions, resolutions: {} });
-                                  } else {
+                                    } else {
                                       setTaskProgress({ current: totalFetched, total: totalFetched, message: `Committing ${totalFetched} card(s)...` });
                                       await fetch('/api/plugin/fetch-commit', {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json' },
-                                          body: JSON.stringify({ tempDirId, resolutions: {}, upscaleOptions: upscaleConfig })
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ tempDirId, resolutions: {}, upscaleOptions: upscaleConfig })
                                       });
                                       await fetchStatus();
                                       addLog(`[System] Successfully imported ${totalFetched} card image(s).`);
                                       setTaskProgress({ current: totalFetched, total: totalFetched, message: `Imported ${totalFetched} card(s)!` });
                                       setTimeout(() => setTaskProgress(null), 1500);
+                                    }
+                                  } else {
+                                    setTaskProgress(null);
                                   }
-                              } else {
-                                setTaskProgress(null);
-                              }
-                            }}
-                            className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg"
-                          >
-                            <Download size={20} />
-                            {pluginState.selectedPlugin.id === 'custom_script_upload' ? "Run Script" : "Fetch Images"}
-                          </button>
-                       </div>
-                     </div>
-                    )}
-                  </div>
-                 </div>
-                )}
-
-                <div className="space-y-16">
-                  {/* Back Patterns Section */}
-                  {(assetFilter === 'all' || assetFilter === 'back') && assetViewMode !== 'plugins' && (
-                    <section className="space-y-6">
-                      <DropZone 
-                        label="Drag and drop area for backs"
-                        isLibrary={assetViewMode === 'library'}
-                        disabled={false}
-                        onDrop={async (files, isLibrary) => {
-                          const filesToUpload = isLibrary ? Array.from(files) : [files[0]];
-                          addLog(`[Uploader] Dropped ${filesToUpload.length} back patterns. Starting upload...`);
-                          for (const file of filesToUpload) {
-                            await handleUpload(file, 'back', isLibrary);
-                          }
-                          await fetchStatus();
-                        }}
-                      >
-                        <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
-                          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({...s, backs: !s.backs}))}>
-                            <div className="p-2 bg-primary-600/20 rounded-lg text-primary-400 shadow-inner">
-                              <ImageIcon size={18} />
+                                }}
+                                className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg"
+                              >
+                                <Download size={20} />
+                                {pluginState.selectedPlugin.id === 'custom_script_upload' ? "Run Script" : "Fetch Images"}
+                              </button>
                             </div>
-                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
-                              Back Patterns 
-                              <span className="text-white/20 font-normal">
-                                ({getAllAssets('back')?.length || 0})
-                              </span>
-                            </h3>
                           </div>
-                          <div className="flex items-center gap-2">
+                        )}
+                      </div>
+                    </div>
+                  )}
 
-                            <button onClick={() => setCollapsedSections(s => ({...s, backs: !s.backs}))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                  <div className="space-y-16">
+                    {/* Back Patterns Section */}
+                    {(assetFilter === 'all' || assetFilter === 'back') && assetViewMode !== 'plugins' && (
+                      <section className="space-y-6">
+                        <DropZone
+                          label="Drag and drop area for backs"
+                          isLibrary={assetViewMode === 'library'}
+                          disabled={false}
+                          onDrop={async (files, isLibrary) => {
+                            const filesToUpload = isLibrary ? Array.from(files) : [files[0]];
+                            addLog(`[Uploader] Dropped ${filesToUpload.length} back patterns. Starting upload...`);
+                            for (const file of filesToUpload) {
+                              await handleUpload(file, 'back', isLibrary);
+                            }
+                            await fetchStatus();
+                          }}
+                        >
+                          <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
+                            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({ ...s, backs: !s.backs }))}>
+                              <div className="p-2 bg-primary-600/20 rounded-lg text-primary-400 shadow-inner">
+                                <ImageIcon size={18} />
+                              </div>
+                              <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
+                                Back Patterns
+                                <span className="text-white/20 font-normal">
+                                  ({getAllAssets('back')?.length || 0})
+                                </span>
+                              </h3>
+                            </div>
+                            <div className="flex items-center gap-2">
+
+                              <button onClick={() => setCollapsedSections(s => ({ ...s, backs: !s.backs }))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
                                 <ChevronDown size={18} className={cn("transition-transform", collapsedSections.backs && "-rotate-90")} />
-                            </button>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                        
-                        {!collapsedSections.backs && (
-                          <div 
-                            className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
-                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
-                          >
-                            <TemplateCard 
-                              type="back" 
-                              multiple={assetViewMode === 'library'}
-                              onUpload={async (files) => {
+
+                          {!collapsedSections.backs && (
+                            <div
+                              className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
+                              style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
+                            >
+                              <TemplateCard
+                                type="back"
+                                multiple={assetViewMode === 'library'}
+                                onUpload={async (files) => {
                                   for (let i = 0; i < files.length; i++) {
                                     setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
                                     await handleUpload(files[i], 'back', assetViewMode === 'library');
                                   }
                                   setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
                                   setTimeout(() => setTaskProgress(null), 1500);
-                                }} 
+                                }}
                               />
-                            {getAllAssets('back')
-                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((img: string, i: number) => (
-                                <AssetItem 
-                                  key={`back_${img}`} 
-                                  cacheBustToken={cacheBusts[img] || globalCacheBust}
-                                  name={img} 
-                                  type="back" 
-                                  allAssets={getCurrentAssets()} 
-                                  selected={selectedAssets.has(`back:${img}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'back' })}
-                                  onSelect={(e) => handleAssetSelect(`back:${img}`, e)}
-                                  onDragSelectStart={() => handleDragStart(`back:${img}`)}
-                                  onEnlarge={(src) => setEnlargedImage(src)}
-                                  uploadedImages={uploadedImages}
-                                  assetViewMode={assetViewMode}
-                                  cardDimming={cardDimming}
-                                />
-                              ))}
-                          </div>
-                        )}
-                      </DropZone>
-                    </section>
-                  )}
-
-                  {/* Front Faces Section */}
-                  {(assetFilter === 'all' || assetFilter === 'front') && (
-                    <section className="space-y-6">
-                      <DropZone 
-                        label="Drag and drop area for fronts"
-                        isLibrary={assetViewMode === 'library'}
-                        disabled={assetViewMode === 'plugins'}
-                        onDrop={async (files, isLibrary) => {
-                          addLog(`[Uploader] Dropped ${files.length} front faces. Starting upload...`);
-                          for (const file of Array.from(files)) {
-                            await handleUpload(file, 'front', isLibrary);
-                          }
-                          await fetchStatus();
-                        }}
-                      >
-                        <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
-                          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({...s, fronts: !s.fronts}))}>
-                            <div className="p-2 bg-primary-600/20 rounded-lg text-primary-400 shadow-inner">
-                              <Eye size={18} />
+                              {getAllAssets('back')
+                                .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                                .map((img: string, i: number) => (
+                                  <AssetItem
+                                    key={`back_${img}`}
+                                    cacheBustToken={cacheBusts[img] || globalCacheBust}
+                                    name={img}
+                                    type="back"
+                                    allAssets={getCurrentAssets()}
+                                    selected={selectedAssets.has(`back:${img}`)}
+                                    onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'back' })}
+                                    onSelect={(e) => handleAssetSelect(`back:${img}`, e)}
+                                    onDragSelectStart={() => handleDragStart(`back:${img}`)}
+                                    onEnlarge={(src) => setEnlargedImage(src)}
+                                    uploadedImages={uploadedImages}
+                                    assetViewMode={assetViewMode}
+                                    cardDimming={cardDimming}
+                                  />
+                                ))}
                             </div>
-                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
-                              Front Faces 
-                              <span className="text-white/20 font-normal">
-                                {getAllAssets('front')?.length || 0}
-                              </span>
-                            </h3>
-                          </div>
-                          <button onClick={() => setCollapsedSections(s => ({...s, fronts: !s.fronts}))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                          )}
+                        </DropZone>
+                      </section>
+                    )}
+
+                    {/* Front Faces Section */}
+                    {(assetFilter === 'all' || assetFilter === 'front') && (
+                      <section className="space-y-6">
+                        <DropZone
+                          label="Drag and drop area for fronts"
+                          isLibrary={assetViewMode === 'library'}
+                          disabled={assetViewMode === 'plugins'}
+                          onDrop={async (files, isLibrary) => {
+                            addLog(`[Uploader] Dropped ${files.length} front faces. Starting upload...`);
+                            for (const file of Array.from(files)) {
+                              await handleUpload(file, 'front', isLibrary);
+                            }
+                            await fetchStatus();
+                          }}
+                        >
+                          <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
+                            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({ ...s, fronts: !s.fronts }))}>
+                              <div className="p-2 bg-primary-600/20 rounded-lg text-primary-400 shadow-inner">
+                                <Eye size={18} />
+                              </div>
+                              <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
+                                Front Faces
+                                <span className="text-white/20 font-normal">
+                                  {getAllAssets('front')?.length || 0}
+                                </span>
+                              </h3>
+                            </div>
+                            <button onClick={() => setCollapsedSections(s => ({ ...s, fronts: !s.fronts }))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
                               <ChevronDown size={18} className={cn("transition-transform", collapsedSections.fronts && "-rotate-90")} />
-                          </button>
-                        </div>
-
-                        {!collapsedSections.fronts && (
-                          <div 
-                            className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
-                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
-                          >
-                            {assetViewMode !== 'plugins' && (
-                              <TemplateCard 
-                                type="front" 
-                                multiple={true}
-                                onUpload={async (files) => {
-                                  for (let i = 0; i < files.length; i++) {
-                                    setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
-                                    await handleUpload(files[i], 'front', assetViewMode === 'library');
-                                  }
-                                  setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
-                                  setTimeout(() => setTaskProgress(null), 1500);
-                                }} 
-                              />
-                            )}
-                            {getAllAssets('front')
-                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((img: string, i: number) => (
-                                <AssetItem 
-                                  key={`front_${img}`} 
-                                  cacheBustToken={cacheBusts[img] || globalCacheBust}
-                                  name={img} 
-                                  type="front" 
-                                  allAssets={getCurrentAssets()}
-                                  selected={selectedAssets.has(`front:${img}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'front' })}
-                                  onSelect={(e) => handleAssetSelect(`front:${img}`, e)}
-                                  onDragSelectStart={() => handleDragStart(`front:${img}`)}
-                                  onEnlarge={(src) => setEnlargedImage(src)}
-                                  isFlipped={flippedAssets.has(`front:${img}`)}
-                                  onToggleFlip={(e) => handleToggleFlip(`front:${img}`, e)}
-                                  uploadedImages={uploadedImages}
-                                  assetViewMode={assetViewMode}
-                                  cardDimming={cardDimming}
-                                />
-                              ))}
+                            </button>
                           </div>
-                        )}
-                      </DropZone>
-                    </section>
-                  )}
 
-                  {/* Double-Sided Section */}
-                  {(assetFilter === 'all' || assetFilter === 'double_sided') && (
-                    <section className="space-y-6">
-                      <DropZone 
-                        label="Drag and drop area for double-sided"
-                        isLibrary={assetViewMode === 'library'}
-                        disabled={assetViewMode === 'plugins'}
-                        onDrop={async (files, isLibrary) => {
-                          addLog(`[Uploader] Dropped ${files.length} double-sided faces. Starting upload...`);
-                          for (const file of Array.from(files)) {
-                            await handleUpload(file, 'double_sided', isLibrary);
-                          }
-                          await fetchStatus();
-                        }}
-                      >
-                        <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
-                          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({...s, doubleSided: !s.doubleSided}))}>
-                            <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400 shadow-inner">
-                              <Book size={18} />
+                          {!collapsedSections.fronts && (
+                            <div
+                              className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
+                              style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
+                            >
+                              {assetViewMode !== 'plugins' && (
+                                <TemplateCard
+                                  type="front"
+                                  multiple={true}
+                                  onUpload={async (files) => {
+                                    for (let i = 0; i < files.length; i++) {
+                                      setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                      await handleUpload(files[i], 'front', assetViewMode === 'library');
+                                    }
+                                    setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                    setTimeout(() => setTaskProgress(null), 1500);
+                                  }}
+                                />
+                              )}
+                              {getAllAssets('front')
+                                .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                                .map((img: string, i: number) => (
+                                  <AssetItem
+                                    key={`front_${img}`}
+                                    cacheBustToken={cacheBusts[img] || globalCacheBust}
+                                    name={img}
+                                    type="front"
+                                    allAssets={getCurrentAssets()}
+                                    selected={selectedAssets.has(`front:${img}`)}
+                                    onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'front' })}
+                                    onSelect={(e) => handleAssetSelect(`front:${img}`, e)}
+                                    onDragSelectStart={() => handleDragStart(`front:${img}`)}
+                                    onEnlarge={(src) => setEnlargedImage(src)}
+                                    isFlipped={flippedAssets.has(`front:${img}`)}
+                                    onToggleFlip={(e) => handleToggleFlip(`front:${img}`, e)}
+                                    uploadedImages={uploadedImages}
+                                    assetViewMode={assetViewMode}
+                                    cardDimming={cardDimming}
+                                  />
+                                ))}
                             </div>
-                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
-                              Double-Sided 
-                              <span className="text-white/20 font-normal">
-                                {getAllAssets('double_sided')?.length || 0}
-                              </span>
-                            </h3>
-                          </div>
-                          <button onClick={() => setCollapsedSections(s => ({...s, doubleSided: !s.doubleSided}))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
-                              <ChevronDown size={18} className={cn("transition-transform", collapsedSections.doubleSided && "-rotate-90")} />
-                          </button>
-                        </div>
+                          )}
+                        </DropZone>
+                      </section>
+                    )}
 
-                        {!collapsedSections.doubleSided && (
-                          <div 
-                            className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
-                            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
-                          >
-                            {assetViewMode !== 'plugins' && (
-                              <TemplateCard 
-                                type="double_sided" 
-                                multiple={true}
-                                onUpload={async (files) => {
-                                  for (let i = 0; i < files.length; i++) {
-                                    setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
-                                    await handleUpload(files[i], 'double_sided', assetViewMode === 'library');
-                                  }
-                                  setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
-                                  setTimeout(() => setTaskProgress(null), 1500);
-                                }} 
-                              />
-                            )}
-                            {getAllAssets('double_sided')
-                              .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
-                              .map((img: string, i: number) => (
-                                <AssetItem 
-                                  key={`double_sided_${img}`} 
-                                  cacheBustToken={cacheBusts[img] || globalCacheBust}
-                                  name={img} 
-                                  type="double_sided" 
-                                  allAssets={getCurrentAssets()}
-                                  selected={selectedAssets.has(`double_sided:${img}`)}
-                                  onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'double_sided' })}
-                                  onSelect={(e) => handleAssetSelect(`double_sided:${img}`, e)}
-                                  onDragSelectStart={() => handleDragStart(`double_sided:${img}`)}
-                                  onEnlarge={(src) => setEnlargedImage(src)}
-                                  isFlipped={flippedAssets.has(`double_sided:${img}`)}
-                                  onToggleFlip={(e) => handleToggleFlip(`double_sided:${img}`, e)}
-                                  uploadedImages={uploadedImages}
-                                  assetViewMode={assetViewMode}
-                                  cardDimming={cardDimming}
-                                />
-                              ))}
+                    {/* Double-Sided Section */}
+                    {(assetFilter === 'all' || assetFilter === 'double_sided') && (
+                      <section className="space-y-6">
+                        <DropZone
+                          label="Drag and drop area for double-sided"
+                          isLibrary={assetViewMode === 'library'}
+                          disabled={assetViewMode === 'plugins'}
+                          onDrop={async (files, isLibrary) => {
+                            addLog(`[Uploader] Dropped ${files.length} double-sided faces. Starting upload...`);
+                            for (const file of Array.from(files)) {
+                              await handleUpload(file, 'double_sided', isLibrary);
+                            }
+                            await fetchStatus();
+                          }}
+                        >
+                          <div className="flex items-center justify-between border-b border-white/5 pb-4 px-2">
+                            <div className="flex items-center gap-3 cursor-pointer" onClick={() => setCollapsedSections(s => ({ ...s, doubleSided: !s.doubleSided }))}>
+                              <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400 shadow-inner">
+                                <Book size={18} />
+                              </div>
+                              <h3 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2 select-none">
+                                Double-Sided
+                                <span className="text-white/20 font-normal">
+                                  {getAllAssets('double_sided')?.length || 0}
+                                </span>
+                              </h3>
+                            </div>
+                            <button onClick={() => setCollapsedSections(s => ({ ...s, doubleSided: !s.doubleSided }))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                              <ChevronDown size={18} className={cn("transition-transform", collapsedSections.doubleSided && "-rotate-90")} />
+                            </button>
                           </div>
-                        )}
-                      </DropZone>
-                    </section>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </main>
+
+                          {!collapsedSections.doubleSided && (
+                            <div
+                              className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
+                              style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
+                            >
+                              {assetViewMode !== 'plugins' && (
+                                <TemplateCard
+                                  type="double_sided"
+                                  multiple={true}
+                                  onUpload={async (files) => {
+                                    for (let i = 0; i < files.length; i++) {
+                                      setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                      await handleUpload(files[i], 'double_sided', assetViewMode === 'library');
+                                    }
+                                    setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                    setTimeout(() => setTaskProgress(null), 1500);
+                                  }}
+                                />
+                              )}
+                              {getAllAssets('double_sided')
+                                .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
+                                .map((img: string, i: number) => (
+                                  <AssetItem
+                                    key={`double_sided_${img}`}
+                                    cacheBustToken={cacheBusts[img] || globalCacheBust}
+                                    name={img}
+                                    type="double_sided"
+                                    allAssets={getCurrentAssets()}
+                                    selected={selectedAssets.has(`double_sided:${img}`)}
+                                    onContextMenu={(x, y) => setContextMenu({ x, y, name: img, type: 'double_sided' })}
+                                    onSelect={(e) => handleAssetSelect(`double_sided:${img}`, e)}
+                                    onDragSelectStart={() => handleDragStart(`double_sided:${img}`)}
+                                    onEnlarge={(src) => setEnlargedImage(src)}
+                                    isFlipped={flippedAssets.has(`double_sided:${img}`)}
+                                    onToggleFlip={(e) => handleToggleFlip(`double_sided:${img}`, e)}
+                                    uploadedImages={uploadedImages}
+                                    assetViewMode={assetViewMode}
+                                    cardDimming={cardDimming}
+                                  />
+                                ))}
+                            </div>
+                          )}
+                        </DropZone>
+                      </section>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </main>
       </ErrorBoundary>
 
       <AnimatePresence>
         {importConflictData && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -5516,7 +5669,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="p-6 space-y-6">
                 <div className="bg-black/40 border border-white/5 rounded-xl p-4 font-mono text-xs text-white/60 max-h-32 overflow-y-auto">
                   <ul className="space-y-1">
@@ -5527,7 +5680,7 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col gap-3">
-                  <button 
+                  <button
                     onClick={async () => {
                       const { items, destination, source, backResolution = 'check' } = importConflictData;
                       setImportConflictData(null);
@@ -5538,7 +5691,7 @@ export default function App() {
                     Keep Existing (Skip Duplicates)
                   </button>
 
-                  <button 
+                  <button
                     onClick={async () => {
                       const { items, destination, source, backResolution = 'check' } = importConflictData;
                       setImportConflictData(null);
@@ -5549,7 +5702,7 @@ export default function App() {
                     Replace Existing
                   </button>
 
-                  <button 
+                  <button
                     onClick={async () => {
                       const { items, destination, source, backResolution = 'check' } = importConflictData;
                       setImportConflictData(null);
@@ -5560,7 +5713,7 @@ export default function App() {
                     Keep Both
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => setImportConflictData(null)}
                     className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
                   >
@@ -5574,7 +5727,7 @@ export default function App() {
 
         {backConflictData && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -5593,12 +5746,12 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="p-6 space-y-6">
                 <p className="text-white/70 text-sm">Do you want to replace the current workspace card back, or keep the existing one and skip adding this new back image?</p>
 
                 <div className="flex flex-col gap-3">
-                  <button 
+                  <button
                     onClick={async () => {
                       const { items, destination, source, conflictResolution = 'check' } = backConflictData;
                       setBackConflictData(null);
@@ -5609,7 +5762,7 @@ export default function App() {
                     Keep Existing
                   </button>
 
-                  <button 
+                  <button
                     onClick={async () => {
                       const { items, destination, source, conflictResolution = 'check' } = backConflictData;
                       setBackConflictData(null);
@@ -5620,7 +5773,7 @@ export default function App() {
                     Replace
                   </button>
 
-                  <button 
+                  <button
                     onClick={() => setBackConflictData(null)}
                     className="w-full flex items-center justify-center gap-2 py-2 text-white/40 hover:text-white transition-colors text-sm"
                   >
@@ -5634,7 +5787,7 @@ export default function App() {
 
         {fetchConflictData && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -5653,7 +5806,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              
+
               <div className="p-6 space-y-6">
                 <div className="bg-black/40 border border-white/5 rounded-xl p-4 max-h-[50vh] overflow-y-auto space-y-8">
                   {fetchConflictData.collisions.map((c, i) => {
@@ -5662,35 +5815,35 @@ export default function App() {
                     const dotIndex = name.lastIndexOf('.');
                     const ext = dotIndex !== -1 ? name.substring(dotIndex) : '.png';
                     const baseName = dotIndex !== -1 ? name.substring(0, dotIndex) : name;
-                    
-                    const existingList = type === 'back' 
-                      ? status?.plugins?.backs 
+
+                    const existingList = type === 'back'
+                      ? status?.plugins?.backs
                       : (type === 'double_sided' ? status?.plugins?.double_sided : status?.plugins?.fronts);
-                      
+
                     const variants = (existingList || []).filter(f => f === name || (f.startsWith(`${baseName}_`) && f.endsWith(ext)));
 
                     return (
                       <div key={`${c}-${i}`} className="space-y-4 border-b border-white/10 pb-6 last:border-0 last:pb-0">
                         <div className="text-white font-bold truncate text-sm px-2 text-center md:text-left">{name}</div>
-                        
-                        <div className="flex flex-col md:flex-row gap-6">
-                           <div className="w-full md:w-1/3 flex flex-col gap-3">
-                             <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
-                             <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
-                                <img src={`/library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
-                             </div>
-                           </div>
 
-                           <div className="w-full md:w-2/3 flex flex-col gap-3">
-                             <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
-                             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
-                                {variants.map(v => (
-                                   <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
-                                      <img src={`/plugins_staging/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
-                                   </div>
-                                ))}
-                             </div>
-                           </div>
+                        <div className="flex flex-col md:flex-row gap-6">
+                          <div className="w-full md:w-1/3 flex flex-col gap-3">
+                            <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
+                            <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
+                              <img src={`/library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
+                            </div>
+                          </div>
+
+                          <div className="w-full md:w-2/3 flex flex-col gap-3">
+                            <div className="text-[10px] uppercase tracking-widest text-secondary-400 font-bold px-2 text-center md:text-left">Existing Cards to Replace ({variants.length})</div>
+                            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
+                              {variants.map(v => (
+                                <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
+                                  <img src={`/plugins_staging/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     );
@@ -5698,15 +5851,15 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-col md:flex-row gap-3">
-                  <button 
+                  <button
                     onClick={async () => {
                       const { tempDirId, collisions } = fetchConflictData;
                       setFetchConflictData(null);
                       setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                      
+
                       const resolutions: Record<string, 'skip'> = {};
                       collisions.forEach(c => resolutions[c] = 'skip');
-                      
+
                       await fetch('/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -5720,7 +5873,7 @@ export default function App() {
                     Keep All Existing (Skip Duplicates)
                   </button>
 
-                  <button 
+                  <button
                     onClick={async () => {
                       const { tempDirId, collisions } = fetchConflictData;
                       setFetchConflictData(null);
@@ -5730,14 +5883,14 @@ export default function App() {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, resolutions: {} })
                       });
-                      
+
                       const newBusts = { ...cacheBusts };
                       collisions.forEach(c => {
-                          const name = c?.includes(':') ? c.split(':')[1] : c;
-                          if (name) newBusts[name] = Date.now();
+                        const name = c?.includes(':') ? c.split(':')[1] : c;
+                        if (name) newBusts[name] = Date.now();
                       });
                       setCacheBusts(newBusts);
-                      
+
                       await fetchStatus();
                       setTaskProgress(null);
                     }}
@@ -5746,21 +5899,21 @@ export default function App() {
                     Replace All Existing
                   </button>
 
-                  <button 
+                  <button
                     onClick={async () => {
                       const { tempDirId, collisions } = fetchConflictData;
                       setFetchConflictData(null);
                       setTaskProgress({ current: 1, total: 1, message: 'Committing fetch...' });
-                      
+
                       const resolutions: Record<string, 'keep_both'> = {};
                       collisions.forEach(c => resolutions[c] = 'keep_both');
-                      
+
                       await fetch('/api/plugin/fetch-commit', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ tempDirId, resolutions })
                       });
-                      
+
                       await fetchStatus();
                       setTaskProgress(null);
                     }}
@@ -5769,7 +5922,7 @@ export default function App() {
                     Keep Both for All
                   </button>
 
-                  <button 
+                  <button
                     onClick={async () => {
                       const { tempDirId } = fetchConflictData;
                       setFetchConflictData(null);
@@ -5791,7 +5944,7 @@ export default function App() {
 
         {showConflictModal && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -5808,19 +5961,19 @@ export default function App() {
               </div>
 
               <div className="space-y-3">
-                <button 
+                <button
                   onClick={() => uploadToProject(true, false)}
                   className="w-full py-4 bg-primary-600 hover:bg-primary-500 text-white rounded-2xl font-bold transition-all active:scale-95"
                 >
                   Replace
                 </button>
-                <button 
+                <button
                   onClick={() => uploadToProject(false, true)}
                   className="w-full py-4 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-bold border border-white/10 transition-all active:scale-95"
                 >
                   Keep
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     setShowConflictModal(false);
                     setPendingUploadItems([]);
@@ -5848,7 +6001,7 @@ export default function App() {
       <AnimatePresence>
         {isReplaceBackDialogOpen && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -5887,7 +6040,7 @@ export default function App() {
       <AnimatePresence>
         {showThemeSettings && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -5899,19 +6052,19 @@ export default function App() {
               </div>
 
               <div className="flex bg-black/40 rounded-lg p-1 gap-1 mb-6 shrink-0">
-                <button 
+                <button
                   onClick={() => setSettingsTab('theme')}
                   className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", settingsTab === 'theme' ? "bg-white/10 text-white" : "text-white/40 hover:text-white")}
                 >
                   Theme
                 </button>
-                <button 
+                <button
                   onClick={() => setSettingsTab('shortcuts')}
                   className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", settingsTab === 'shortcuts' ? "bg-white/10 text-white" : "text-white/40 hover:text-white")}
                 >
                   Shortcuts
                 </button>
-                <button 
+                <button
                   onClick={() => setSettingsTab('system')}
                   className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", settingsTab === 'system' ? "bg-white/10 text-white" : "text-white/40 hover:text-white")}
                 >
@@ -5926,10 +6079,10 @@ export default function App() {
                       <span className="text-sm font-medium text-white block">Completion Sound</span>
                       <span className="text-xs text-white/40 block">Play a sound when PDF generation is done.</span>
                     </div>
-                    <ToggleItem 
+                    <ToggleItem
                       label=""
-                      checked={playDingSound} 
-                      onChange={setPlayDingSound} 
+                      checked={playDingSound}
+                      onChange={setPlayDingSound}
                     />
                   </div>
 
@@ -6080,7 +6233,7 @@ export default function App() {
                       rel="noopener noreferrer"
                       className="flex justify-between items-center w-full px-4 py-3 rounded-xl hover:bg-white/5 transition-colors group"
                     >
-                       <div className="flex flex-col">
+                      <div className="flex flex-col">
                         <span className="text-sm text-white/60 group-hover:text-primary-400 font-medium transition-colors">SCMUI Wrapper</span>
                         <span className="text-[10px] text-white/40">React UI Frontend</span>
                       </div>
@@ -6094,39 +6247,39 @@ export default function App() {
                 <div className="space-y-3 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
                   {Object.keys(shortcuts).map(action => (
                     <div key={action} className="p-3 bg-white/5 border border-white/5 rounded-2xl flex flex-col gap-2">
-                       <span className="text-xs font-medium text-white/80 capitalize px-1">{action.replace(/([A-Z])/g, ' $1').trim()}</span>
-                       <input
-                          type="text"
-                          value={shortcuts[action]}
-                          onChange={(e) => setShortcuts(prev => ({ ...prev, [action]: e.target.value }))}
-                          onKeyDown={(e) => {
-                            const getShortcutString = (ev: any) => {
-                              const parts = [];
-                              if (ev.ctrlKey || ev.metaKey) parts.push('Ctrl');
-                              if (ev.altKey) parts.push('Alt');
-                              if (ev.shiftKey) parts.push('Shift');
-                              let k = ev.key;
-                              if (k === ' ') k = 'Space';
-                              if (!['Control', 'Alt', 'Shift', 'Meta'].includes(k)) {
-                                parts.push(k.length === 1 ? k.toUpperCase() : k);
-                              } else {
-                                return "";
-                              }
-                              return parts.join('+');
-                            };
-                            const pressed = getShortcutString(e);
-                            if (pressed) {
-                              e.preventDefault();
-                              setShortcuts(prev => ({ ...prev, [action]: pressed }));
+                      <span className="text-xs font-medium text-white/80 capitalize px-1">{action.replace(/([A-Z])/g, ' $1').trim()}</span>
+                      <input
+                        type="text"
+                        value={shortcuts[action]}
+                        onChange={(e) => setShortcuts(prev => ({ ...prev, [action]: e.target.value }))}
+                        onKeyDown={(e) => {
+                          const getShortcutString = (ev: any) => {
+                            const parts = [];
+                            if (ev.ctrlKey || ev.metaKey) parts.push('Ctrl');
+                            if (ev.altKey) parts.push('Alt');
+                            if (ev.shiftKey) parts.push('Shift');
+                            let k = ev.key;
+                            if (k === ' ') k = 'Space';
+                            if (!['Control', 'Alt', 'Shift', 'Meta'].includes(k)) {
+                              parts.push(k.length === 1 ? k.toUpperCase() : k);
+                            } else {
+                              return "";
                             }
-                          }}
-                          className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono text-center text-white focus:outline-none focus:border-primary-500 transition-colors"
-                          placeholder="Press keys..."
-                       />
+                            return parts.join('+');
+                          };
+                          const pressed = getShortcutString(e);
+                          if (pressed) {
+                            e.preventDefault();
+                            setShortcuts(prev => ({ ...prev, [action]: pressed }));
+                          }
+                        }}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono text-center text-white focus:outline-none focus:border-primary-500 transition-colors"
+                        placeholder="Press keys..."
+                      />
                     </div>
                   ))}
                   <div className="pt-4 flex justify-center">
-                    <button 
+                    <button
                       onClick={() => setShortcuts({
                         toggleConsole: 'Ctrl+`',
                         saveProject: 'Ctrl+S',
@@ -6151,7 +6304,7 @@ export default function App() {
 
               {settingsTab === 'system' && (
                 <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
-                  
+
                   <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
                     <div className="space-y-1">
                       <span className="text-sm font-medium text-white block">Mobile App Connection URL</span>
@@ -6167,11 +6320,11 @@ export default function App() {
                         </div>
                       ) : isTunnelStarting ? (
                         <div className="w-full bg-black/40 border border-white/10 rounded-lg p-3 flex items-center justify-center gap-2">
-                           <RefreshCw size={16} className="text-white/40 animate-spin" />
-                           <span className="text-xs text-white/50 font-medium">Starting server broadcast...</span>
+                          <RefreshCw size={16} className="text-white/40 animate-spin" />
+                          <span className="text-xs text-white/50 font-medium">Starting server broadcast...</span>
                         </div>
                       ) : (
-                        <button 
+                        <button
                           onClick={() => {
                             setIsTunnelStarting(true);
                             fetch('/api/tunnel/start', { method: 'POST' });
@@ -6193,13 +6346,13 @@ export default function App() {
                       </span>
                     </div>
                     <div>
-                      <input 
-                         title="Python Executable Path"
-                         type="text" 
-                         value={pythonPath}
-                         onChange={(e) => setPythonPath(e.target.value)}
-                         className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono text-white focus:outline-none focus:border-primary-500 transition-colors"
-                         placeholder="C:\Python310\python.exe or /usr/bin/python3"
+                      <input
+                        title="Python Executable Path"
+                        type="text"
+                        value={pythonPath}
+                        onChange={(e) => setPythonPath(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono text-white focus:outline-none focus:border-primary-500 transition-colors"
+                        placeholder="C:\Python310\python.exe or /usr/bin/python3"
                       />
                     </div>
                   </div>
@@ -6211,7 +6364,7 @@ export default function App() {
                         If Python scripts are missing or failed to install correctly, try running the setup background process again. This will create the virtual environment and install pip dependencies.
                       </span>
                     </div>
-                    <button 
+                    <button
                       onClick={() => {
                         setShowThemeSettings(false);
                         startPythonSetup();
@@ -6224,7 +6377,7 @@ export default function App() {
                 </div>
               )}
 
-              <button 
+              <button
                 onClick={() => setShowThemeSettings(false)}
                 className="w-full py-4 text-white bg-white/5 hover:bg-white/10 transition-all font-bold rounded-2xl shrink-0"
               >
@@ -6240,7 +6393,7 @@ export default function App() {
       <AnimatePresence>
         {showPluginReadmeModal && pluginReadme && (
           <div className="fixed inset-0 z-[250] flex flex-col items-center justify-center p-4 md:p-8 bg-black/80 backdrop-blur-md">
-            <motion.div 
+            <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
@@ -6248,10 +6401,10 @@ export default function App() {
             >
               <div className="flex items-center justify-between p-6 border-b border-white/5 bg-[#1a1a20]">
                 <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Book className="text-primary-400" size={24} /> 
+                  <Book className="text-primary-400" size={24} />
                   Readme: {pluginReadme.name}
                 </h3>
-                <button 
+                <button
                   onClick={() => setShowPluginReadmeModal(false)}
                   className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white transition-all shadow border border-white/5"
                 >
@@ -6290,8 +6443,8 @@ export default function App() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 8 }}
                 transition={{ duration: 0.12 }}
-                style={{ 
-                  top: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerHeight - 520, contextMenu.y)) : 0, 
+                style={{
+                  top: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerHeight - 520, contextMenu.y)) : 0,
                   left: typeof window !== 'undefined' ? Math.max(10, Math.min(window.innerWidth - 275, contextMenu.x)) : 0,
                 }}
                 className="fixed z-[100] pointer-events-auto flex flex-col items-stretch p-1.5 bg-[#14151b]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-[0_24px_50px_-10px_rgba(0,0,0,0.7)] w-64 max-w-[275px] select-none"
@@ -6310,7 +6463,7 @@ export default function App() {
                 <div className="space-y-0.5">
                   {contextMenu.type !== 'back' ? (
                     <>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
@@ -6322,7 +6475,7 @@ export default function App() {
                         <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
                         <span className="truncate">Select Front Art</span>
                       </button>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
@@ -6335,7 +6488,7 @@ export default function App() {
                         <span className="truncate">Set Back (Double-Sided)</span>
                       </button>
                       {assetViewMode !== 'plugins' && (
-                        <button 
+                        <button
                           onClick={async (e) => {
                             e.stopPropagation();
                             setContextMenu(null);
@@ -6371,7 +6524,7 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           openArtPickerForCard(contextMenu.name, 'back', 'back');
@@ -6384,7 +6537,7 @@ export default function App() {
                         <span className="truncate">Select Backing Art</span>
                       </button>
                       {assetViewMode !== 'plugins' && (
-                        <button 
+                        <button
                           onClick={async (e) => {
                             e.stopPropagation();
                             setContextMenu(null);
@@ -6431,7 +6584,7 @@ export default function App() {
                 </div>
                 <div className="space-y-0.5">
                   {/* Single Upscale */}
-                  <button 
+                  <button
                     onClick={async (e) => {
                       e.stopPropagation();
                       setContextMenu(null);
@@ -6446,7 +6599,7 @@ export default function App() {
 
                   {/* Batch Upscale Selected */}
                   {isMultiSelected && (
-                    <button 
+                    <button
                       onClick={async (e) => {
                         e.stopPropagation();
                         setContextMenu(null);
@@ -6465,7 +6618,7 @@ export default function App() {
                 <div className="h-[1px] w-full bg-white/5 my-1" />
                 <div className="space-y-0.5">
                   {/* Download Image or ZIP */}
-                  <button 
+                  <button
                     onClick={async (e) => {
                       e.stopPropagation();
                       setContextMenu(null);
@@ -6513,7 +6666,7 @@ export default function App() {
 
                   {/* Duplicate */}
                   {(!contextMenu.type || contextMenu.type !== 'back') && (
-                    <button 
+                    <button
                       onClick={async (e) => {
                         e.stopPropagation();
                         let allResults: any[] = [];
@@ -6530,12 +6683,12 @@ export default function App() {
                               addLog(`[Action: Duplicate] ${targets[i]} -> ${data.newName} (Success)`);
                               allResults.push(`${targets[i].split(':')[0]}:${data.newName}`);
                             }
-                          } catch(err) {
+                          } catch (err) {
                             addLog(`[Error] Failed to duplicate: ${err}`);
                           }
                         }
                         if (allResults.length > 0) {
-                           setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
+                          setFileUndoStack(prev => [...prev, { action: 'duplicate', items: allResults, assetViewMode }]);
                         }
                         setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} duplicated` });
                         await fetchStatus();
@@ -6551,7 +6704,7 @@ export default function App() {
 
                   {/* Transfer to Project / Library */}
                   {assetViewMode === 'library' && (
-                    <button 
+                    <button
                       onClick={async (e) => {
                         e.stopPropagation();
                         setContextMenu(null);
@@ -6565,7 +6718,7 @@ export default function App() {
                   )}
 
                   {assetViewMode === 'project' && (
-                    <button 
+                    <button
                       onClick={async (e) => {
                         e.stopPropagation();
                         setContextMenu(null);
@@ -6580,7 +6733,7 @@ export default function App() {
 
                   {assetViewMode === 'plugins' && (
                     <>
-                      <button 
+                      <button
                         onClick={async (e) => {
                           e.stopPropagation();
                           setContextMenu(null);
@@ -6591,7 +6744,7 @@ export default function App() {
                         <PlusCircle size={14} className="text-white/40 group-hover:text-white shrink-0" />
                         <span className="truncate">Add to Project</span>
                       </button>
-                      <button 
+                      <button
                         onClick={async (e) => {
                           e.stopPropagation();
                           setContextMenu(null);
@@ -6606,7 +6759,7 @@ export default function App() {
                   )}
 
                   {/* Select All */}
-                  <button 
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
                       const currentAssets = getCurrentAssets();
@@ -6633,7 +6786,7 @@ export default function App() {
 
                 {/* 4. Danger Section */}
                 <div className="h-[1px] w-full bg-white/5 my-1" />
-                <button 
+                <button
                   onClick={async (e) => {
                     e.stopPropagation();
                     let allResults: any[] = [];
@@ -6650,14 +6803,14 @@ export default function App() {
                           data.results.forEach((r: any) => addLog(`[Action: Delete] ${r.from} (Success)`));
                           allResults = allResults.concat(data.results);
                         }
-                      } catch(err) {
+                      } catch (err) {
                         addLog(`[Error] Failed to delete: ${err}`);
                       }
                     }
                     if (allResults.length > 0) {
                       setFileUndoStack(prev => [...prev, { action: 'delete', items: allResults, assetViewMode }]);
                     }
-                    
+
                     setTaskProgress({ current: targets.length, total: targets.length, message: `${targets.length} card${targets.length === 1 ? '' : 's'} deleted` });
                     await fetchStatus();
                     setTimeout(() => setTaskProgress(null), 1500);
@@ -6677,34 +6830,34 @@ export default function App() {
         </AnimatePresence>
       </ErrorBoundary>
       {activeTab === 'assets' && (assetViewMode === 'library' || assetViewMode === 'plugins') && selectedAssets.size > 0 && (
-         <motion.div
-           initial={{ opacity: 0, y: 50 }}
-           animate={{ opacity: 1, y: 0 }}
-           exit={{ opacity: 0, y: 50 }}
-           className="fixed bottom-24 left-1/2 -translate-x-1/2 md:bottom-6 md:left-auto md:right-6 md:translate-x-0 w-[90%] md:w-auto z-[100] flex justify-center gap-3 pointer-events-none"
-         >
-           {assetViewMode === 'plugins' && (
-             <button 
-               onClick={() => uploadToLibrary()}
-               className="pointer-events-auto flex items-center gap-2 px-4 py-3 md:px-6 md:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs md:text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95 flex-1 md:flex-none justify-center"
-             >
-               <Book size={16} />
-               Add to Library ({selectedAssets.size})
-             </button>
-           )}
-           <button 
-             onClick={() => uploadToProject()}
-             className="pointer-events-auto flex items-center gap-2 px-4 py-3 md:px-6 md:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs md:text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95 flex-1 md:flex-none justify-center"
-           >
-             <Download size={16} />
-             Add to Project ({selectedAssets.size})
-           </button>
-         </motion.div>
-       )}
+        <motion.div
+          initial={{ opacity: 0, y: 50 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 50 }}
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 md:bottom-6 md:left-auto md:right-6 md:translate-x-0 w-[90%] md:w-auto z-[100] flex justify-center gap-3 pointer-events-none"
+        >
+          {assetViewMode === 'plugins' && (
+            <button
+              onClick={() => uploadToLibrary()}
+              className="pointer-events-auto flex items-center gap-2 px-4 py-3 md:px-6 md:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs md:text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95 flex-1 md:flex-none justify-center"
+            >
+              <Book size={16} />
+              Add to Library ({selectedAssets.size})
+            </button>
+          )}
+          <button
+            onClick={() => uploadToProject()}
+            className="pointer-events-auto flex items-center gap-2 px-4 py-3 md:px-6 md:py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs md:text-sm font-bold transition-all shadow-xl shadow-primary-600/30 active:scale-95 flex-1 md:flex-none justify-center"
+          >
+            <Download size={16} />
+            Add to Project ({selectedAssets.size})
+          </button>
+        </motion.div>
+      )}
 
       <AnimatePresence>
         {enlargedImage && (
-          <LightboxGallery 
+          <LightboxGallery
             initialImage={enlargedImage}
             onClose={() => setEnlargedImage(null)}
             onUpscaleSingle={async (src: string) => {
@@ -6761,7 +6914,7 @@ export default function App() {
           <span className="text-[9px] font-medium font-sans">Console</span>
         </button>
       </nav>
-      
+
       <PresetManager
         category="pdf"
         currentData={cmdOptions}
@@ -6806,9 +6959,9 @@ export default function App() {
             });
             const data = await res.json();
             if (data.success) {
-               addLog(`[Project] Success: ${data.message}`);
-               setLoadedProject(name);
-               await fetchStatus();
+              addLog(`[Project] Success: ${data.message}`);
+              setLoadedProject(name);
+              await fetchStatus();
             }
           } catch (err) {
             addLog(`[Error] Save failed: ${err}`);
@@ -6823,9 +6976,9 @@ export default function App() {
             });
             const data = await res.json();
             if (data.success) {
-               addLog(`[Project] Success: Loaded '${name}'`);
-               setLoadedProject(name);
-               await fetchStatus();
+              addLog(`[Project] Success: Loaded '${name}'`);
+              setLoadedProject(name);
+              await fetchStatus();
             }
           } catch (err) {
             addLog(`[Error] Load failed: ${err}`);
@@ -6840,7 +6993,7 @@ export default function App() {
       <AnimatePresence>
         {isArtPickerOpen && (
           <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
@@ -6857,8 +7010,8 @@ export default function App() {
                       <h3 className="text-base font-bold text-white">
                         {artTargetCard?.targetMode === 'double_sided'
                           ? `Set Back for: ${cleanCardName(artTargetCard.name)}`
-                          : isBacksOnlyModal 
-                            ? "Add Card Backing" 
+                          : isBacksOnlyModal
+                            ? "Add Card Backing"
                             : "Select Cards"}
                       </h3>
                       {artTargetCard && (
@@ -6886,7 +7039,7 @@ export default function App() {
                       <ExternalLink size={16} />
                     </a>
                   )}
-                  <button 
+                  <button
                     onClick={() => setIsArtPickerOpen(false)}
                     className="p-2 text-white/40 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
                   >
@@ -6970,7 +7123,7 @@ export default function App() {
                 </div>
 
                 {/* Unified Search Input */}
-                <form 
+                <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     handleSearchArt(artQuery);
@@ -6979,7 +7132,7 @@ export default function App() {
                 >
                   <div className="relative flex-1">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={16} />
-                    <input 
+                    <input
                       type="text"
                       value={artQuery}
                       onChange={(e) => setArtQuery(e.target.value)}
@@ -6988,7 +7141,7 @@ export default function App() {
                       autoFocus
                     />
                   </div>
-                  <button 
+                  <button
                     type="submit"
                     disabled={isSearchingArt}
                     className="px-6 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-2 cursor-pointer shadow-lg shadow-primary-600/25"
@@ -7003,8 +7156,8 @@ export default function App() {
                   <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-1">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Frame Style</label>
-                      <select 
-                        value={scryfallFilters.frame} 
+                      <select
+                        value={scryfallFilters.frame}
                         onChange={(e) => {
                           const updated = { ...scryfallFilters, frame: e.target.value };
                           setScryfallFilters(updated);
@@ -7024,8 +7177,8 @@ export default function App() {
 
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Card Type</label>
-                      <select 
-                        value={scryfallFilters.type} 
+                      <select
+                        value={scryfallFilters.type}
                         onChange={(e) => {
                           const updated = { ...scryfallFilters, type: e.target.value };
                           setScryfallFilters(updated);
@@ -7046,8 +7199,8 @@ export default function App() {
 
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Color</label>
-                      <select 
-                        value={scryfallFilters.color} 
+                      <select
+                        value={scryfallFilters.color}
                         onChange={(e) => {
                           const updated = { ...scryfallFilters, color: e.target.value };
                           setScryfallFilters(updated);
@@ -7068,8 +7221,8 @@ export default function App() {
 
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Rarity</label>
-                      <select 
-                        value={scryfallFilters.rarity} 
+                      <select
+                        value={scryfallFilters.rarity}
                         onChange={(e) => {
                           const updated = { ...scryfallFilters, rarity: e.target.value };
                           setScryfallFilters(updated);
@@ -7087,8 +7240,8 @@ export default function App() {
 
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By (DPI / Date)</label>
-                      <select 
-                        value={scryfallFilters.order} 
+                      <select
+                        value={scryfallFilters.order}
                         onChange={(e) => {
                           const updated = { ...scryfallFilters, order: e.target.value };
                           setScryfallFilters(updated);
@@ -7110,7 +7263,7 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">DPI Filter</label>
-                      <select 
+                      <select
                         value={mpcFilters.dpi}
                         onChange={(e) => {
                           const updated = { ...mpcFilters, dpi: e.target.value };
@@ -7131,7 +7284,7 @@ export default function App() {
 
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
-                      <select 
+                      <select
                         value={scryfallFilters.order}
                         onChange={(e) => {
                           const updated = { ...scryfallFilters, order: e.target.value };
@@ -7154,7 +7307,7 @@ export default function App() {
                 )}
 
                 <div className="flex justify-between items-center pt-2">
-                  <button 
+                  <button
                     onClick={() => {
                       setScryfallFilters({ frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' });
                       setMpcFilters({ dpi: 'all', tag: 'all', set: '' });
@@ -7164,14 +7317,14 @@ export default function App() {
                   >
                     Clear Filters
                   </button>
-                  
+
                   <div className="flex items-center gap-3">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">Card Size</label>
-                    <input 
-                      type="range" 
-                      min="100" 
-                      max="300" 
-                      value={artCardSize} 
+                    <input
+                      type="range"
+                      min="100"
+                      max="300"
+                      value={artCardSize}
                       onChange={(e) => setArtCardSize(parseInt(e.target.value))}
                       className="w-24 accent-primary-500"
                     />
@@ -7206,7 +7359,7 @@ export default function App() {
                         return (
                           <div key={card.id} className="bg-white/[0.03] border border-white/10 hover:border-primary-500/40 rounded-2xl p-2.5 flex flex-col justify-between transition-all group">
                             <div>
-                              <div 
+                              <div
                                 onClick={() => img && setEnlargedImage(img)}
                                 className="relative aspect-[5/7] rounded-xl overflow-hidden bg-black/40 mb-2 cursor-pointer group/img"
                                 title="Click to enlarge"
@@ -7233,7 +7386,7 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            
+
                             <div className="space-y-1.5 mt-3 pt-2 border-t border-white/5">
                               {/* Primary Action Button: Replaces old Project & Library buttons */}
                               {artTargetCard?.targetMode === 'double_sided' ? (
@@ -7319,7 +7472,7 @@ export default function App() {
 
                 {/* Proxxied Bottom Action Bar */}
                 <div className="mt-4 pt-4 border-t border-white/10">
-                  <button 
+                  <button
                     type="button"
                     onClick={() => {
                       setArtQuery('');
@@ -7339,7 +7492,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-     </div>
+    </div>
   );
 }
 
@@ -7348,14 +7501,14 @@ function TemplateCard({ type, onUpload, multiple = false }: { type: 'front' | 'b
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div 
+    <div
       onClick={() => fileInputRef.current?.click()}
       className="group aspect-[2.5/3.5] bg-black/40 border-2 border-dashed border-white/5 hover:border-primary-500/50 rounded-2xl flex flex-col items-center justify-center gap-4 transition-all cursor-pointer relative overflow-hidden"
     >
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        className="hidden" 
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
         accept="image/*"
         multiple={multiple}
         onChange={(e) => {
@@ -7375,13 +7528,13 @@ function TemplateCard({ type, onUpload, multiple = false }: { type: 'front' | 'b
 
 function DropZone({ children, onDrop, label, isLibrary, disabled = false }: { children: React.ReactNode, onDrop: (files: FileList, isLibrary: boolean) => void, label: string, isLibrary: boolean, disabled?: boolean }) {
   const [isOver, setIsOver] = useState(false);
-  
+
   if (disabled) {
     return <>{children}</>;
   }
 
   return (
-    <div 
+    <div
       onDragOver={(e) => { e.preventDefault(); setIsOver(true); }}
       onDragLeave={() => setIsOver(false)}
       onDrop={(e) => {
@@ -7397,7 +7550,7 @@ function DropZone({ children, onDrop, label, isLibrary, disabled = false }: { ch
       {children}
       {isOver && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center pointer-events-none rounded-[40px] overflow-hidden bg-black/40 backdrop-blur-sm">
-          <motion.div 
+          <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="bg-primary-600 text-white px-8 py-4 rounded-3xl shadow-2xl font-bold uppercase tracking-widest text-xs flex items-center gap-3"
@@ -7409,7 +7562,7 @@ function DropZone({ children, onDrop, label, isLibrary, disabled = false }: { ch
       )}
       <div className="hidden md:block mt-4 px-6">
         <p className="text-[10px] font-bold uppercase tracking-widest text-primary-400/40">
-           {label}
+          {label}
         </p>
       </div>
     </div>
@@ -7418,13 +7571,13 @@ function DropZone({ children, onDrop, label, isLibrary, disabled = false }: { ch
 
 function SidebarItem({ icon, label, active, onClick, collapsed }: { icon: React.ReactNode, label: string, active?: boolean, onClick: () => void, collapsed?: boolean }) {
   return (
-    <button 
+    <button
       onClick={onClick}
       title={collapsed ? label : undefined}
       className={cn(
         "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm overflow-hidden",
-        active 
-          ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20" 
+        active
+          ? "bg-primary-600 text-white shadow-lg shadow-primary-600/20"
           : "text-white/40 hover:bg-white/5 hover:text-white",
         collapsed && "px-0 justify-center"
       )}
@@ -7437,7 +7590,7 @@ function SidebarItem({ icon, label, active, onClick, collapsed }: { icon: React.
 
 function CommandItem({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className="w-full flex items-center gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 rounded-xl transition-all group"
     >
@@ -7470,7 +7623,7 @@ function DocsCmd({ name, desc }: { name: string, desc: string }) {
       <code className="text-emerald-400 text-xs px-2 py-1 bg-white/5 rounded border border-white/10 font-bold">
         {name}
       </code>
-       <p className="text-sm text-white/60">{desc}</p>
+      <p className="text-sm text-white/60">{desc}</p>
     </div>
   );
 }
@@ -7478,7 +7631,7 @@ function DocsCmd({ name, desc }: { name: string, desc: string }) {
 const ErrorBanner: React.FC<{ logs: string[] }> = ({ logs }) => {
   const [visible, setVisible] = useState(false);
   const lastError = [...logs].reverse().find(l => l.startsWith('[Error]'));
-  
+
   useEffect(() => {
     if (lastError) {
       setVisible(true);
@@ -7490,7 +7643,7 @@ const ErrorBanner: React.FC<{ logs: string[] }> = ({ logs }) => {
   if (!lastError || !visible) return null;
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 20 }}
@@ -7505,7 +7658,7 @@ const ErrorBanner: React.FC<{ logs: string[] }> = ({ logs }) => {
         </h4>
         <p className="text-[11px] text-white/70 font-mono leading-relaxed break-words">{lastError.replace('[Error] ', '')}</p>
       </div>
-      <button 
+      <button
         onClick={() => setVisible(false)}
         className="text-white/20 hover:text-white transition-colors"
       >
@@ -7520,7 +7673,7 @@ function SelectGroup({ label, value, options, onChange }: { label: string, value
     <div className="space-y-1.5 flex-1">
       <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">{label}</label>
       <div className="relative group">
-        <select 
+        <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/10"
@@ -7535,7 +7688,7 @@ function SelectGroup({ label, value, options, onChange }: { label: string, value
 
 function ToggleItem({ label, checked, onChange }: { label: string, checked: boolean, onChange: (v: boolean) => void }) {
   return (
-    <button 
+    <button
       onClick={() => onChange(!checked)}
       className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-white/5 transition-all group"
     >
@@ -7571,22 +7724,22 @@ interface AssetItemProps {
   cacheBustToken?: number;
 }
 
-const _AssetItem: React.FC<AssetItemProps> = ({ 
-  name, 
-  type, 
-  allAssets, 
-  onContextMenu, 
-  selected, 
-  onSelect, 
-  onDragSelectStart, 
-  onEnlarge, 
-  isFlipped, 
-  onToggleFlip, 
-  uploadedImages, 
-  addLog, 
-  assetViewMode, 
-  cardDimming = 'tint', 
-  cacheBustToken 
+const _AssetItem: React.FC<AssetItemProps> = ({
+  name,
+  type,
+  allAssets,
+  onContextMenu,
+  selected,
+  onSelect,
+  onDragSelectStart,
+  onEnlarge,
+  isFlipped,
+  onToggleFlip,
+  uploadedImages,
+  addLog,
+  assetViewMode,
+  cardDimming = 'tint',
+  cacheBustToken
 }) => {
   const cleanName = useMemo(() => stripExt(name).toLowerCase(), [name]);
 
@@ -7595,7 +7748,7 @@ const _AssetItem: React.FC<AssetItemProps> = ({
     if (!Array.isArray(allAssets?.double_sided)) return false;
     return allAssets.double_sided.some((d: string) => stripExt(d).toLowerCase() === cleanName);
   }, [type, allAssets?.double_sided, cleanName]);
-  
+
   const baseUrl = useMemo(() => {
     if (assetViewMode === 'library') return '/library';
     if (assetViewMode === 'plugins') return '/plugins_staging';
@@ -7613,15 +7766,15 @@ const _AssetItem: React.FC<AssetItemProps> = ({
       addLog?.(`AssetItem Debug: ${name} FOUND in uploadedImages for ${logicalType}.`);
       return uploadedImages[`${logicalType}_${name}`];
     }
-    
+
     if ((type === 'front' || type === 'double_sided') && uploadedImages?.[`front_${name}`]) {
-       return uploadedImages[`front_${name}`];
+      return uploadedImages[`front_${name}`];
     }
-    
+
     if (type === 'back') {
       return appendBust(`${baseUrl}/back/${encodeURIComponent(name)}`);
     }
-    
+
     if (isDoubleSided) {
       const exactFront = allAssets?.fronts?.find(f => stripExt(f).toLowerCase() === cleanName);
       if (exactFront) {
@@ -7630,13 +7783,13 @@ const _AssetItem: React.FC<AssetItemProps> = ({
         return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
       }
     }
-    
+
     return appendBust(`${baseUrl}/front/${encodeURIComponent(name)}`);
   }, [type, name, uploadedImages, addLog, baseUrl, appendBust, isDoubleSided, allAssets?.fronts, cleanName]);
 
   const backFace = useMemo(() => {
     if (type === 'back') return null;
-    
+
     if (isDoubleSided) {
       const exactDoubleSided = allAssets?.double_sided?.find(d => stripExt(d).toLowerCase() === cleanName);
       const hasDoubleSidedOnDisk = !!exactDoubleSided || type === 'double_sided';
@@ -7647,13 +7800,13 @@ const _AssetItem: React.FC<AssetItemProps> = ({
         return { name: allAssets.backs[allAssets.backs.length - 1], folder: 'back' };
       }
     }
-    
+
     if (assetViewMode === 'library' || assetViewMode === 'plugins') return null;
-    
+
     if (allAssets?.backs && allAssets.backs.length > 0) {
       return { name: allAssets.backs[allAssets.backs.length - 1], folder: 'back' };
     }
-    
+
     return null;
   }, [type, isDoubleSided, allAssets?.double_sided, allAssets?.fronts, allAssets?.backs, cleanName, name, assetViewMode]);
 
@@ -7693,7 +7846,7 @@ const _AssetItem: React.FC<AssetItemProps> = ({
   }, [isFlipped, backFace, backFaceSrc, imgSrc]);
 
   return (
-    <div 
+    <div
       className="group space-y-3 asset-card"
       data-asset-name={`${type}:${name}`}
       onContextMenu={(e) => {
@@ -7707,7 +7860,7 @@ const _AssetItem: React.FC<AssetItemProps> = ({
       onTouchEnd={cancelTouch}
       onTouchCancel={cancelTouch}
     >
-      <div 
+      <div
         className={cn(
           "aspect-[2.5/3.5] relative perspective-1000",
           "cursor-pointer lightbox-trigger"
@@ -7725,7 +7878,7 @@ const _AssetItem: React.FC<AssetItemProps> = ({
         }}
       >
         {(type === 'front' || type === 'double_sided') && backFace && (
-          <button 
+          <button
             onClick={(e) => {
               if (onToggleFlip) {
                 onToggleFlip(e);
@@ -7733,8 +7886,8 @@ const _AssetItem: React.FC<AssetItemProps> = ({
             }}
             className={cn(
               "absolute top-2 right-2 z-30 w-7 h-7 rounded-full border text-white flex items-center justify-center transition-all shadow-md active:scale-95 group/flip cursor-pointer",
-              isDoubleSided 
-                ? "bg-primary-600 border-primary-400 opacity-95 hover:opacity-100 shadow-lg shadow-primary-600/30 ring-1 ring-primary-400/50" 
+              isDoubleSided
+                ? "bg-primary-600 border-primary-400 opacity-95 hover:opacity-100 shadow-lg shadow-primary-600/30 ring-1 ring-primary-400/50"
                 : "bg-black/60 border-white/20 opacity-0 group-hover:opacity-100 hover:bg-primary-600 hover:border-primary-400"
             )}
             title="Flip Card (Inspect Front / Back)"
@@ -7750,29 +7903,29 @@ const _AssetItem: React.FC<AssetItemProps> = ({
         >
           {/* Front Face / Static Back Pattern */}
           <div className={cn(
-             "absolute inset-0 backface-hidden bg-[#0f0f13] border rounded-xl overflow-hidden shadow-lg shadow-black/20 transition-all duration-300",
-             selected ? "border-primary-500 ring-2 ring-primary-500/50" : "border-white/5",
-             !selected && "group-hover:border-primary-500/50"
+            "absolute inset-0 backface-hidden bg-[#0f0f13] border rounded-xl overflow-hidden shadow-lg shadow-black/20 transition-all duration-300",
+            selected ? "border-primary-500 ring-2 ring-primary-500/50" : "border-white/5",
+            !selected && "group-hover:border-primary-500/50"
           )}>
             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-               <img 
-                 src={imgSrc} 
-                 alt={name}
-                 loading="lazy"
-                 decoding="async"
-                  className={cn(
-                    "w-full h-full object-cover transition-opacity duration-300",
-                    cardDimming === 'dark' 
-                      ? "opacity-50 group-hover:opacity-100" 
-                      : cardDimming === 'tint'
-                        ? "opacity-75 group-hover:opacity-100"
-                        : "opacity-100"
-                  )}
-               />
-               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
+              <img
+                src={imgSrc}
+                alt={name}
+                loading="lazy"
+                decoding="async"
+                className={cn(
+                  "w-full h-full object-cover transition-opacity duration-300",
+                  cardDimming === 'dark'
+                    ? "opacity-50 group-hover:opacity-100"
+                    : cardDimming === 'tint'
+                      ? "opacity-75 group-hover:opacity-100"
+                      : "opacity-100"
+                )}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
             </div>
-            
-             {type === 'back' && selected && (
+
+            {type === 'back' && selected && (
               <div className="absolute top-2 right-2 z-20 px-2 py-0.5 bg-primary-600 rounded-full shadow-lg border border-primary-500">
                 <span className="text-[8px] font-bold text-white uppercase tracking-tighter">Default Back</span>
               </div>
@@ -7785,12 +7938,12 @@ const _AssetItem: React.FC<AssetItemProps> = ({
               </div>
             )}
 
-             {isDoubleSided && (
-               <div className="absolute bottom-2 left-2 z-20 px-2 py-0.5 bg-primary-600/90 text-white rounded-md text-[9px] font-bold shadow-md flex items-center gap-1 border border-primary-400/40">
-                 <Layers size={10} />
-                 <span>Double Sided</span>
-               </div>
-             )}
+            {isDoubleSided && (
+              <div className="absolute bottom-2 left-2 z-20 px-2 py-0.5 bg-primary-600/90 text-white rounded-md text-[9px] font-bold shadow-md flex items-center gap-1 border border-primary-400/40">
+                <Layers size={10} />
+                <span>Double Sided</span>
+              </div>
+            )}
 
             {(type === 'front' || type === 'double_sided') && !selected && assetViewMode !== 'library' && (
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-3 text-center select-none">
@@ -7802,13 +7955,13 @@ const _AssetItem: React.FC<AssetItemProps> = ({
 
           {/* Back Face (only if front or double-sided) */}
           {(type === 'front' || type === 'double_sided') && (
-            <div 
+            <div
               className="absolute inset-0 backface-hidden bg-[#0f0f13] border border-white/5 rounded-xl overflow-hidden shadow-lg shadow-black/20"
               style={{ transform: 'rotateY(180deg)' }}
             >
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                 {backFace ? (
-                  <img 
+                  <img
                     src={backFaceSrc}
                     alt={backFace.name}
                     loading="lazy"
@@ -7825,9 +7978,9 @@ const _AssetItem: React.FC<AssetItemProps> = ({
             </div>
           )}
         </motion.div>
-        
+
         {/* Selection Button */}
-        <button 
+        <button
           onClick={(e) => {
             e.stopPropagation();
             onSelect?.(e);
@@ -7839,8 +7992,8 @@ const _AssetItem: React.FC<AssetItemProps> = ({
           }}
           className={cn(
             "absolute top-2 left-2 z-30 w-6 h-6 rounded-full border flex items-center justify-center transition-all shadow-md active:scale-95",
-            selected 
-              ? "bg-primary-600 border-primary-400 text-white" 
+            selected
+              ? "bg-primary-600 border-primary-400 text-white"
               : "bg-black/40 border-white/10 text-white/0 group-hover:text-white/40 group-hover:border-white/40 hover:bg-black/60 hover:text-white/80"
           )}
         >

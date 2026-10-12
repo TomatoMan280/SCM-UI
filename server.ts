@@ -68,11 +68,119 @@ async function startServer() {
     }
   };
 
+  interface GpuVramInfo {
+    detected: boolean;
+    name: string;
+    totalVramMB: number;
+    freeVramMB: number;
+    source: string;
+  }
+
+  let cachedGpuInfo: { data: GpuVramInfo; timestamp: number } | null = null;
+
+  const getGpuInfo = (): GpuVramInfo => {
+    const now = Date.now();
+    if (cachedGpuInfo && (now - cachedGpuInfo.timestamp < 3000)) {
+      return cachedGpuInfo.data;
+    }
+
+    const { spawnSync } = require('child_process');
+
+    // 1. Try nvidia-smi (real-time accurate VRAM total & free)
+    try {
+      const nvsmi = spawnSync('nvidia-smi', ['--query-gpu=name,memory.total,memory.free', '--format=csv,noheader,nounits'], {
+        encoding: 'utf8',
+        timeout: 2000,
+        windowsHide: true
+      });
+      if (nvsmi.status === 0 && nvsmi.stdout) {
+        const line = nvsmi.stdout.trim().split('\n')[0];
+        const parts = line.split(',').map((s: string) => s.trim());
+        if (parts.length >= 3) {
+          const total = parseInt(parts[1], 10);
+          const free = parseInt(parts[2], 10);
+          if (!isNaN(total) && total > 0) {
+            const data: GpuVramInfo = {
+              detected: true,
+              name: parts[0],
+              totalVramMB: total,
+              freeVramMB: !isNaN(free) ? free : total,
+              source: 'nvidia-smi'
+            };
+            cachedGpuInfo = { data, timestamp: now };
+            return data;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. Windows fallback: PowerShell Win32_VideoController
+    if (process.platform === 'win32') {
+      try {
+        const ps = spawnSync('powershell', [
+          '-NoProfile',
+          '-Command',
+          'Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Json'
+        ], { encoding: 'utf8', timeout: 3500, windowsHide: true });
+        if (ps.status === 0 && ps.stdout) {
+          let parsed = JSON.parse(ps.stdout.trim());
+          if (!Array.isArray(parsed)) parsed = [parsed];
+          const primary = parsed.find((g: any) => g && g.AdapterRAM && g.AdapterRAM > 0 && !String(g.Name).toLowerCase().includes('virtual'));
+          if (primary) {
+            const ramMB = Math.round(Number(primary.AdapterRAM) / (1024 * 1024));
+            const data: GpuVramInfo = {
+              detected: true,
+              name: primary.Name || 'Dedicated GPU',
+              totalVramMB: ramMB,
+              freeVramMB: Math.round(ramMB * 0.75),
+              source: 'win32'
+            };
+            cachedGpuInfo = { data, timestamp: now };
+            return data;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. macOS fallback: sysctl system RAM (unified memory)
+    if (process.platform === 'darwin') {
+      try {
+        const macMem = spawnSync('sysctl', ['-n', 'hw.memsize'], { encoding: 'utf8', timeout: 1500 });
+        if (macMem.status === 0 && macMem.stdout) {
+          const bytes = parseInt(macMem.stdout.trim(), 10);
+          if (!isNaN(bytes) && bytes > 0) {
+            const ramMB = Math.round(bytes / (1024 * 1024));
+            const data: GpuVramInfo = {
+              detected: true,
+              name: 'Apple Silicon (Unified Memory)',
+              totalVramMB: ramMB,
+              freeVramMB: Math.round(ramMB * 0.6),
+              source: 'apple'
+            };
+            cachedGpuInfo = { data, timestamp: now };
+            return data;
+          }
+        }
+      } catch (_) {}
+    }
+
+    const fallback: GpuVramInfo = {
+      detected: false,
+      name: 'Generic / Integrated GPU',
+      totalVramMB: 4096,
+      freeVramMB: 2048,
+      source: 'fallback'
+    };
+    cachedGpuInfo = { data: fallback, timestamp: now };
+    return fallback;
+  };
+
   interface UpscaylInfo {
     available: boolean;
     binPath: string;
     modelsDir: string;
     models: string[];
+    gpu?: GpuVramInfo;
   }
 
   const findUpscayl = (): UpscaylInfo => {
@@ -123,6 +231,8 @@ async function startServer() {
     denoise?: boolean;
     enhanceContrast?: boolean;
     maxDimension?: number;
+    tileSize?: number;
+    workers?: number;
   }
 
   const getOriginalPath = (targetFilePath: string): string => {
@@ -241,6 +351,9 @@ async function startServer() {
         if (maxDimension > 0 && maxDimension < 8192) {
           args.push('-w', maxDimension.toString());
         }
+        if (opts.tileSize && Number(opts.tileSize) > 0) {
+          args.push('-t', Number(opts.tileSize).toString());
+        }
 
         const { execFile } = await import('child_process');
         await new Promise<void>((resolve, reject) => {
@@ -317,6 +430,9 @@ async function startServer() {
           '-f', 'png'
         ];
         if (opts.tta) args.push('-x');
+        if (opts.tileSize && Number(opts.tileSize) > 0) {
+          args.push('-t', Number(opts.tileSize).toString());
+        }
 
         const { execFile } = await import('child_process');
         await new Promise<void>((resolve, reject) => {
@@ -3375,7 +3491,9 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   });
 
   app.get("/api/upscayl/status", (req, res) => {
-    res.json(findUpscayl());
+    const upscayl = findUpscayl();
+    const gpu = getGpuInfo();
+    res.json({ ...upscayl, gpu });
   });
 
   app.post("/api/upscale", async (req, res) => {
@@ -3429,7 +3547,9 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         denoise = false,
         enhanceContrast = false,
         scope = 'all',
-        maxDimension = 4096
+        maxDimension = 4096,
+        workers = 1,
+        tileSize = 0
       } = req.body;
       let targetPaths: string[] = [];
 
@@ -3492,7 +3612,9 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         sharpen: !!sharpen,
         denoise: !!denoise,
         enhanceContrast: !!enhanceContrast,
-        maxDimension: Number(maxDimension) || 4096
+        maxDimension: Number(maxDimension) || 4096,
+        tileSize: Number(tileSize) || 0,
+        workers: Number(workers) || 1
       };
 
       const upscayl = findUpscayl();
@@ -3501,38 +3623,56 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         total: targetPaths.length, 
         model: options.model, 
         scaleFactor: options.scaleFactor,
-        engine: upscayl.available ? 'upscayl-ai' : 'fallback'
+        engine: upscayl.available ? 'upscayl-ai' : 'fallback',
+        workers: options.workers
       });
 
+      const concurrency = Math.max(1, Math.min(8, Number(workers) || 1));
       let count = 0;
-      for (let i = 0; i < targetPaths.length; i++) {
-        if (clientDisconnected) {
-          console.log('[Upscale] Client connection closed, aborting remaining queue');
-          break;
+      let completed = 0;
+      let nextIndex = 0;
+      const total = targetPaths.length;
+
+      const runWorker = async (workerId: number) => {
+        while (nextIndex < total && !clientDisconnected) {
+          const idx = nextIndex++;
+          if (idx >= total) break;
+
+          const p = targetPaths[idx];
+          const cardName = path.basename(p);
+
+          sendEvent('progress', {
+            current: completed + 1,
+            total,
+            cardName,
+            status: 'upscaling',
+            message: concurrency > 1
+              ? `[Worker ${workerId}] Upscaling ${cardName}...`
+              : `Upscaling ${cardName}...`
+          });
+
+          const ok = await upscaleImageFile(p, options);
+          if (ok) count++;
+          completed++;
+
+          sendEvent('progress', {
+            current: completed,
+            total,
+            cardName,
+            status: 'completed',
+            message: concurrency > 1
+              ? `Upscaled ${cardName} (${completed}/${total})`
+              : `Upscaled ${cardName}`
+          });
         }
+      };
 
-        const p = targetPaths[i];
-        const cardName = path.basename(p);
-
-        sendEvent('progress', {
-          current: i + 1,
-          total: targetPaths.length,
-          cardName,
-          status: 'upscaling',
-          message: `Upscaling ${cardName}...`
-        });
-
-        const ok = await upscaleImageFile(p, options);
-        if (ok) count++;
-
-        sendEvent('progress', {
-          current: i + 1,
-          total: targetPaths.length,
-          cardName,
-          status: 'completed',
-          message: `Upscaled ${cardName}`
-        });
+      const workerCount = Math.min(concurrency, total);
+      const workerPromises: Promise<void>[] = [];
+      for (let w = 1; w <= workerCount; w++) {
+        workerPromises.push(runWorker(w));
       }
+      await Promise.all(workerPromises);
 
       if (isStream) {
         if (pingInterval) clearInterval(pingInterval);
