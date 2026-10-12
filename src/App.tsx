@@ -2074,7 +2074,14 @@ export default function App() {
   // Command Builder State
   const [cmdOptions, setCmdOptions] = useState(() => {
     const saved = localStorage.getItem('scm_cmd_options');
-    return saved ? JSON.parse(saved) : {
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.extend_corners === 0) parsed.extend_corners = "";
+        return parsed;
+      } catch (e) {}
+    }
+    return {
       specialty: 'none',
       card_size: 'standard',
       paper_size: 'letter',
@@ -2083,7 +2090,7 @@ export default function App() {
       borderless: false,
       only_fronts: false,
       fit: 'stretch',
-      extend_corners: 0,
+      extend_corners: "",
       extend_corners_backs: "",
       extend_bleed: "",
       extend_bleed_backs: "",
@@ -2963,7 +2970,7 @@ export default function App() {
     if (cmdOptions.crop_backs) { args.push('--crop_backs'); args.push(cmdOptions.crop_backs); }
     if (cmdOptions.extend_bleed) { args.push('--extend_bleed'); args.push(cmdOptions.extend_bleed); }
     if (cmdOptions.extend_bleed_backs) { args.push('--extend_bleed_backs'); args.push(cmdOptions.extend_bleed_backs); }
-    if (cmdOptions.extend_corners > 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
+    if (cmdOptions.extend_corners && cmdOptions.extend_corners !== '0' && cmdOptions.extend_corners !== 0) { args.push('--extend_corners'); args.push(cmdOptions.extend_corners.toString()); }
     if (cmdOptions.extend_corners_backs) { args.push('--extend_corners_backs'); args.push(cmdOptions.extend_corners_backs); }
     if (cmdOptions.extend_edges) { args.push('--extend_edges'); args.push(cmdOptions.extend_edges); }
     if (cmdOptions.extend_edges_backs) { args.push('--extend_edges_backs'); args.push(cmdOptions.extend_edges_backs); }
@@ -4232,10 +4239,10 @@ export default function App() {
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Corners Fronts</label>
                                       <input
-                                        type="number"
-                                        placeholder="0"
-                                        value={cmdOptions.extend_corners}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_corners: parseInt(e.target.value) || 0 }))}
+                                        type="text"
+                                        placeholder="e.g. 3.5mm"
+                                        value={cmdOptions.extend_corners || ''}
+                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_corners: e.target.value }))}
                                         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
@@ -4491,7 +4498,7 @@ export default function App() {
                               {cmdOptions.crop_backs && `--crop_backs ${cmdOptions.crop_backs}`} <br />
                               {cmdOptions.label && `--label "${cmdOptions.label}"`} <br />
                               {cmdOptions.skip && `--skip ${cmdOptions.skip}`} <br />
-                              {cmdOptions.extend_corners > 0 && `--extend_corners ${cmdOptions.extend_corners}`} <br />
+                              {cmdOptions.extend_corners && cmdOptions.extend_corners !== '0' && cmdOptions.extend_corners !== 0 && `--extend_corners ${cmdOptions.extend_corners}`} <br />
                               {cmdOptions.output_images && "--output_images"}
                             </div>
 
@@ -4501,7 +4508,7 @@ export default function App() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const rawCmd = `python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`;
+                                    const rawCmd = `python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners && cmdOptions.extend_corners !== '0' && cmdOptions.extend_corners !== 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`;
                                     navigator.clipboard.writeText(rawCmd);
                                     setCommandCopied(true);
                                     setTimeout(() => setCommandCopied(false), 2000);
@@ -4514,7 +4521,7 @@ export default function App() {
                               </div>
                               <textarea
                                 readOnly
-                                value={`python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners > 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`}
+                                value={`python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${cmdOptions.crop ? ` --crop ${cmdOptions.crop}` : ''}${cmdOptions.crop_backs ? ` --crop_backs ${cmdOptions.crop_backs}` : ''}${cmdOptions.extend_bleed ? ` --extend_bleed ${cmdOptions.extend_bleed}` : ''}${cmdOptions.extend_bleed_backs ? ` --extend_bleed_backs ${cmdOptions.extend_bleed_backs}` : ''}${cmdOptions.extend_corners && cmdOptions.extend_corners !== '0' && cmdOptions.extend_corners !== 0 ? ` --extend_corners ${cmdOptions.extend_corners}` : ''}${cmdOptions.extend_corners_backs ? ` --extend_corners_backs ${cmdOptions.extend_corners_backs}` : ''}${cmdOptions.extend_edges ? ` --extend_edges ${cmdOptions.extend_edges}` : ''}${cmdOptions.extend_edges_backs ? ` --extend_edges_backs ${cmdOptions.extend_edges_backs}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`}
                                 className="w-full bg-primary-950/10 border border-primary-500/20 rounded-xl px-3 py-2 text-[10px] text-primary-300/80 font-mono resize-none focus:outline-none focus:border-primary-500/50 transition-colors selection:bg-primary-500/30"
                                 rows={4}
                                 onClick={(e) => (e.target as HTMLTextAreaElement).select()}
