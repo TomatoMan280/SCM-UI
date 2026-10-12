@@ -2509,6 +2509,53 @@ export default function App() {
     }
   };
 
+  const [clearCacheStatus, setClearCacheStatus] = useState<'idle' | 'clearing' | 'success' | 'error'>('idle');
+
+  const handleClearCache = async () => {
+    if (clearCacheStatus === 'clearing') return;
+    setClearCacheStatus('clearing');
+    try {
+      const res = await fetch('/api/clear-cache', { method: 'POST' });
+      const data = await res.json();
+
+      // Reset cache bust tokens and bump global cache bust to force fresh reloads
+      const now = Date.now();
+      setGlobalCacheBust(now);
+      setCacheBusts({});
+
+      // Clear browser CacheStorage if available
+      if (typeof window !== 'undefined' && 'caches' in window) {
+        try {
+          const cacheKeys = await caches.keys();
+          await Promise.all(cacheKeys.map(k => caches.delete(k)));
+        } catch (_) {}
+      }
+
+      // Re-fetch application status and assets
+      await fetchStatus();
+
+      setClearCacheStatus('success');
+      setLogs(prev => [
+        ...prev,
+        `[System] Application cache cleared (${data.clearedCount ?? 0} temporary items purged).`
+      ]);
+
+      setTimeout(() => {
+        setClearCacheStatus('idle');
+      }, 3000);
+    } catch (err: any) {
+      console.error("Failed to clear cache:", err);
+      setClearCacheStatus('error');
+      setLogs(prev => [
+        ...prev,
+        `[System Error] Failed to clear application cache: ${err?.message || 'Unknown error'}`
+      ]);
+      setTimeout(() => {
+        setClearCacheStatus('idle');
+      }, 3000);
+    }
+  };
+
   const getAllAssets = (type: 'front' | 'back' | 'double_sided') => {
     let serverAssets: string[] = [];
     const current = getCurrentAssets();
@@ -6497,15 +6544,81 @@ export default function App() {
                       <RefreshCw size={16} /> Re-run Setup Process
                     </button>
                   </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Application Cache</span>
+                      <span className="text-xs text-white/40 block leading-relaxed">
+                        Clear temporary image renders, upload buffers, and cached card previews to free up disk space and force reload fresh assets.
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleClearCache}
+                      disabled={clearCacheStatus === 'clearing'}
+                      className={cn(
+                        "px-6 py-2.5 rounded-xl font-bold transition-all border flex items-center gap-2 text-sm",
+                        clearCacheStatus === 'clearing' && "bg-white/10 text-white/50 border-white/10 cursor-not-allowed",
+                        clearCacheStatus === 'success' && "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+                        clearCacheStatus === 'error' && "bg-rose-500/20 text-rose-300 border-rose-500/30",
+                        clearCacheStatus === 'idle' && "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/20 hover:border-rose-500/40"
+                      )}
+                    >
+                      {clearCacheStatus === 'clearing' ? (
+                        <>
+                          <RefreshCw size={16} className="animate-spin" /> Clearing Cache...
+                        </>
+                      ) : clearCacheStatus === 'success' ? (
+                        <>
+                          <Check size={16} /> Cache Cleared!
+                        </>
+                      ) : clearCacheStatus === 'error' ? (
+                        <>
+                          <AlertCircle size={16} /> Failed to Clear
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={16} /> Clear Cache
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               )}
 
-              <button
-                onClick={() => setShowThemeSettings(false)}
-                className="w-full py-4 text-white bg-white/5 hover:bg-white/10 transition-all font-bold rounded-2xl shrink-0"
-              >
-                Done
-              </button>
+              <div className="flex gap-2.5 shrink-0">
+                <button
+                  onClick={handleClearCache}
+                  disabled={clearCacheStatus === 'clearing'}
+                  title="Clear temporary image cache and render buffers"
+                  className={cn(
+                    "px-4 py-4 rounded-2xl font-bold transition-all border flex items-center justify-center gap-2 text-xs",
+                    clearCacheStatus === 'clearing' && "bg-white/10 text-white/50 border-white/10 cursor-not-allowed",
+                    clearCacheStatus === 'success' && "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+                    clearCacheStatus === 'error' && "bg-rose-500/20 text-rose-300 border-rose-500/30",
+                    clearCacheStatus === 'idle' && "bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border-white/10"
+                  )}
+                >
+                  {clearCacheStatus === 'clearing' ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" /> Clearing...
+                    </>
+                  ) : clearCacheStatus === 'success' ? (
+                    <>
+                      <Check size={14} /> Cleared!
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={14} /> Clear Cache
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowThemeSettings(false)}
+                  className="flex-1 py-4 text-white bg-white/5 hover:bg-white/10 transition-all font-bold rounded-2xl"
+                >
+                  Done
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
