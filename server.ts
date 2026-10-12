@@ -478,6 +478,15 @@ async function startServer() {
         const scriptDir = path.dirname(scriptPath);
         const realRepoRoot = scriptPath.startsWith(scmPath) ? scmPath : path.resolve(scriptDir, '..', '..');
 
+        // Real-time unbuffered print flushing across all modules
+        let unbufferedSnippet = `import builtins, sys\ntry:\n    if hasattr(sys.stdout, 'reconfigure'):\n        sys.stdout.reconfigure(line_buffering=True)\n    if hasattr(sys.stderr, 'reconfigure'):\n        sys.stderr.reconfigure(line_buffering=True)\nexcept Exception:\n    pass\n_orig_global_print = builtins.print\ndef _realtime_flush_print(*args, **kwargs):\n    kwargs['flush'] = True\n    _orig_global_print(*args, **kwargs)\nbuiltins.print = _realtime_flush_print\n`;
+
+        if (scriptPath.includes('create_pdf.py')) {
+          unbufferedSnippet += `try:\n    from PIL import Image as _PIL_Image\n    _orig_pil_save = _PIL_Image.Image.save\n    def _monitored_pil_save(self, *args, **kwargs):\n        if kwargs.get('format') == 'PDF' or (args and str(args[0]).lower().endswith('.pdf')):\n            builtins.print('[Progress] Finalizing and compiling PDF file...', flush=True)\n        return _orig_pil_save(self, *args, **kwargs)\n    _PIL_Image.Image.save = _monitored_pil_save\nexcept Exception:\n    pass\n`;
+        }
+
+        pyCode = unbufferedSnippet + pyCode;
+
         // Always prepend sys.path and fix REPO_ROOT in out-of-tree temporary scripts
         const sysPathSnippet = `import sys, os\nif r"${realRepoRoot}" not in sys.path:\n    sys.path.insert(0, r"${realRepoRoot}")\nif r"${scriptDir}" not in sys.path:\n    sys.path.insert(0, r"${scriptDir}")\n\n`;
         pyCode = sysPathSnippet + pyCode;
@@ -2900,6 +2909,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       const customEnv = Object.assign({}, process.env);
       delete customEnv.PYTHONPATH;
       delete customEnv.PYTHONHOME;
+      customEnv.PYTHONUNBUFFERED = '1';
+      customEnv.PYTHONIOENCODING = 'utf-8';
       
       if (pythonExecutable && path.isAbsolute(pythonExecutable)) {
         const pythonBinDir = path.dirname(pythonExecutable);
@@ -3011,7 +3022,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
           const executeChild = () => {
               return new Promise<number>((resolve, reject) => {
-                  const child = spawn(pythonExecutable, [scriptToExecute, ...finalArgs], { cwd: spawnCwd, env: customEnv });
+                  const child = spawn(pythonExecutable, ['-u', scriptToExecute, ...finalArgs], { cwd: spawnCwd, env: customEnv });
                   
                   const pingInterval = setInterval(() => {
                       sendEvent('ping', { time: Date.now() });
@@ -3021,25 +3032,45 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                       child.kill();
                   });
 
+                  let stdoutBuf = '';
                   child.stdout.on('data', (data: any) => {
-                      const lines = data.toString().split('\n').filter(Boolean);
-                      lines.forEach((line: string) => sendEvent('stdout', line));
+                      stdoutBuf += data.toString();
+                      const lines = stdoutBuf.split(/\r?\n/);
+                      stdoutBuf = lines.pop() || '';
+                      lines.forEach((line: string) => {
+                          const clean = line.trim();
+                          if (clean) sendEvent('stdout', clean);
+                      });
                   });
 
+                  let stderrBuf = '';
                   child.stderr.on('data', (data: any) => {
-                      const lines = data.toString().split('\n').filter(Boolean);
+                      stderrBuf += data.toString();
+                      const lines = stderrBuf.split(/\r?\n/);
+                      stderrBuf = lines.pop() || '';
                       lines.forEach((line: string) => {
-                         if (line.includes('[Console Error]') || line.includes('Exception:')) {
-                             hasError = true;
-                         }
-                         if (line.includes('ModuleNotFoundError') || line.includes('No module named') || line.includes('click')) {
-                             dependencyError = true;
-                         }
-                         sendEvent('stderr', line);
+                          const clean = line.trim();
+                          if (clean) {
+                              if (clean.includes('[Console Error]') || clean.includes('Exception:')) {
+                                  hasError = true;
+                              }
+                              if (clean.includes('ModuleNotFoundError') || clean.includes('No module named') || clean.includes('click')) {
+                                  dependencyError = true;
+                              }
+                              sendEvent('stderr', clean);
+                          }
                       });
                   });
 
                   child.on('close', (code: number) => {
+                      if (stdoutBuf.trim()) {
+                          sendEvent('stdout', stdoutBuf.trim());
+                          stdoutBuf = '';
+                      }
+                      if (stderrBuf.trim()) {
+                          sendEvent('stderr', stderrBuf.trim());
+                          stderrBuf = '';
+                      }
                       clearInterval(pingInterval);
                       if (code === 0 && !hasError) {
                           resolve(code);

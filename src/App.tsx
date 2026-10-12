@@ -2702,15 +2702,35 @@ export default function App() {
                 if (parsedTotal > 0) totalCards = parsedTotal;
               }
 
-              // Detect current progress indices (Image 1 of 50, Index: 1, Slot 1, 1/50, etc.)
+              // Detect current progress indices (Image 1 of 50, Image 1: SolRing.png, Slot 1, 1/50, etc.)
               let matchedIndex = false;
+              let cardName = '';
+
+              // 1. Check for "Image 1 of 50", "Card 1/50", etc.
               const idxOfTotalMatch = text.match(/(?:Image|Card|Processing|Downloading|Fetching)\s*#?(\d+)\s*(?:of|\/)\s*(\d+)/i) || text.match(/^(\d+)\s*\/\s*(\d+)/);
               if (idxOfTotalMatch) {
                 currentCard = parseInt(idxOfTotalMatch[1]);
                 totalCards = parseInt(idxOfTotalMatch[2]);
                 matchedIndex = true;
-              } else {
-                const singleIdxMatch = text.match(/^(?:Image\s+(\d+):|Index:\s*(\d+)|Slot\s*(\d+):?)/i);
+              }
+
+              // 2. Check for "Image 1: cardname.png" or "Slot 1: cardname" (standard Python output)
+              const imgColonMatch = text.match(/(?:Image|Slot|Card|Index)\s*#?(\d+):\s*(.*)/i);
+              if (imgColonMatch) {
+                const parsedIdx = parseInt(imgColonMatch[1]);
+                if (!isNaN(parsedIdx)) {
+                  currentCard = parsedIdx;
+                  matchedIndex = true;
+                  const rawName = imgColonMatch[2].trim();
+                  if (rawName) {
+                    cardName = cleanCardName(rawName);
+                  }
+                }
+              }
+
+              // 3. Fallback single index match without colon (Index: 1, Slot 1)
+              if (!matchedIndex) {
+                const singleIdxMatch = text.match(/(?:Image\s+(\d+):?|Index:\s*(\d+)|Slot\s*(\d+):?)/i);
                 if (singleIdxMatch) {
                   const val = singleIdxMatch[1] || singleIdxMatch[2] || singleIdxMatch[3];
                   if (val) {
@@ -2720,25 +2740,34 @@ export default function App() {
                 }
               }
 
-              // Extract human card title if available
-              let cardName = '';
-              const nameMatch = text.match(/name:\s*([^,\r\n]+)/i) || text.match(/Slot \d+:\s*([^/\r\n]+)/i) || text.match(/(?:Downloading|Fetching)\s+([^.\r\n]+?)(?:\.\.\.|$)/i);
-              if (nameMatch && nameMatch[1]) {
-                cardName = nameMatch[1].trim();
-              }
-
-              if (matchedIndex) {
+              // 4. Check for finalizing/compiling state e.g. "Finalizing and compiling PDF file..."
+              const isCompilingMatch = text.includes('Compiling PDF') || text.includes('Finalizing and compiling') || text.includes('Generated PDF');
+              if (isCompilingMatch) {
+                const finalTotal = totalCards > 0 ? totalCards : Math.max(currentCard, 1);
+                setTaskProgress(prev => ({
+                  current: finalTotal,
+                  total: finalTotal,
+                  message: 'Compiling PDF document...'
+                }));
+              } else if (matchedIndex) {
                 const dispTotal = totalCards > 0 ? totalCards : Math.max(currentCard, 1);
                 const msg = cardName
                   ? `${cardName} (${currentCard}/${dispTotal})`
                   : `Card ${currentCard}${totalCards > 0 ? ` of ${totalCards}` : ''}...`;
                 setTaskProgress({ current: currentCard, total: dispTotal, message: msg });
-              } else if (cardName) {
-                setTaskProgress(prev => ({
-                  current: prev?.current ?? currentCard,
-                  total: prev?.total ?? (totalCards > 0 ? totalCards : 1),
-                  message: `Fetching ${cardName}...`
-                }));
+              } else {
+                // Extract human card title if available
+                const nameMatch = text.match(/name:\s*([^,\r\n]+)/i) || text.match(/(?:Downloading|Fetching)\s+([^.\r\n]+?)(?:\.\.\.|$)/i);
+                if (nameMatch && nameMatch[1]) {
+                  const extracted = cleanCardName(nameMatch[1].trim());
+                  if (extracted) {
+                    setTaskProgress(prev => ({
+                      current: prev?.current ?? currentCard,
+                      total: prev?.total ?? (totalCards > 0 ? totalCards : 1),
+                      message: `Fetching ${extracted}...`
+                    }));
+                  }
+                }
               }
             } else if (eventType === 'stderr') {
               output.push(`[Error] ${eventData}`);
