@@ -4040,10 +4040,10 @@ export default function App() {
                               className="overflow-hidden"
                             >
                               <div className="space-y-4 pb-2 px-1 text-left">
-                                {/* Bleed & Edge Overrides Group */}
+                                {/* Crop Group */}
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
-                                  {/* Title removed per request */}
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                  <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Crop</label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Crop Fronts</label>
                                       <input
@@ -4064,6 +4064,13 @@ export default function App() {
                                         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
+                                  </div>
+                                </div>
+
+                                {/* Bleed Group */}
+                                <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
+                                  <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Bleed</label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Outer Bleed Fronts</label>
                                       <input
@@ -4084,6 +4091,13 @@ export default function App() {
                                         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
+                                  </div>
+                                </div>
+
+                                {/* Extend Group */}
+                                <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
+                                  <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Extend</label>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                                     <div className="space-y-1">
                                       <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Edges Fronts</label>
                                       <input
@@ -4124,16 +4138,21 @@ export default function App() {
                                         className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
                                       />
                                     </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Skip Card Number</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 0, 4"
-                                        value={cmdOptions.skip}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, skip: e.target.value }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Skip Group (On its own, above Page Margin Label) */}
+                                <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-2">
+                                  <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Skip</label>
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Skip Card Number</label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. 0, 4"
+                                      value={cmdOptions.skip}
+                                      onChange={(e) => setCmdOptions(p => ({ ...p, skip: e.target.value }))}
+                                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
+                                    />
                                   </div>
                                 </div>
 
