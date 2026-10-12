@@ -1693,6 +1693,8 @@ export default function App() {
     current: number;
     total: number;
     message: string;
+    percent?: number;
+    isComplete?: boolean;
     activeWorkers?: Record<string | number, { cardName: string; status: 'upscaling' | 'completed' }>;
   } | null>(null);
   const [importConflictData, setImportConflictData] = useState<{ items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', collisions: string[], backResolution?: 'check' | 'keep' | 'replace' } | null>(null);
@@ -2753,12 +2755,18 @@ export default function App() {
               let matchedIndex = false;
               let cardName = '';
 
-              // 1. Check for "Image 1 of 50", "Card 1/50", etc.
-              const idxOfTotalMatch = text.match(/(?:Image|Card|Processing|Downloading|Fetching)\s*#?(\d+)\s*(?:of|\/)\s*(\d+)/i) || text.match(/^(\d+)\s*\/\s*(\d+)/);
+              // 1. Check for "Image 1 of 50: CardName", "Card 1/50 - CardName", etc.
+              const idxOfTotalMatch = text.match(/(?:Image|Card|Processing|Downloading|Fetching)\s*#?(\d+)\s*(?:of|\/)\s*(\d+)(?:[:\s-]+(.*))?/i) || text.match(/^(\d+)\s*\/\s*(\d+)(?:[:\s-]+(.*))?/);
               if (idxOfTotalMatch) {
                 currentCard = parseInt(idxOfTotalMatch[1]);
                 totalCards = parseInt(idxOfTotalMatch[2]);
                 matchedIndex = true;
+                if (idxOfTotalMatch[3]) {
+                  const cleaned = cleanCardName(idxOfTotalMatch[3].trim());
+                  if (cleaned && !/^card\s*\d*$/i.test(cleaned)) {
+                    cardName = cleaned;
+                  }
+                }
               }
 
               // 2. Check for "Image 1: cardname.png" or "Slot 1: cardname" (standard Python output)
@@ -2794,14 +2802,17 @@ export default function App() {
                 setTaskProgress(prev => ({
                   current: finalTotal,
                   total: finalTotal,
+                  percent: 98,
                   message: 'Compiling PDF document...'
                 }));
               } else if (matchedIndex) {
                 const dispTotal = totalCards > 0 ? totalCards : Math.max(currentCard, 1);
-                const msg = cardName
-                  ? `${cardName} (${currentCard}/${dispTotal})`
-                  : `Card ${currentCard}${totalCards > 0 ? ` of ${totalCards}` : ''}...`;
-                setTaskProgress({ current: currentCard, total: dispTotal, message: msg });
+                const msg = cardName || (dispTotal > 1 ? `Fetching Cards...` : `Fetching Card...`);
+                // Calculate in-progress percentage (card is actively downloading, so currentCard - 0.5)
+                const inProgressPercent = dispTotal > 0
+                  ? Math.min(95, Math.max(5, Math.round(((currentCard - 0.5) / dispTotal) * 100)))
+                  : 5;
+                setTaskProgress({ current: currentCard, total: dispTotal, percent: inProgressPercent, message: msg });
               } else {
                 // Extract human card title if available
                 const nameMatch = text.match(/name:\s*([^,\r\n]+)/i) || text.match(/(?:Downloading|Fetching)\s+([^.\r\n]+?)(?:\.\.\.|$)/i);
@@ -2811,7 +2822,8 @@ export default function App() {
                     setTaskProgress(prev => ({
                       current: prev?.current ?? currentCard,
                       total: prev?.total ?? (totalCards > 0 ? totalCards : 1),
-                      message: `Fetching ${extracted}...`
+                      percent: prev?.percent,
+                      message: extracted
                     }));
                   }
                 }
@@ -2836,7 +2848,7 @@ export default function App() {
       const assets = await fetchStatus();
 
       if (!options?.hideProgressOnComplete) {
-        setTaskProgress({ current: 1, total: 1, message: 'Complete.' });
+        setTaskProgress({ current: 1, total: 1, percent: 100, isComplete: true, message: 'Complete.' });
         setTimeout(() => setTaskProgress(null), 1500);
       }
 
@@ -3566,92 +3578,126 @@ export default function App() {
           </motion.div>
         )}
 
-        {taskProgress && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 50, scale: 0.9 }}
-            className="fixed bottom-6 right-6 z-[1000] flex items-center gap-4 p-4 bg-[#0f0f13] rounded-2xl border border-primary-500/30 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] min-w-[300px]"
-          >
-            {taskProgress.total <= 1 && taskProgress.current === 0 ? (
-              <Loader2 className="w-10 h-10 text-primary-500 animate-spin flex-none" />
-            ) : (
-              <div className="relative">
-                <svg className="w-10 h-10 transform -rotate-90">
-                  <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
-                  <circle
-                    cx="20"
-                    cy="20"
-                    r="18"
-                    className="stroke-primary-500 transition-all duration-300"
-                    strokeWidth="4"
-                    fill="none"
-                    strokeDasharray={113}
-                    strokeDashoffset={113 - (113 * (taskProgress.total > 0 ? Math.min(1, Math.max(0, taskProgress.current / taskProgress.total)) : 0))}
-                  />
-                </svg>
-                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
-                  {taskProgress.total > 0
-                    ? `${Math.round((taskProgress.current / taskProgress.total) * 100)}%`
-                    : `${taskProgress.current}`}
-                </span>
-              </div>
-            )}
-            <div className="flex flex-col flex-1 pl-2 min-w-0">
-              {taskProgress.activeWorkers && Object.keys(taskProgress.activeWorkers).length > 1 ? (
-                <div className="space-y-1.5 py-0.5">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-primary-400 gap-4">
-                    <span>Active Workers ({Object.keys(taskProgress.activeWorkers).length})</span>
-                    {taskProgress.total > 1 && (
-                      <span className="text-white/60 font-mono">
+        {taskProgress && (() => {
+          const isComplete = !!taskProgress.isComplete || 
+            taskProgress.message.toLowerCase().startsWith('complete') ||
+            taskProgress.message.toLowerCase().includes('finished') ||
+            taskProgress.message.toLowerCase().includes('successfully') ||
+            taskProgress.message.toLowerCase().includes('saved') ||
+            taskProgress.message.toLowerCase().includes('cleaned');
+
+          const displayPercent = taskProgress.percent !== undefined
+            ? Math.min(100, Math.max(0, taskProgress.percent))
+            : isComplete
+              ? 100
+              : taskProgress.total > 0
+                ? Math.min(95, Math.max(5, Math.round(((Math.max(1, taskProgress.current) - 0.5) / taskProgress.total) * 100)))
+                : 0;
+
+          let displayTitle = taskProgress.message || '';
+          if (isComplete) {
+            displayTitle = taskProgress.message || 'Complete.';
+          } else {
+            let clean = displayTitle
+              .replace(/\s*\(\s*\d+\s*(?:of|\/)\s*\d+\s*\)\s*\.{0,3}/gi, '')
+              .replace(/(?:Card|Image|Slot|Index)\s*#?\d+\s*(?:of|\/)\s*\d+\s*\.{0,3}/gi, '')
+              .replace(/(?:Card|Image|Slot|Index)\s*#?\d+\s*\.{0,3}/gi, '')
+              .replace(/^\s*\d+\s*(?:of|\/)\s*\d+\s*:?\s*/gi, '')
+              .replace(/\.{2,}$/, '')
+              .trim();
+
+            if (!clean || /^card\s*\d*$/i.test(clean) || /^image\s*\d*$/i.test(clean)) {
+              displayTitle = taskProgress.total > 1 ? 'Fetching Cards...' : 'Processing...';
+            } else {
+              displayTitle = clean;
+            }
+          }
+
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 50, scale: 0.9 }}
+              className="fixed bottom-6 right-6 z-[1000] flex items-center gap-4 p-4 bg-[#0f0f13] rounded-2xl border border-primary-500/30 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.5)] min-w-[300px]"
+            >
+              {taskProgress.total <= 1 && taskProgress.current === 0 && !isComplete ? (
+                <Loader2 className="w-10 h-10 text-primary-500 animate-spin flex-none" />
+              ) : (
+                <div className="relative">
+                  <svg className="w-10 h-10 transform -rotate-90">
+                    <circle cx="20" cy="20" r="18" className="stroke-white/10 flex-none" strokeWidth="4" fill="none" />
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="18"
+                      className="stroke-primary-500 transition-all duration-300"
+                      strokeWidth="4"
+                      fill="none"
+                      strokeDasharray={113}
+                      strokeDashoffset={113 - (113 * (displayPercent / 100))}
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
+                    {displayPercent}%
+                  </span>
+                </div>
+              )}
+              <div className="flex flex-col flex-1 pl-2 min-w-0">
+                {taskProgress.activeWorkers && Object.keys(taskProgress.activeWorkers).length > 1 ? (
+                  <div className="space-y-1.5 py-0.5">
+                    <div className="flex items-center justify-between text-[11px] font-semibold text-primary-400 gap-4">
+                      <span>Active Workers ({Object.keys(taskProgress.activeWorkers).length})</span>
+                      {taskProgress.total > 1 && (
+                        <span className="text-white/60 font-mono">
+                          Card {taskProgress.current} of {taskProgress.total}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-w-[460px]">
+                      {Object.entries(taskProgress.activeWorkers).map(([wid, w]) => (
+                        <div
+                          key={wid}
+                          className={cn(
+                            "flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] border transition-all truncate",
+                            w.status === 'upscaling'
+                              ? "bg-white/[0.06] border-primary-500/30 text-white shadow-sm"
+                              : "bg-white/[0.02] border-white/5 text-white/50"
+                          )}
+                        >
+                          <span className={cn(
+                            "w-1.5 h-1.5 rounded-full shrink-0",
+                            w.status === 'upscaling' ? "bg-emerald-400 animate-pulse" : "bg-white/30"
+                          )} />
+                          <span className="font-mono text-primary-400 font-bold shrink-0">W{wid}:</span>
+                          <span className="truncate" title={w.cardName}>{w.cardName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-sm font-bold text-white/90 truncate" title={displayTitle}>
+                      {displayTitle}
+                    </span>
+                    {taskProgress.total > 1 && !isComplete && (
+                      <span className="text-[11px] font-semibold text-primary-400">
                         Card {taskProgress.current} of {taskProgress.total}
                       </span>
                     )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-w-[460px]">
-                    {Object.entries(taskProgress.activeWorkers).map(([wid, w]) => (
-                      <div
-                        key={wid}
-                        className={cn(
-                          "flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] border transition-all truncate",
-                          w.status === 'upscaling'
-                            ? "bg-white/[0.06] border-primary-500/30 text-white shadow-sm"
-                            : "bg-white/[0.02] border-white/5 text-white/50"
-                        )}
-                      >
-                        <span className={cn(
-                          "w-1.5 h-1.5 rounded-full shrink-0",
-                          w.status === 'upscaling' ? "bg-emerald-400 animate-pulse" : "bg-white/30"
-                        )} />
-                        <span className="font-mono text-primary-400 font-bold shrink-0">W{wid}:</span>
-                        <span className="truncate" title={w.cardName}>{w.cardName}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <span className="text-sm font-bold text-white/90 truncate" title={taskProgress.message}>
-                    {taskProgress.message.replace(/\s*\(\d+\s+of\s+\d+\)\s*\.{0,3}/i, '').trim() || taskProgress.message}
-                  </span>
-                  {taskProgress.total > 1 && (
-                    <span className="text-[11px] font-semibold text-primary-400">
-                      Card {taskProgress.current} of {taskProgress.total}
-                    </span>
-                  )}
-                </>
+                  </>
+                )}
+              </div>
+              {activeTaskController && !isComplete && (
+                <button
+                  onClick={() => activeTaskController.abort()}
+                  className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg text-xs font-bold transition-colors shrink-0"
+                >
+                  Cancel
+                </button>
               )}
-            </div>
-            {activeTaskController && (
-              <button
-                onClick={() => activeTaskController.abort()}
-                className="px-3 py-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg text-xs font-bold transition-colors shrink-0"
-              >
-                Cancel
-              </button>
-            )}
-          </motion.div>
-        )}
+            </motion.div>
+          );
+        })()}
 
         {pdfReadyToastOpen && (
           <motion.div
