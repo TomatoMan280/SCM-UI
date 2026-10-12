@@ -2298,10 +2298,35 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   });
 
   app.post("/api/cards/download-zip", async (req, res) => {
-    const { identities, assetViewMode } = req.body;
+    const { identities, assetViewMode, stream: reqStream } = req.body;
+    const isStream = reqStream === true || req.headers.accept === 'text/event-stream';
+
     if (!identities || !Array.isArray(identities) || identities.length === 0) {
+      if (isStream) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.write(`event: error\ndata: ${JSON.stringify({ error: "Missing or invalid identities" })}\n\n`);
+        return res.end();
+      }
       return res.status(400).json({ error: "Missing or invalid identities" });
     }
+
+    if (isStream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      if (typeof (res as any).flushHeaders === 'function') {
+        (res as any).flushHeaders();
+      }
+    }
+
+    const sendEvent = (type: string, data: any) => {
+      if (isStream) {
+        res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+        if (typeof (res as any).flush === 'function') {
+          (res as any).flush();
+        }
+      }
+    };
 
     const isLibrary = assetViewMode === 'library';
     const isPlugins = assetViewMode === 'plugins';
@@ -2312,6 +2337,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       const zip = new AdmZip();
       const addedNames = new Set<string>();
 
+      let processed = 0;
       for (const id of identities) {
         let type = 'front';
         let name = id;
@@ -2336,21 +2362,87 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           addedNames.add(entryName);
           zip.addLocalFile(filePath, '', entryName);
         }
+
+        processed++;
+        if (isStream) {
+          sendEvent('progress', {
+            current: processed,
+            total: identities.length,
+            cardName: name,
+            message: `Archiving ${name}...`
+          });
+          // Yield to event loop so TCP buffer flushes chunk immediately
+          await new Promise(resolve => setImmediate(resolve));
+        }
       }
 
       if (addedNames.size === 0) {
+        if (isStream) {
+          sendEvent('error', { error: "No matching card files found to download" });
+          return res.end();
+        }
         return res.status(404).json({ error: "No matching card files found to download" });
       }
 
-      const zipBuffer = zip.toBuffer();
       const zipName = `SCMUI_Cards_${addedNames.size}_Images.zip`;
+
+      if (isStream) {
+        sendEvent('progress', {
+          current: processed,
+          total: identities.length,
+          cardName: 'Packaging archive',
+          message: 'Finalizing ZIP package...'
+        });
+
+        const tempZipName = `scm_zip_${Date.now()}_${Math.random().toString(36).substring(7)}.zip`;
+        const tempZipPath = path.join(os.tmpdir(), tempZipName);
+        zip.writeZip(tempZipPath);
+
+        // Auto cleanup after 10 minutes if unread
+        setTimeout(() => {
+          try {
+            if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath);
+          } catch (_) {}
+        }, 10 * 60 * 1000);
+
+        sendEvent('done', {
+          success: true,
+          count: addedNames.size,
+          total: identities.length,
+          downloadUrl: `/api/cards/download-ready-zip?file=${encodeURIComponent(tempZipName)}&name=${encodeURIComponent(zipName)}`
+        });
+        return res.end();
+      }
+
+      const zipBuffer = zip.toBuffer();
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
       res.send(zipBuffer);
     } catch (err: any) {
       console.error("[Download ZIP Error]", err);
+      if (isStream) {
+        sendEvent('error', { error: err.message || "Failed to create ZIP file" });
+        return res.end();
+      }
       res.status(500).json({ error: err.message || "Failed to create ZIP file" });
     }
+  });
+
+  app.get("/api/cards/download-ready-zip", (req, res) => {
+    const fileName = req.query.file as string;
+    const downloadName = (req.query.name as string) || "SCMUI_Cards.zip";
+    if (!fileName || fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
+      return res.status(400).send("Invalid file parameter");
+    }
+    const tempZipPath = path.join(os.tmpdir(), fileName);
+    if (!fs.existsSync(tempZipPath)) {
+      return res.status(404).send("Archive expired or not found");
+    }
+    res.download(tempZipPath, downloadName, (err) => {
+      try {
+        if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath);
+      } catch (_) {}
+    });
   });
 
   app.post("/api/delete", (req, res) => {

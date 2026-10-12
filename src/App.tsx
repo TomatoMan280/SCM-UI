@@ -6675,25 +6675,73 @@ export default function App() {
                         try {
                           const res = await fetch('/api/cards/download-zip', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ identities: targets, assetViewMode })
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Accept': 'text/event-stream'
+                            },
+                            body: JSON.stringify({ identities: targets, assetViewMode, stream: true })
                           });
                           if (!res.ok) throw new Error(`Server returned status ${res.status}`);
-                          const blob = await res.blob();
-                          const downloadUrl = window.URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = downloadUrl;
-                          a.download = `SCMUI_Cards_${targets.length}_Images.zip`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          window.URL.revokeObjectURL(downloadUrl);
-                          addLog(`[System] Downloaded ${targets.length} cards as a single ZIP archive.`);
-                          setTaskProgress({ current: targets.length, total: targets.length, message: `Downloaded ${targets.length} cards ZIP!` });
+
+                          let downloadUrl = '';
+                          const reader = res.body?.getReader();
+                          const decoder = new TextDecoder();
+                          let pending = "";
+
+                          if (reader) {
+                            while (true) {
+                              const { done, value } = await reader.read();
+                              if (done) break;
+
+                              pending += decoder.decode(value, { stream: true });
+                              const parts = pending.split('\n\n');
+                              pending = parts.pop() || '';
+
+                              for (const part of parts) {
+                                const lines = part.split('\n');
+                                let eventType = '';
+                                let eventData: any = null;
+                                for (const line of lines) {
+                                  if (line.startsWith('event: ')) {
+                                    eventType = line.substring(7).trim();
+                                  } else if (line.startsWith('data: ')) {
+                                    try { eventData = JSON.parse(line.substring(6)); } catch (_) { }
+                                  }
+                                }
+
+                                if (eventType === 'progress' && eventData) {
+                                  setTaskProgress({
+                                    current: eventData.current,
+                                    total: eventData.total || targets.length,
+                                    message: eventData.message || `Archiving card ${eventData.current} of ${targets.length}...`
+                                  });
+                                } else if (eventType === 'done' && eventData) {
+                                  downloadUrl = eventData.downloadUrl;
+                                } else if (eventType === 'error' && eventData) {
+                                  throw new Error(eventData.error || eventData.message || 'Failed to create ZIP');
+                                }
+                              }
+                            }
+                          }
+
+                          if (downloadUrl) {
+                            setTaskProgress({ current: targets.length, total: targets.length, message: `Downloading ZIP archive...` });
+                            const a = document.createElement('a');
+                            a.href = downloadUrl;
+                            a.download = `SCMUI_Cards_${targets.length}_Images.zip`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            addLog(`[System] Downloaded ${targets.length} cards as a single ZIP archive.`);
+                            setTaskProgress({ current: targets.length, total: targets.length, message: `Downloaded ${targets.length} cards ZIP!` });
+                          } else {
+                            throw new Error('Failed to obtain download URL from server');
+                          }
                         } catch (err: any) {
                           addLog(`[Error] Failed to download ZIP: ${err.message}`);
+                          setTaskProgress({ current: 0, total: targets.length, message: `ZIP failed: ${err.message}` });
                         } finally {
-                          setTimeout(() => setTaskProgress(null), 1500);
+                          setTimeout(() => setTaskProgress(null), 2500);
                         }
                       }
                     }}
