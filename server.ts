@@ -506,13 +506,38 @@ async function startServer() {
     for (let i = 0; i < res.length - 1; i++) {
       if (dimensionFlags.has(res[i])) {
         const val = String(res[i + 1]).trim();
-        if (/^(\d+(\.\d+)?|\.\d+)$/.test(val) && val !== '0') {
-          res[i + 1] = `${val}mm`;
-        } else {
-          const m = val.match(/^(\d+(?:\.\d+)?|\.\d+)\s*(mm|in|px)$/i);
-          if (m) {
-            res[i + 1] = `${m[1]}${m[2].toLowerCase()}`;
+        if (!val || val === '0') continue;
+
+        // Fractions: e.g. 1/8", 1/8 in, 1/16", 1/4"
+        const fracMatch = val.match(/^(\d+)\s*\/\s*(\d+)\s*(["'']|in(?:ch(?:es)?)?|mm)?$/i);
+        if (fracMatch) {
+          const num = parseFloat(fracMatch[1]);
+          const den = parseFloat(fracMatch[2]);
+          if (den !== 0) {
+            const dec = parseFloat((num / den).toFixed(4));
+            const unit = fracMatch[3] && fracMatch[3].toLowerCase().startsWith('m') ? 'mm' : 'in';
+            res[i + 1] = `${dec}${unit}`;
+            continue;
           }
+        }
+
+        // Inch variants: "0.125\"", "0.125''", "0.125 in", "0.125inch", "0.125 inches", "0.125in", "0.125 in."
+        const inchMatch = val.match(/^(\d+(?:\.\d+)?|\.\d+)\s*(?:["'']|in(?:ch(?:es)?)?|\.)$/i);
+        if (inchMatch) {
+          res[i + 1] = `${inchMatch[1]}in`;
+          continue;
+        }
+
+        // Millimeter variants: "3mm", "3 mm", "3 millimeter", "3 millimeters", "3mm."
+        const mmMatch = val.match(/^(\d+(?:\.\d+)?|\.\d+)\s*(?:mm|millimeter(?:s)?|\.)$/i);
+        if (mmMatch) {
+          res[i + 1] = `${mmMatch[1]}mm`;
+          continue;
+        }
+
+        // Plain numbers without unit: default to mm
+        if (/^(\d+(\.\d+)?|\.\d+)$/.test(val)) {
+          res[i + 1] = `${val}mm`;
         }
       }
     }
@@ -3113,11 +3138,12 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       
       // Backend Crop Execution: Append crop argument if provided via req.body
       if (req.body.crop) {
-          const rawCrop = String(req.body.crop).trim();
-          const cropVal = /^(\d+(\.\d+)?|\.\d+)$/.test(rawCrop) && rawCrop !== '0' ? `${rawCrop}mm` : rawCrop;
           const hasCrop = finalArgs.some(a => a === '--crop');
-          if (!hasCrop && cropVal && cropVal !== '0') {
-              finalArgs.push('--crop', cropVal);
+          if (!hasCrop) {
+              const normalizedCropList = normalizeDimensionArgs(['--crop', String(req.body.crop)]);
+              if (normalizedCropList.length > 1 && normalizedCropList[1] !== '0') {
+                  finalArgs.push('--crop', normalizedCropList[1]);
+              }
           }
       }
 

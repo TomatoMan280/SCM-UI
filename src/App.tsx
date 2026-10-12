@@ -153,20 +153,78 @@ const cleanCardName = (filename?: string | null): string => {
   return clean.trim();
 };
 
-export const normalizeDimension = (val: string | number | undefined | null): string => {
+export const normalizeDimension = (
+  val: string | number | undefined | null,
+  defaultUnit: 'mm' | 'in' = 'mm'
+): string => {
   if (val === undefined || val === null) return '';
   const trimmed = val.toString().trim();
   if (!trimmed || trimmed === '0') return trimmed;
-  // If user entered only a number (e.g. "10", "3.5", ".5"), default to mm
+
+  // Fraction support: e.g. "1/8", "1/8\"", "1/8 in", "1/16 in", "1/4\""
+  const fracMatch = trimmed.match(/^(\d+)\s*\/\s*(\d+)\s*(["'']|in(?:ch(?:es)?)?|mm)?$/i);
+  if (fracMatch) {
+    const num = parseFloat(fracMatch[1]);
+    const den = parseFloat(fracMatch[2]);
+    if (den !== 0) {
+      const dec = parseFloat((num / den).toFixed(4));
+      const unit = fracMatch[3] && fracMatch[3].toLowerCase().startsWith('m') ? 'mm' : 'in';
+      return `${dec}${unit}`;
+    }
+  }
+
+  // Inch variants: "0.125\"", "0.125''", "0.125 in", "0.125inch", "0.125 inches", "0.125in", "0.125 in."
+  const inchMatch = trimmed.match(/^(\d+(?:\.\d+)?|\.\d+)\s*(?:["'']|in(?:ch(?:es)?)?|\.)$/i);
+  if (inchMatch) {
+    return `${inchMatch[1]}in`;
+  }
+
+  // Millimeter variants: "3mm", "3 mm", "3 millimeter", "3 millimeters", "3mm."
+  const mmMatch = trimmed.match(/^(\d+(?:\.\d+)?|\.\d+)\s*(?:mm|millimeter(?:s)?|\.)$/i);
+  if (mmMatch) {
+    return `${mmMatch[1]}mm`;
+  }
+
+  // Plain number without unit: e.g. "10", "3.5", ".125"
   if (/^(\d+(\.\d+)?|\.\d+)$/.test(trimmed)) {
-    return `${trimmed}mm`;
+    return `${trimmed}${defaultUnit}`;
   }
-  // If user entered with spaced unit (e.g. "10 mm", "0.125 in"), clean up spacing
-  const withUnit = trimmed.match(/^(\d+(?:\.\d+)?|\.\d+)\s*(mm|in|px)$/i);
-  if (withUnit) {
-    return `${withUnit[1]}${withUnit[2].toLowerCase()}`;
-  }
+
   return trimmed;
+};
+
+export const getDimensionUnit = (val: string | number | undefined | null, fallback = 'mm'): 'mm' | 'in' | '' => {
+  if (!val) return (fallback as 'mm' | 'in' | '');
+  const str = val.toString().trim().toLowerCase();
+  if (str.endsWith('in') || str.endsWith('"') || str.endsWith("''") || str.includes('inch')) return 'in';
+  if (str.endsWith('mm')) return 'mm';
+  return (fallback as 'mm' | 'in' | '');
+};
+
+export const convertDimensionUnit = (currentStr: string, targetUnit: 'mm' | 'in'): string => {
+  const norm = normalizeDimension(currentStr, targetUnit);
+  if (!norm || norm === '0') return '';
+
+  const mmMatch = norm.match(/^(\d+(?:\.\d+)?|\.\d+)mm$/);
+  const inMatch = norm.match(/^(\d+(?:\.\d+)?|\.\d+)in$/);
+
+  if (targetUnit === 'in') {
+    if (inMatch) return norm;
+    if (mmMatch) {
+      const mmVal = parseFloat(mmMatch[1]);
+      const inVal = parseFloat((mmVal / 25.4).toFixed(3));
+      return `${inVal}in`;
+    }
+    return `${norm}in`;
+  } else {
+    if (mmMatch) return norm;
+    if (inMatch) {
+      const inVal = parseFloat(inMatch[1]);
+      const mmVal = parseFloat((inVal * 25.4).toFixed(2));
+      return `${mmVal}mm`;
+    }
+    return `${norm}mm`;
+  }
 };
 
 // Types
@@ -2195,6 +2253,26 @@ export default function App() {
 
   const [commandCopied, setCommandCopied] = useState(false);
 
+  const [dimensionUnitPref, setDimensionUnitPref] = useState<'mm' | 'in'>(() => {
+    return (localStorage.getItem('scm_dimension_unit_pref') as 'mm' | 'in') || 'mm';
+  });
+
+  const handleSwitchAllUnits = (target: 'mm' | 'in') => {
+    setDimensionUnitPref(target);
+    localStorage.setItem('scm_dimension_unit_pref', target);
+    setCmdOptions(prev => ({
+      ...prev,
+      crop: convertDimensionUnit(prev.crop, target),
+      crop_backs: convertDimensionUnit(prev.crop_backs, target),
+      extend_bleed: convertDimensionUnit(prev.extend_bleed, target),
+      extend_bleed_backs: convertDimensionUnit(prev.extend_bleed_backs, target),
+      extend_edges: convertDimensionUnit(prev.extend_edges, target),
+      extend_edges_backs: convertDimensionUnit(prev.extend_edges_backs, target),
+      extend_corners: convertDimensionUnit(prev.extend_corners, target),
+      extend_corners_backs: convertDimensionUnit(prev.extend_corners_backs, target),
+    }));
+  };
+
   const CALIBRATION_SHEETS = [
     { label: 'Letter', value: 'letter-calibration.pdf' },
     { label: 'A3', value: 'a3-calibration.pdf' },
@@ -2990,14 +3068,14 @@ export default function App() {
       args.push('--registration_orientation');
       args.push(cmdOptions.registration_orientation);
     }
-    const cropVal = normalizeDimension(cmdOptions.crop);
-    const cropBacksVal = normalizeDimension(cmdOptions.crop_backs);
-    const extendBleedVal = normalizeDimension(cmdOptions.extend_bleed);
-    const extendBleedBacksVal = normalizeDimension(cmdOptions.extend_bleed_backs);
-    const extendCornersVal = normalizeDimension(cmdOptions.extend_corners);
-    const extendCornersBacksVal = normalizeDimension(cmdOptions.extend_corners_backs);
-    const extendEdgesVal = normalizeDimension(cmdOptions.extend_edges);
-    const extendEdgesBacksVal = normalizeDimension(cmdOptions.extend_edges_backs);
+    const cropVal = normalizeDimension(cmdOptions.crop, dimensionUnitPref);
+    const cropBacksVal = normalizeDimension(cmdOptions.crop_backs, dimensionUnitPref);
+    const extendBleedVal = normalizeDimension(cmdOptions.extend_bleed, dimensionUnitPref);
+    const extendBleedBacksVal = normalizeDimension(cmdOptions.extend_bleed_backs, dimensionUnitPref);
+    const extendCornersVal = normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref);
+    const extendCornersBacksVal = normalizeDimension(cmdOptions.extend_corners_backs, dimensionUnitPref);
+    const extendEdgesVal = normalizeDimension(cmdOptions.extend_edges, dimensionUnitPref);
+    const extendEdgesBacksVal = normalizeDimension(cmdOptions.extend_edges_backs, dimensionUnitPref);
 
     if (cropVal && cropVal !== '0') { args.push('--crop', cropVal); }
     if (cropBacksVal && cropBacksVal !== '0') { args.push('--crop_backs', cropBacksVal); }
@@ -4205,35 +4283,55 @@ export default function App() {
                               className="overflow-hidden"
                             >
                               <div className="space-y-4 pb-2 px-1 text-left">
+                                {/* Global Dimension Unit Toggle */}
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white/[0.03] border border-white/10 rounded-xl p-3">
+                                  <div>
+                                    <span className="text-xs font-bold text-white block">Preferred Dimension Units</span>
+                                    <span className="text-[10px] text-white/50 block">Accepts millimeters (<code className="text-primary-300">mm</code>) or inches (<code className="text-primary-300">in</code>, <code className="text-primary-300">&quot;</code>, fractions like <code className="text-primary-300">1/8&quot;</code>).</span>
+                                  </div>
+                                  <div className="flex items-center self-start sm:self-auto bg-black/40 rounded-lg p-0.5 border border-white/10">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSwitchAllUnits('mm')}
+                                      className={cn(
+                                        "px-2.5 py-1 text-xs font-bold rounded-md transition-all",
+                                        dimensionUnitPref === 'mm' ? "bg-primary-500 text-white shadow" : "text-white/40 hover:text-white/80"
+                                      )}
+                                    >
+                                      Millimeters (mm)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSwitchAllUnits('in')}
+                                      className={cn(
+                                        "px-2.5 py-1 text-xs font-bold rounded-md transition-all",
+                                        dimensionUnitPref === 'in' ? "bg-primary-500 text-white shadow" : "text-white/40 hover:text-white/80"
+                                      )}
+                                    >
+                                      Inches (in)
+                                    </button>
+                                  </div>
+                                </div>
+
                                 {/* Crop Group */}
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
                                   <div className="flex items-center justify-between">
                                     <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Crop</label>
-                                    <span className="text-[9px] text-white/40 font-medium">Auto-formats to mm (e.g. 10 &rarr; 10mm)</span>
+                                    <span className="text-[9px] text-white/40 font-medium">Accepts mm or in (e.g. 3mm or 0.125in)</span>
                                   </div>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Crop Fronts</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 3mm"
-                                        value={cmdOptions.crop}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, crop: e.target.value }))}
-                                        onBlur={() => setCmdOptions(p => ({ ...p, crop: normalizeDimension(p.crop) }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Crop Backs</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 3mm"
-                                        value={cmdOptions.crop_backs}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, crop_backs: e.target.value }))}
-                                        onBlur={() => setCmdOptions(p => ({ ...p, crop_backs: normalizeDimension(p.crop_backs) }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
+                                    <DimensionField
+                                      label="Crop Fronts"
+                                      value={cmdOptions.crop}
+                                      onChange={(val) => setCmdOptions(p => ({ ...p, crop: val }))}
+                                      defaultUnit={dimensionUnitPref}
+                                    />
+                                    <DimensionField
+                                      label="Crop Backs"
+                                      value={cmdOptions.crop_backs}
+                                      onChange={(val) => setCmdOptions(p => ({ ...p, crop_backs: val }))}
+                                      defaultUnit={dimensionUnitPref}
+                                    />
                                   </div>
                                 </div>
 
@@ -4241,31 +4339,21 @@ export default function App() {
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
                                   <div className="flex items-center justify-between">
                                     <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Bleed</label>
-                                    <span className="text-[9px] text-white/40 font-medium">Auto-formats to mm (e.g. 2 &rarr; 2mm)</span>
+                                    <span className="text-[9px] text-white/40 font-medium">Accepts mm or in (e.g. 2mm or 0.08in)</span>
                                   </div>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Outer Bleed Fronts</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 2mm"
-                                        value={cmdOptions.extend_bleed}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_bleed: e.target.value }))}
-                                        onBlur={() => setCmdOptions(p => ({ ...p, extend_bleed: normalizeDimension(p.extend_bleed) }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Outer Bleed Backs</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 2mm"
-                                        value={cmdOptions.extend_bleed_backs}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_bleed_backs: e.target.value }))}
-                                        onBlur={() => setCmdOptions(p => ({ ...p, extend_bleed_backs: normalizeDimension(p.extend_bleed_backs) }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
+                                    <DimensionField
+                                      label="Outer Bleed Fronts"
+                                      value={cmdOptions.extend_bleed}
+                                      onChange={(val) => setCmdOptions(p => ({ ...p, extend_bleed: val }))}
+                                      defaultUnit={dimensionUnitPref}
+                                    />
+                                    <DimensionField
+                                      label="Outer Bleed Backs"
+                                      value={cmdOptions.extend_bleed_backs}
+                                      onChange={(val) => setCmdOptions(p => ({ ...p, extend_bleed_backs: val }))}
+                                      defaultUnit={dimensionUnitPref}
+                                    />
                                   </div>
                                 </div>
 
@@ -4273,53 +4361,33 @@ export default function App() {
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
                                   <div className="flex items-center justify-between">
                                     <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Extend</label>
-                                    <span className="text-[9px] text-white/40 font-medium">Auto-formats to mm (e.g. 3 &rarr; 3mm)</span>
+                                    <span className="text-[9px] text-white/40 font-medium">Accepts mm or in (e.g. 3.5mm, 0.125in, 1/8")</span>
                                   </div>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Edges Fronts</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 3mm"
-                                        value={cmdOptions.extend_edges}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_edges: e.target.value }))}
-                                        onBlur={() => setCmdOptions(p => ({ ...p, extend_edges: normalizeDimension(p.extend_edges) }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Edges Backs</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 3mm"
-                                        value={cmdOptions.extend_edges_backs}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_edges_backs: e.target.value }))}
-                                        onBlur={() => setCmdOptions(p => ({ ...p, extend_edges_backs: normalizeDimension(p.extend_edges_backs) }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Corners Fronts</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 3.5mm"
-                                        value={cmdOptions.extend_corners || ''}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_corners: e.target.value }))}
-                                        onBlur={() => setCmdOptions(p => ({ ...p, extend_corners: normalizeDimension(p.extend_corners) }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
-                                    <div className="space-y-1">
-                                      <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">Extend Corners Backs</label>
-                                      <input
-                                        type="text"
-                                        placeholder="e.g. 3.5mm"
-                                        value={cmdOptions.extend_corners_backs}
-                                        onChange={(e) => setCmdOptions(p => ({ ...p, extend_corners_backs: e.target.value }))}
-                                        onBlur={() => setCmdOptions(p => ({ ...p, extend_corners_backs: normalizeDimension(p.extend_corners_backs) }))}
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-                                      />
-                                    </div>
+                                    <DimensionField
+                                      label="Extend Edges Fronts"
+                                      value={cmdOptions.extend_edges}
+                                      onChange={(val) => setCmdOptions(p => ({ ...p, extend_edges: val }))}
+                                      defaultUnit={dimensionUnitPref}
+                                    />
+                                    <DimensionField
+                                      label="Extend Edges Backs"
+                                      value={cmdOptions.extend_edges_backs}
+                                      onChange={(val) => setCmdOptions(p => ({ ...p, extend_edges_backs: val }))}
+                                      defaultUnit={dimensionUnitPref}
+                                    />
+                                    <DimensionField
+                                      label="Extend Corners Fronts"
+                                      value={cmdOptions.extend_corners || ''}
+                                      onChange={(val) => setCmdOptions(p => ({ ...p, extend_corners: val }))}
+                                      defaultUnit={dimensionUnitPref}
+                                    />
+                                    <DimensionField
+                                      label="Extend Corners Backs"
+                                      value={cmdOptions.extend_corners_backs}
+                                      onChange={(val) => setCmdOptions(p => ({ ...p, extend_corners_backs: val }))}
+                                      defaultUnit={dimensionUnitPref}
+                                    />
                                   </div>
                                 </div>
 
@@ -4558,14 +4626,14 @@ export default function App() {
                               --quality {cmdOptions.quality} <br />
                               {cmdOptions.load_offset && "--load_offset"} <br />
                               {cmdOptions.show_outline && "--show_outline"} <br />
-                              {normalizeDimension(cmdOptions.crop) && `--crop ${normalizeDimension(cmdOptions.crop)}`} <br />
-                              {normalizeDimension(cmdOptions.crop_backs) && `--crop_backs ${normalizeDimension(cmdOptions.crop_backs)}`} <br />
-                              {normalizeDimension(cmdOptions.extend_bleed) && `--extend_bleed ${normalizeDimension(cmdOptions.extend_bleed)}`} <br />
-                              {normalizeDimension(cmdOptions.extend_bleed_backs) && `--extend_bleed_backs ${normalizeDimension(cmdOptions.extend_bleed_backs)}`} <br />
-                              {normalizeDimension(cmdOptions.extend_corners) && normalizeDimension(cmdOptions.extend_corners) !== '0' && `--extend_corners ${normalizeDimension(cmdOptions.extend_corners)}`} <br />
-                              {normalizeDimension(cmdOptions.extend_corners_backs) && `--extend_corners_backs ${normalizeDimension(cmdOptions.extend_corners_backs)}`} <br />
-                              {normalizeDimension(cmdOptions.extend_edges) && `--extend_edges ${normalizeDimension(cmdOptions.extend_edges)}`} <br />
-                              {normalizeDimension(cmdOptions.extend_edges_backs) && `--extend_edges_backs ${normalizeDimension(cmdOptions.extend_edges_backs)}`} <br />
+                              {normalizeDimension(cmdOptions.crop, dimensionUnitPref) && `--crop ${normalizeDimension(cmdOptions.crop, dimensionUnitPref)}`} <br />
+                              {normalizeDimension(cmdOptions.crop_backs, dimensionUnitPref) && `--crop_backs ${normalizeDimension(cmdOptions.crop_backs, dimensionUnitPref)}`} <br />
+                              {normalizeDimension(cmdOptions.extend_bleed, dimensionUnitPref) && `--extend_bleed ${normalizeDimension(cmdOptions.extend_bleed, dimensionUnitPref)}`} <br />
+                              {normalizeDimension(cmdOptions.extend_bleed_backs, dimensionUnitPref) && `--extend_bleed_backs ${normalizeDimension(cmdOptions.extend_bleed_backs, dimensionUnitPref)}`} <br />
+                              {normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref) && normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref) !== '0' && `--extend_corners ${normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref)}`} <br />
+                              {normalizeDimension(cmdOptions.extend_corners_backs, dimensionUnitPref) && `--extend_corners_backs ${normalizeDimension(cmdOptions.extend_corners_backs, dimensionUnitPref)}`} <br />
+                              {normalizeDimension(cmdOptions.extend_edges, dimensionUnitPref) && `--extend_edges ${normalizeDimension(cmdOptions.extend_edges, dimensionUnitPref)}`} <br />
+                              {normalizeDimension(cmdOptions.extend_edges_backs, dimensionUnitPref) && `--extend_edges_backs ${normalizeDimension(cmdOptions.extend_edges_backs, dimensionUnitPref)}`} <br />
                               {cmdOptions.label && `--label "${cmdOptions.label}"`} <br />
                               {cmdOptions.skip && `--skip ${cmdOptions.skip}`} <br />
                               {cmdOptions.output_images && "--output_images"}
@@ -4577,7 +4645,7 @@ export default function App() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const rawCmd = `python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${normalizeDimension(cmdOptions.crop) ? ` --crop ${normalizeDimension(cmdOptions.crop)}` : ''}${normalizeDimension(cmdOptions.crop_backs) ? ` --crop_backs ${normalizeDimension(cmdOptions.crop_backs)}` : ''}${normalizeDimension(cmdOptions.extend_bleed) ? ` --extend_bleed ${normalizeDimension(cmdOptions.extend_bleed)}` : ''}${normalizeDimension(cmdOptions.extend_bleed_backs) ? ` --extend_bleed_backs ${normalizeDimension(cmdOptions.extend_bleed_backs)}` : ''}${normalizeDimension(cmdOptions.extend_corners) && normalizeDimension(cmdOptions.extend_corners) !== '0' ? ` --extend_corners ${normalizeDimension(cmdOptions.extend_corners)}` : ''}${normalizeDimension(cmdOptions.extend_corners_backs) ? ` --extend_corners_backs ${normalizeDimension(cmdOptions.extend_corners_backs)}` : ''}${normalizeDimension(cmdOptions.extend_edges) ? ` --extend_edges ${normalizeDimension(cmdOptions.extend_edges)}` : ''}${normalizeDimension(cmdOptions.extend_edges_backs) ? ` --extend_edges_backs ${normalizeDimension(cmdOptions.extend_edges_backs)}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`;
+                                    const rawCmd = `python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${normalizeDimension(cmdOptions.crop, dimensionUnitPref) ? ` --crop ${normalizeDimension(cmdOptions.crop, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.crop_backs, dimensionUnitPref) ? ` --crop_backs ${normalizeDimension(cmdOptions.crop_backs, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_bleed, dimensionUnitPref) ? ` --extend_bleed ${normalizeDimension(cmdOptions.extend_bleed, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_bleed_backs, dimensionUnitPref) ? ` --extend_bleed_backs ${normalizeDimension(cmdOptions.extend_bleed_backs, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref) && normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref) !== '0' ? ` --extend_corners ${normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_corners_backs, dimensionUnitPref) ? ` --extend_corners_backs ${normalizeDimension(cmdOptions.extend_corners_backs, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_edges, dimensionUnitPref) ? ` --extend_edges ${normalizeDimension(cmdOptions.extend_edges, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_edges_backs, dimensionUnitPref) ? ` --extend_edges_backs ${normalizeDimension(cmdOptions.extend_edges_backs, dimensionUnitPref)}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`;
                                     navigator.clipboard.writeText(rawCmd);
                                     setCommandCopied(true);
                                     setTimeout(() => setCommandCopied(false), 2000);
@@ -4590,7 +4658,7 @@ export default function App() {
                               </div>
                               <textarea
                                 readOnly
-                                value={`python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${normalizeDimension(cmdOptions.crop) ? ` --crop ${normalizeDimension(cmdOptions.crop)}` : ''}${normalizeDimension(cmdOptions.crop_backs) ? ` --crop_backs ${normalizeDimension(cmdOptions.crop_backs)}` : ''}${normalizeDimension(cmdOptions.extend_bleed) ? ` --extend_bleed ${normalizeDimension(cmdOptions.extend_bleed)}` : ''}${normalizeDimension(cmdOptions.extend_bleed_backs) ? ` --extend_bleed_backs ${normalizeDimension(cmdOptions.extend_bleed_backs)}` : ''}${normalizeDimension(cmdOptions.extend_corners) && normalizeDimension(cmdOptions.extend_corners) !== '0' ? ` --extend_corners ${normalizeDimension(cmdOptions.extend_corners)}` : ''}${normalizeDimension(cmdOptions.extend_corners_backs) ? ` --extend_corners_backs ${normalizeDimension(cmdOptions.extend_corners_backs)}` : ''}${normalizeDimension(cmdOptions.extend_edges) ? ` --extend_edges ${normalizeDimension(cmdOptions.extend_edges)}` : ''}${normalizeDimension(cmdOptions.extend_edges_backs) ? ` --extend_edges_backs ${normalizeDimension(cmdOptions.extend_edges_backs)}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`}
+                                value={`python create_pdf.py ${cmdOptions.specialty && cmdOptions.specialty !== 'none' ? `--specialty ${cmdOptions.specialty}` : `--card_size ${cmdOptions.card_size} --paper_size ${cmdOptions.paper_size} --registration ${cmdOptions.registration}`} --fit ${cmdOptions.fit} --ppi ${cmdOptions.ppi} --quality ${cmdOptions.quality}${cmdOptions.load_offset ? ' --load_offset' : ''}${cmdOptions.show_outline ? ' --show_outline' : ''}${cmdOptions.borderless ? ' --borderless' : ''}${cmdOptions.only_fronts ? ' --only_fronts' : ''}${cmdOptions.output_images ? ' --output_images' : ''}${cmdOptions.registration_orientation && cmdOptions.registration_orientation !== 'default' ? ` --registration_orientation ${cmdOptions.registration_orientation}` : ''}${normalizeDimension(cmdOptions.crop, dimensionUnitPref) ? ` --crop ${normalizeDimension(cmdOptions.crop, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.crop_backs, dimensionUnitPref) ? ` --crop_backs ${normalizeDimension(cmdOptions.crop_backs, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_bleed, dimensionUnitPref) ? ` --extend_bleed ${normalizeDimension(cmdOptions.extend_bleed, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_bleed_backs, dimensionUnitPref) ? ` --extend_bleed_backs ${normalizeDimension(cmdOptions.extend_bleed_backs, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref) && normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref) !== '0' ? ` --extend_corners ${normalizeDimension(cmdOptions.extend_corners, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_corners_backs, dimensionUnitPref) ? ` --extend_corners_backs ${normalizeDimension(cmdOptions.extend_corners_backs, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_edges, dimensionUnitPref) ? ` --extend_edges ${normalizeDimension(cmdOptions.extend_edges, dimensionUnitPref)}` : ''}${normalizeDimension(cmdOptions.extend_edges_backs, dimensionUnitPref) ? ` --extend_edges_backs ${normalizeDimension(cmdOptions.extend_edges_backs, dimensionUnitPref)}` : ''}${cmdOptions.label ? ` --label "${cmdOptions.label}"` : ''}${cmdOptions.skip ? ` --skip ${cmdOptions.skip}` : ''}`}
                                 className="w-full bg-primary-950/10 border border-primary-500/20 rounded-xl px-3 py-2 text-[10px] text-primary-300/80 font-mono resize-none focus:outline-none focus:border-primary-500/50 transition-colors selection:bg-primary-500/30"
                                 rows={4}
                                 onClick={(e) => (e.target as HTMLTextAreaElement).select()}
@@ -7926,6 +7994,84 @@ export default function App() {
 }
 
 // Subcomponents
+function DimensionField({
+  label,
+  value,
+  onChange,
+  defaultUnit = 'mm',
+}: {
+  label: string;
+  value: string;
+  onChange: (val: string) => void;
+  defaultUnit?: 'mm' | 'in';
+}) {
+  const [localUnit, setLocalUnit] = useState<'mm' | 'in'>(() => {
+    const explicit = getDimensionUnit(value, '');
+    return (explicit as 'mm' | 'in') || defaultUnit;
+  });
+
+  useEffect(() => {
+    if (value) {
+      const explicit = getDimensionUnit(value, '');
+      if (explicit) setLocalUnit(explicit as 'mm' | 'in');
+    }
+  }, [value]);
+
+  const currentUnit = (getDimensionUnit(value, localUnit) as 'mm' | 'in') || defaultUnit;
+
+  const handleUnitToggle = (target: 'mm' | 'in') => {
+    setLocalUnit(target);
+    if (value && value !== '0') {
+      onChange(convertDimensionUnit(value, target));
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">{label}</label>
+        <div className="flex items-center bg-black/40 rounded p-0.5 border border-white/10 scale-90 origin-right">
+          <button
+            type="button"
+            title="Switch to millimeters (mm)"
+            onClick={() => handleUnitToggle('mm')}
+            className={cn(
+              "px-1.5 py-0.5 text-[9px] font-bold rounded transition-colors",
+              currentUnit === 'mm' ? "bg-primary-500 text-white shadow-sm" : "text-white/40 hover:text-white/80"
+            )}
+          >
+            mm
+          </button>
+          <button
+            type="button"
+            title="Switch to inches (in)"
+            onClick={() => handleUnitToggle('in')}
+            className={cn(
+              "px-1.5 py-0.5 text-[9px] font-bold rounded transition-colors",
+              currentUnit === 'in' ? "bg-primary-500 text-white shadow-sm" : "text-white/40 hover:text-white/80"
+            )}
+          >
+            in
+          </button>
+        </div>
+      </div>
+      <input
+        type="text"
+        placeholder={currentUnit === 'in' ? 'e.g. 0.125in or 1/8"' : 'e.g. 3mm'}
+        value={value}
+        onChange={(e) => {
+          const v = e.target.value;
+          onChange(v);
+          const detected = getDimensionUnit(v, '');
+          if (detected) setLocalUnit(detected as 'mm' | 'in');
+        }}
+        onBlur={() => onChange(normalizeDimension(value, currentUnit))}
+        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
+      />
+    </div>
+  );
+}
+
 function TemplateCard({ type, onUpload, multiple = false }: { type: 'front' | 'back' | 'double_sided', onUpload: (files: File[]) => void, multiple?: boolean }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
