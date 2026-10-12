@@ -114,8 +114,34 @@ async function startServer() {
       }
     } catch (_) {}
 
-    // 2. Windows fallback: PowerShell Win32_VideoController
+    // 2. Windows fallback: Try Registry 64-bit HardwareInformation.qwMemorySize first (accurate for AMD/Intel/NVIDIA >4GB)
     if (process.platform === 'win32') {
+      try {
+        const psReg = spawnSync('powershell', [
+          '-NoProfile',
+          '-Command',
+          "Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\000*' | Where-Object { $_.DriverDesc -and $_.DriverDesc -notmatch 'Virtual|Remote|Basic' } | ForEach-Object { $v = $_.'HardwareInformation.qwMemorySize'; if (-not $v) { $v = $_.'HardwareInformation.MemorySize' }; [PSCustomObject]@{ Name = $_.DriverDesc; VramBytes = [int64]$v } } | Sort-Object VramBytes -Descending | ConvertTo-Json"
+        ], { encoding: 'utf8', timeout: 3500, windowsHide: true });
+        if (psReg.status === 0 && psReg.stdout) {
+          let parsed = JSON.parse(psReg.stdout.trim());
+          if (!Array.isArray(parsed)) parsed = [parsed];
+          const primary = parsed.find((g: any) => g && g.VramBytes && Number(g.VramBytes) > 0);
+          if (primary) {
+            const ramMB = Math.round(Number(primary.VramBytes) / (1024 * 1024));
+            const data: GpuVramInfo = {
+              detected: true,
+              name: primary.Name || 'Dedicated GPU',
+              totalVramMB: ramMB,
+              freeVramMB: Math.round(ramMB * 0.75),
+              source: 'win32-registry'
+            };
+            cachedGpuInfo = { data, timestamp: now };
+            return data;
+          }
+        }
+      } catch (_) {}
+
+      // Fallback: PowerShell Win32_VideoController (legacy 32-bit AdapterRAM)
       try {
         const ps = spawnSync('powershell', [
           '-NoProfile',
