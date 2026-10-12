@@ -4306,12 +4306,38 @@ export default function App() {
 
                       {/* Advanced Options */}
                       <div className="flex flex-col gap-4 md:col-span-2 pt-2">
-                        <div
-                          className="flex items-center gap-2 cursor-pointer select-none group w-fit"
-                          onClick={() => setIsAdvancedCollapsed(!isAdvancedCollapsed)}
-                        >
-                          <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400 group-hover:text-primary-300 transition-colors">Advanced</h4>
-                          <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isAdvancedCollapsed && "rotate-180")} />
+                        <div className="flex items-center justify-between">
+                          <div
+                            className="flex items-center gap-2 cursor-pointer select-none group w-fit"
+                            onClick={() => setIsAdvancedCollapsed(!isAdvancedCollapsed)}
+                          >
+                            <h4 className="text-xs font-bold uppercase tracking-widest text-primary-400 group-hover:text-primary-300 transition-colors">Advanced</h4>
+                            <ChevronDown size={14} className={cn("text-primary-400 transition-transform duration-300", !isAdvancedCollapsed && "rotate-180")} />
+                          </div>
+
+                          {/* Simple top-right mm | in toggle switch */}
+                          <div className="flex items-center bg-black/40 rounded-lg p-0.5 border border-white/10">
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchAllUnits('mm')}
+                              className={cn(
+                                "px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer",
+                                dimensionUnitPref === 'mm' ? "bg-primary-500 text-white shadow" : "text-white/40 hover:text-white/80"
+                              )}
+                            >
+                              mm
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchAllUnits('in')}
+                              className={cn(
+                                "px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer",
+                                dimensionUnitPref === 'in' ? "bg-primary-500 text-white shadow" : "text-white/40 hover:text-white/80"
+                              )}
+                            >
+                              in
+                            </button>
+                          </div>
                         </div>
 
                         <AnimatePresence>
@@ -4323,110 +4349,71 @@ export default function App() {
                               className="overflow-hidden"
                             >
                               <div className="space-y-4 pb-2 px-1 text-left">
-                                {/* Global Dimension Unit Toggle */}
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white/[0.03] border border-white/10 rounded-xl p-3">
-                                  <div>
-                                    <span className="text-xs font-bold text-white block">Preferred Dimension Units</span>
-                                    <span className="text-[10px] text-white/50 block">Accepts millimeters (<code className="text-primary-300">mm</code>) or inches (<code className="text-primary-300">in</code>, <code className="text-primary-300">&quot;</code>, fractions like <code className="text-primary-300">1/8&quot;</code>).</span>
-                                  </div>
-                                  <div className="flex items-center self-start sm:self-auto bg-black/40 rounded-lg p-0.5 border border-white/10">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSwitchAllUnits('mm')}
-                                      className={cn(
-                                        "px-2.5 py-1 text-xs font-bold rounded-md transition-all",
-                                        dimensionUnitPref === 'mm' ? "bg-primary-500 text-white shadow" : "text-white/40 hover:text-white/80"
-                                      )}
-                                    >
-                                      Millimeters (mm)
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSwitchAllUnits('in')}
-                                      className={cn(
-                                        "px-2.5 py-1 text-xs font-bold rounded-md transition-all",
-                                        dimensionUnitPref === 'in' ? "bg-primary-500 text-white shadow" : "text-white/40 hover:text-white/80"
-                                      )}
-                                    >
-                                      Inches (in)
-                                    </button>
-                                  </div>
-                                </div>
-
                                 {/* Crop Group */}
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Crop</label>
-                                    <span className="text-[9px] text-white/40 font-medium">Accepts mm or in (e.g. 3mm or 0.125in)</span>
-                                  </div>
+                                  <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Crop</label>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <DimensionField
                                       label="Crop Fronts"
                                       value={cmdOptions.crop}
                                       onChange={(val) => setCmdOptions(p => ({ ...p, crop: val }))}
-                                      defaultUnit={dimensionUnitPref}
+                                      unit={dimensionUnitPref}
                                     />
                                     <DimensionField
                                       label="Crop Backs"
                                       value={cmdOptions.crop_backs}
                                       onChange={(val) => setCmdOptions(p => ({ ...p, crop_backs: val }))}
-                                      defaultUnit={dimensionUnitPref}
+                                      unit={dimensionUnitPref}
                                     />
                                   </div>
                                 </div>
 
                                 {/* Bleed Group */}
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Bleed</label>
-                                    <span className="text-[9px] text-white/40 font-medium">Accepts mm or in (e.g. 2mm or 0.08in)</span>
-                                  </div>
+                                  <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Bleed</label>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <DimensionField
                                       label="Outer Bleed Fronts"
                                       value={cmdOptions.extend_bleed}
                                       onChange={(val) => setCmdOptions(p => ({ ...p, extend_bleed: val }))}
-                                      defaultUnit={dimensionUnitPref}
+                                      unit={dimensionUnitPref}
                                     />
                                     <DimensionField
                                       label="Outer Bleed Backs"
                                       value={cmdOptions.extend_bleed_backs}
                                       onChange={(val) => setCmdOptions(p => ({ ...p, extend_bleed_backs: val }))}
-                                      defaultUnit={dimensionUnitPref}
+                                      unit={dimensionUnitPref}
                                     />
                                   </div>
                                 </div>
 
                                 {/* Extend Group */}
                                 <div className="bg-white/[0.02] border border-white/10 rounded-xl p-3.5 space-y-3">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Extend</label>
-                                    <span className="text-[9px] text-white/40 font-medium">Accepts mm or in (e.g. 3.5mm, 0.125in, 1/8")</span>
-                                  </div>
+                                  <label className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">Extend</label>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                                     <DimensionField
                                       label="Extend Edges Fronts"
                                       value={cmdOptions.extend_edges}
                                       onChange={(val) => setCmdOptions(p => ({ ...p, extend_edges: val }))}
-                                      defaultUnit={dimensionUnitPref}
+                                      unit={dimensionUnitPref}
                                     />
                                     <DimensionField
                                       label="Extend Edges Backs"
                                       value={cmdOptions.extend_edges_backs}
                                       onChange={(val) => setCmdOptions(p => ({ ...p, extend_edges_backs: val }))}
-                                      defaultUnit={dimensionUnitPref}
+                                      unit={dimensionUnitPref}
                                     />
                                     <DimensionField
                                       label="Extend Corners Fronts"
                                       value={cmdOptions.extend_corners || ''}
                                       onChange={(val) => setCmdOptions(p => ({ ...p, extend_corners: val }))}
-                                      defaultUnit={dimensionUnitPref}
+                                      unit={dimensionUnitPref}
                                     />
                                     <DimensionField
                                       label="Extend Corners Backs"
                                       value={cmdOptions.extend_corners_backs}
                                       onChange={(val) => setCmdOptions(p => ({ ...p, extend_corners_backs: val }))}
-                                      defaultUnit={dimensionUnitPref}
+                                      unit={dimensionUnitPref}
                                     />
                                   </div>
                                 </div>
@@ -8038,26 +8025,20 @@ function DimensionField({
   label,
   value,
   onChange,
-  defaultUnit = 'mm',
+  unit = 'mm',
 }: {
   label: string;
   value: string;
   onChange: (val: string) => void;
-  defaultUnit?: 'mm' | 'in';
+  unit?: 'mm' | 'in';
 }) {
-  const parts = parseDimensionParts(value, defaultUnit);
-  const [selectedUnit, setSelectedUnit] = useState<'mm' | 'in'>(parts.unit);
+  const parts = parseDimensionParts(value, unit);
   const [inputValue, setInputValue] = useState<string>(parts.num);
 
   useEffect(() => {
-    const p = parseDimensionParts(value, selectedUnit);
+    const p = parseDimensionParts(value, unit);
     setInputValue(p.num);
-    if (value && (value.endsWith('in') || value.endsWith('"') || value.includes('inch'))) {
-      setSelectedUnit('in');
-    } else if (value && value.endsWith('mm')) {
-      setSelectedUnit('mm');
-    }
-  }, [value]);
+  }, [value, unit]);
 
   const handleTextChange = (raw: string) => {
     setInputValue(raw);
@@ -8071,8 +8052,6 @@ function DimensionField({
     if (trimmed.endsWith('in') || trimmed.endsWith('"') || trimmed.includes('inch')) {
       const match = trimmed.match(/^(\d+(?:\.\d+)?|\.\d+)/);
       if (match) {
-        setSelectedUnit('in');
-        setInputValue(match[1]);
         onChange(`${match[1]}in`);
         return;
       }
@@ -8080,41 +8059,16 @@ function DimensionField({
     if (trimmed.endsWith('mm')) {
       const match = trimmed.match(/^(\d+(?:\.\d+)?|\.\d+)/);
       if (match) {
-        setSelectedUnit('mm');
-        setInputValue(match[1]);
         onChange(`${match[1]}mm`);
         return;
       }
     }
 
-    // Bare number: ALWAYS automatically append the selected unit of measurement!
+    // Bare number: ALWAYS automatically append the active unit of measurement!
     if (/^(\d+(\.\d+)?|\.\d+)$/.test(trimmed)) {
-      onChange(`${trimmed}${selectedUnit}`);
+      onChange(`${trimmed}${unit}`);
     } else {
       onChange(trimmed);
-    }
-  };
-
-  const handleUnitToggle = (newUnit: 'mm' | 'in') => {
-    if (newUnit === selectedUnit) return;
-    setSelectedUnit(newUnit);
-
-    const trimmed = inputValue.trim();
-    if (!trimmed || trimmed === '0') {
-      return;
-    }
-
-    const num = parseFloat(trimmed);
-    if (!isNaN(num)) {
-      if (newUnit === 'in') {
-        const inVal = parseFloat((num / 25.4).toFixed(3)).toString();
-        setInputValue(inVal);
-        onChange(`${inVal}in`);
-      } else {
-        const mmVal = parseFloat((num * 25.4).toFixed(2)).toString();
-        setInputValue(mmVal);
-        onChange(`${mmVal}mm`);
-      }
     }
   };
 
@@ -8126,11 +8080,10 @@ function DimensionField({
       return;
     }
 
-    const normalized = normalizeDimension(trimmed, selectedUnit);
+    const normalized = normalizeDimension(trimmed, unit);
     if (normalized) {
-      const p = parseDimensionParts(normalized, selectedUnit);
+      const p = parseDimensionParts(normalized, unit);
       setInputValue(p.num);
-      setSelectedUnit(p.unit);
       onChange(normalized);
     }
   };
@@ -8143,36 +8096,15 @@ function DimensionField({
       <div className="relative flex items-center">
         <input
           type="text"
-          placeholder={selectedUnit === 'in' ? 'e.g. 0.125' : 'e.g. 3'}
+          placeholder={unit === 'in' ? 'e.g. 0.125' : 'e.g. 3'}
           value={inputValue}
           onChange={(e) => handleTextChange(e.target.value)}
           onBlur={handleBlur}
-          className="w-full bg-white/5 border border-white/10 rounded-lg pl-3 pr-20 py-2 text-xs focus:border-primary-500 font-mono text-white placeholder-white/20"
+          className="w-full bg-white/5 border border-white/10 rounded-lg pl-3 pr-10 py-2 text-xs focus:border-primary-500 font-mono text-white placeholder-white/20"
         />
-        <div className="absolute right-1.5 flex items-center bg-black/60 rounded-md p-0.5 border border-white/10">
-          <button
-            type="button"
-            title="Millimeters (mm)"
-            onClick={() => handleUnitToggle('mm')}
-            className={cn(
-              "px-2 py-0.5 text-[10px] font-bold rounded transition-all cursor-pointer",
-              selectedUnit === 'mm' ? "bg-primary-500 text-white shadow-sm" : "text-white/40 hover:text-white/80"
-            )}
-          >
-            mm
-          </button>
-          <button
-            type="button"
-            title="Inches (in)"
-            onClick={() => handleUnitToggle('in')}
-            className={cn(
-              "px-2 py-0.5 text-[10px] font-bold rounded transition-all cursor-pointer",
-              selectedUnit === 'in' ? "bg-primary-500 text-white shadow-sm" : "text-white/40 hover:text-white/80"
-            )}
-          >
-            in
-          </button>
-        </div>
+        <span className="absolute right-3 text-xs font-mono font-medium text-white/40 pointer-events-none select-none">
+          {unit}
+        </span>
       </div>
     </div>
   );
