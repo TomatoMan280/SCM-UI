@@ -227,6 +227,46 @@ export const convertDimensionUnit = (currentStr: string, targetUnit: 'mm' | 'in'
   }
 };
 
+export const parseDimensionParts = (
+  val: string | number | undefined | null,
+  fallbackUnit: 'mm' | 'in' = 'mm'
+): { num: string; unit: 'mm' | 'in' } => {
+  if (val === undefined || val === null) return { num: '', unit: fallbackUnit };
+  const str = val.toString().trim();
+  if (!str || str === '0') return { num: '', unit: fallbackUnit };
+
+  // Check fraction: e.g. 1/8", 1/8 in, 1/8
+  const fracMatch = str.match(/^(\d+)\s*\/\s*(\d+)\s*(["'']|in(?:ch(?:es)?)?|mm)?$/i);
+  if (fracMatch) {
+    const num = parseFloat(fracMatch[1]);
+    const den = parseFloat(fracMatch[2]);
+    if (den !== 0) {
+      const dec = parseFloat((num / den).toFixed(4)).toString();
+      const unit = fracMatch[3] && fracMatch[3].toLowerCase().startsWith('m') ? 'mm' : 'in';
+      return { num: dec, unit };
+    }
+  }
+
+  // Check inches: "0.125in", "0.125 in", "0.125\"", "0.125 inch"
+  if (str.endsWith('in') || str.endsWith('"') || str.endsWith("''") || str.toLowerCase().includes('inch')) {
+    const numMatch = str.match(/^(\d+(?:\.\d+)?|\.\d+)/);
+    return { num: numMatch ? numMatch[1] : '', unit: 'in' };
+  }
+
+  // Check mm: "10mm", "10 mm", "10 millimeter"
+  if (str.toLowerCase().includes('mm') || str.toLowerCase().includes('milli')) {
+    const numMatch = str.match(/^(\d+(?:\.\d+)?|\.\d+)/);
+    return { num: numMatch ? numMatch[1] : '', unit: 'mm' };
+  }
+
+  // Plain number without unit:
+  if (/^(\d+(\.\d+)?|\.\d+)$/.test(str)) {
+    return { num: str, unit: fallbackUnit };
+  }
+
+  return { num: str, unit: fallbackUnit };
+};
+
 // Types
 type Tab = 'dashboard' | 'console' | 'assets' | 'builder' | 'plugins';
 
@@ -8005,24 +8045,93 @@ function DimensionField({
   onChange: (val: string) => void;
   defaultUnit?: 'mm' | 'in';
 }) {
-  const [localUnit, setLocalUnit] = useState<'mm' | 'in'>(() => {
-    const explicit = getDimensionUnit(value, '');
-    return (explicit as 'mm' | 'in') || defaultUnit;
-  });
+  const parts = parseDimensionParts(value, defaultUnit);
+  const [selectedUnit, setSelectedUnit] = useState<'mm' | 'in'>(parts.unit);
+  const [inputValue, setInputValue] = useState<string>(parts.num);
 
   useEffect(() => {
-    if (value) {
-      const explicit = getDimensionUnit(value, '');
-      if (explicit) setLocalUnit(explicit as 'mm' | 'in');
+    const p = parseDimensionParts(value, selectedUnit);
+    setInputValue(p.num);
+    if (value && (value.endsWith('in') || value.endsWith('"') || value.includes('inch'))) {
+      setSelectedUnit('in');
+    } else if (value && value.endsWith('mm')) {
+      setSelectedUnit('mm');
     }
   }, [value]);
 
-  const currentUnit = (getDimensionUnit(value, localUnit) as 'mm' | 'in') || defaultUnit;
+  const handleTextChange = (raw: string) => {
+    setInputValue(raw);
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === '0') {
+      onChange('');
+      return;
+    }
 
-  const handleUnitToggle = (target: 'mm' | 'in') => {
-    setLocalUnit(target);
-    if (value && value !== '0') {
-      onChange(convertDimensionUnit(value, target));
+    // Check if user typed or pasted unit in the text field (e.g. "0.125in" or "3mm")
+    if (trimmed.endsWith('in') || trimmed.endsWith('"') || trimmed.includes('inch')) {
+      const match = trimmed.match(/^(\d+(?:\.\d+)?|\.\d+)/);
+      if (match) {
+        setSelectedUnit('in');
+        setInputValue(match[1]);
+        onChange(`${match[1]}in`);
+        return;
+      }
+    }
+    if (trimmed.endsWith('mm')) {
+      const match = trimmed.match(/^(\d+(?:\.\d+)?|\.\d+)/);
+      if (match) {
+        setSelectedUnit('mm');
+        setInputValue(match[1]);
+        onChange(`${match[1]}mm`);
+        return;
+      }
+    }
+
+    // Bare number: ALWAYS automatically append the selected unit of measurement!
+    if (/^(\d+(\.\d+)?|\.\d+)$/.test(trimmed)) {
+      onChange(`${trimmed}${selectedUnit}`);
+    } else {
+      onChange(trimmed);
+    }
+  };
+
+  const handleUnitToggle = (newUnit: 'mm' | 'in') => {
+    if (newUnit === selectedUnit) return;
+    setSelectedUnit(newUnit);
+
+    const trimmed = inputValue.trim();
+    if (!trimmed || trimmed === '0') {
+      return;
+    }
+
+    const num = parseFloat(trimmed);
+    if (!isNaN(num)) {
+      if (newUnit === 'in') {
+        const inVal = parseFloat((num / 25.4).toFixed(3)).toString();
+        setInputValue(inVal);
+        onChange(`${inVal}in`);
+      } else {
+        const mmVal = parseFloat((num * 25.4).toFixed(2)).toString();
+        setInputValue(mmVal);
+        onChange(`${mmVal}mm`);
+      }
+    }
+  };
+
+  const handleBlur = () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed || trimmed === '0') {
+      setInputValue('');
+      onChange('');
+      return;
+    }
+
+    const normalized = normalizeDimension(trimmed, selectedUnit);
+    if (normalized) {
+      const p = parseDimensionParts(normalized, selectedUnit);
+      setInputValue(p.num);
+      setSelectedUnit(p.unit);
+      onChange(normalized);
     }
   };
 
@@ -8030,44 +8139,41 @@ function DimensionField({
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <label className="text-[10px] font-bold uppercase tracking-wider text-white/60 block">{label}</label>
-        <div className="flex items-center bg-black/40 rounded p-0.5 border border-white/10 scale-90 origin-right">
+      </div>
+      <div className="relative flex items-center">
+        <input
+          type="text"
+          placeholder={selectedUnit === 'in' ? 'e.g. 0.125' : 'e.g. 3'}
+          value={inputValue}
+          onChange={(e) => handleTextChange(e.target.value)}
+          onBlur={handleBlur}
+          className="w-full bg-white/5 border border-white/10 rounded-lg pl-3 pr-20 py-2 text-xs focus:border-primary-500 font-mono text-white placeholder-white/20"
+        />
+        <div className="absolute right-1.5 flex items-center bg-black/60 rounded-md p-0.5 border border-white/10">
           <button
             type="button"
-            title="Switch to millimeters (mm)"
+            title="Millimeters (mm)"
             onClick={() => handleUnitToggle('mm')}
             className={cn(
-              "px-1.5 py-0.5 text-[9px] font-bold rounded transition-colors",
-              currentUnit === 'mm' ? "bg-primary-500 text-white shadow-sm" : "text-white/40 hover:text-white/80"
+              "px-2 py-0.5 text-[10px] font-bold rounded transition-all cursor-pointer",
+              selectedUnit === 'mm' ? "bg-primary-500 text-white shadow-sm" : "text-white/40 hover:text-white/80"
             )}
           >
             mm
           </button>
           <button
             type="button"
-            title="Switch to inches (in)"
+            title="Inches (in)"
             onClick={() => handleUnitToggle('in')}
             className={cn(
-              "px-1.5 py-0.5 text-[9px] font-bold rounded transition-colors",
-              currentUnit === 'in' ? "bg-primary-500 text-white shadow-sm" : "text-white/40 hover:text-white/80"
+              "px-2 py-0.5 text-[10px] font-bold rounded transition-all cursor-pointer",
+              selectedUnit === 'in' ? "bg-primary-500 text-white shadow-sm" : "text-white/40 hover:text-white/80"
             )}
           >
             in
           </button>
         </div>
       </div>
-      <input
-        type="text"
-        placeholder={currentUnit === 'in' ? 'e.g. 0.125in or 1/8"' : 'e.g. 3mm'}
-        value={value}
-        onChange={(e) => {
-          const v = e.target.value;
-          onChange(v);
-          const detected = getDimensionUnit(v, '');
-          if (detected) setLocalUnit(detected as 'mm' | 'in');
-        }}
-        onBlur={() => onChange(normalizeDimension(value, currentUnit))}
-        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:border-primary-500 font-mono"
-      />
     </div>
   );
 }
