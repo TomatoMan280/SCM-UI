@@ -5,7 +5,7 @@ import multer from "multer";
 import fs from "fs";
 import os from "os";
 import { ZipArchive } from "archiver";
-import { execSync, exec } from "child_process";
+import { execSync, exec, spawnSync } from "child_process";
 
 console.log("[System] Modules imported successfully.");
 

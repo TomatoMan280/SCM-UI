@@ -42,6 +42,7 @@ import {
   Maximize2,
   SlidersHorizontal,
   ZoomIn,
+  ZoomOut,
   FolderInput,
   FolderOutput,
   Cpu,
@@ -1185,19 +1186,19 @@ const LightboxGallery = ({
         </div>
 
         {/* Resolution & File Size Stats Badge - Outside card frame so it NEVER blocks card image */}
-        {(dimensions || (imageStats?.origSize && imageStats?.currentSize)) && (
+        {Boolean(dimensions || (imageStats?.origSize && imageStats?.currentSize)) && (
           <div className="mt-3.5 px-4 py-1.5 rounded-full bg-[#121318]/90 backdrop-blur-md border border-white/15 text-white/90 text-xs font-mono pointer-events-none flex items-center gap-2.5 shadow-2xl z-30 select-none">
             {dimensions && (
               <span className="text-white font-semibold">{dimensions.width} × {dimensions.height} px</span>
             )}
-            {dimensions && imageStats?.origSize && imageStats?.currentSize && (
+            {dimensions && Boolean(imageStats?.origSize && imageStats?.currentSize && imageStats.origSize > 0) && (
               <span className="text-white/20">•</span>
             )}
-            {imageStats?.origSize && imageStats?.currentSize && (
+            {Boolean(imageStats?.origSize && imageStats?.currentSize && imageStats.origSize > 0) && (
               <>
-                <span className="text-white/60">Orig: <strong className="text-white font-semibold">{(imageStats.origSize / 1024).toFixed(0)} KB</strong></span>
+                <span className="text-white/60">Orig: <strong className="text-white font-semibold">{((imageStats?.origSize || 0) / 1024).toFixed(0)} KB</strong></span>
                 <span className="text-white/20">•</span>
-                <span className="text-primary-400 font-bold">Upscaled HD: {(imageStats.currentSize / 1024).toFixed(0)} KB ({((imageStats.currentSize / imageStats.origSize)).toFixed(1)}x detail)</span>
+                <span className="text-primary-400 font-bold">Upscaled HD: {((imageStats?.currentSize || 0) / 1024).toFixed(0)} KB ({(((imageStats?.currentSize || 0) / (imageStats?.origSize || 1))).toFixed(1)}x detail)</span>
               </>
             )}
             {zoom > 1 && (
@@ -5085,7 +5086,7 @@ export default function App() {
                                               <button
                                                 key={scale}
                                                 type="button"
-                                                onClick={() => updateUpscaleConfig({ scaleFactor: scale })}
+                                                onClick={() => updateUpscaleConfig({ scaleFactor: scale as 2 | 3 | 4 })}
                                                 className={cn(
                                                   "py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer select-none",
                                                   upscaleConfig.scaleFactor === scale
@@ -5107,7 +5108,7 @@ export default function App() {
                                           <div className="relative">
                                             <select
                                               value={upscaleConfig.model}
-                                              onChange={(e) => updateUpscaleConfig({ model: e.target.value })}
+                                              onChange={(e) => updateUpscaleConfig({ model: e.target.value as any })}
                                               className="w-full bg-[#121318] border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white/90 appearance-none focus:outline-none focus:border-primary-500 transition-colors cursor-pointer"
                                             >
                                               <option value="high-fidelity-4x" className="bg-[#14151b]">High Fidelity 4x (Cards, Text & Borders)</option>
@@ -6898,25 +6899,27 @@ export default function App() {
 
       <AnimatePresence>
         {enlargedImage && (
-          <LightboxGallery
-            initialImage={enlargedImage}
-            onClose={() => setEnlargedImage(null)}
-            onUpscaleSingle={async (src: string) => {
-              try {
-                const cleanUrl = src.split('?')[0].split('#')[0];
-                const decoded = decodeURIComponent(cleanUrl);
-                let type = 'front';
-                if (decoded.includes('/back/')) type = 'back';
-                else if (decoded.includes('/double_sided/')) type = 'double_sided';
-                const filename = decoded.split('/').pop() || '';
-                if (filename) {
-                  await handleUpscale([`${type}:${filename}`], false);
+          <ErrorBoundary>
+            <LightboxGallery
+              initialImage={enlargedImage}
+              onClose={() => setEnlargedImage(null)}
+              onUpscaleSingle={async (src: string) => {
+                try {
+                  const cleanUrl = src.split('?')[0].split('#')[0];
+                  const decoded = decodeURIComponent(cleanUrl);
+                  let type = 'front';
+                  if (decoded.includes('/back/')) type = 'back';
+                  else if (decoded.includes('/double_sided/')) type = 'double_sided';
+                  const filename = decoded.split('/').pop() || '';
+                  if (filename) {
+                    await handleUpscale([`${type}:${filename}`], false);
+                  }
+                } catch (e) {
+                  console.error('Failed single card upscale:', e);
                 }
-              } catch (e) {
-                console.error('Failed single card upscale:', e);
-              }
-            }}
-          />
+              }}
+            />
+          </ErrorBoundary>
         )}
       </AnimatePresence>
 
