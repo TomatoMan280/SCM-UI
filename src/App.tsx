@@ -1726,9 +1726,11 @@ export default function App() {
   const [pluginSaveName, setPluginSaveName] = useState("");
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'theme' | 'shortcuts' | 'system' | 'updates'>('theme');
+  const [settingsTab, setSettingsTab] = useState<'theme' | 'shortcuts' | 'system'>('theme');
   const [updateInfo, setUpdateInfo] = useState<UpdateCheckResponse | null>(null);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState<boolean>(false);
+  const [hasUserCheckedUpdates, setHasUserCheckedUpdates] = useState<boolean>(false);
+  const [isVersionPickerOpen, setIsVersionPickerOpen] = useState<boolean>(false);
   const [updateSettings, setUpdateSettings] = useState<{ autoCheck: boolean; includePrereleases: boolean; channel: string }>({
     autoCheck: true,
     includePrereleases: true,
@@ -1788,6 +1790,7 @@ export default function App() {
         const data: UpdateCheckResponse = await res.json();
         setUpdateInfo(data);
         if (manual) {
+          setHasUserCheckedUpdates(true);
           if (data.hasUpdate) {
             setUpdateStatusToast(`New update available: ${data.latestVersion}!`);
           } else {
@@ -1796,11 +1799,13 @@ export default function App() {
           setTimeout(() => setUpdateStatusToast(null), 4000);
         }
       } else if (manual) {
+        setHasUserCheckedUpdates(true);
         setUpdateStatusToast('Could not reach update server. Check internet connection.');
         setTimeout(() => setUpdateStatusToast(null), 4000);
       }
     } catch (e: any) {
       if (manual) {
+        setHasUserCheckedUpdates(true);
         setUpdateStatusToast(`Update check failed: ${e?.message || 'Network error'}`);
         setTimeout(() => setUpdateStatusToast(null), 4000);
       }
@@ -4189,7 +4194,7 @@ export default function App() {
                   className="flex justify-between items-center cursor-pointer group/ver p-1 -m-1 rounded-lg hover:bg-white/5 transition-all"
                   onClick={() => {
                     setShowThemeSettings(true);
-                    setSettingsTab('updates');
+                    setSettingsTab('system');
                   }}
                   title="Click to check updates or switch versions"
                 >
@@ -4208,7 +4213,7 @@ export default function App() {
                       "font-mono text-[10px] transition-colors",
                       updateInfo?.hasUpdate ? "text-primary-400 font-bold" : "text-white/80 group-hover/ver:text-white"
                     )}>
-                      {updateInfo?.currentVersion ? `v${updateInfo.currentVersion}` : '3.0.3Beta'}
+                      {updateInfo?.currentVersion ? `v${updateInfo.currentVersion}` : '3.0.4-beta'}
                     </span>
                   </div>
                 </div>
@@ -6660,7 +6665,7 @@ export default function App() {
               exit={{ scale: 0.9, opacity: 0 }}
               className={cn(
                 "w-full bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col max-h-[90vh] transition-all duration-300",
-                settingsTab === 'updates' ? "max-w-2xl" : "max-w-sm"
+                settingsTab === 'system' ? "max-w-2xl" : "max-w-sm"
               )}
             >
               <div className="space-y-1 shrink-0 mb-6">
@@ -6683,18 +6688,12 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setSettingsTab('system')}
-                  className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", settingsTab === 'system' ? "bg-white/10 text-white" : "text-white/40 hover:text-white")}
-                >
-                  System
-                </button>
-                <button
-                  onClick={() => setSettingsTab('updates')}
                   className={cn(
                     "flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 relative",
-                    settingsTab === 'updates' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+                    settingsTab === 'system' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
                   )}
                 >
-                  <span>Updates</span>
+                  <span>System</span>
                   {updateInfo?.hasUpdate && (
                     <span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
                   )}
@@ -6933,119 +6932,6 @@ export default function App() {
 
               {settingsTab === 'system' && (
                 <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
-
-                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
-                    <div className="space-y-1">
-                      <span className="text-sm font-medium text-white block">Mobile App Connection URL</span>
-                      <span className="text-xs text-white/40 block leading-relaxed">
-                        Enter this URL into your browser to connect to this desktop backend.
-                      </span>
-                    </div>
-                    <div>
-                      {tunnelUrl ? (
-                        <div className="w-full bg-black/40 border border-emerald-500/30 rounded-lg p-2 text-sm font-mono text-emerald-400 flex items-center justify-between">
-                          <span>{tunnelUrl}</span>
-                          <button onClick={() => navigator.clipboard.writeText(tunnelUrl)} className="text-emerald-500/50 hover:text-emerald-400 font-bold transition-colors">Copy</button>
-                        </div>
-                      ) : isTunnelStarting ? (
-                        <div className="w-full bg-black/40 border border-white/10 rounded-lg p-3 flex items-center justify-center gap-2">
-                          <RefreshCw size={16} className="text-white/40 animate-spin" />
-                          <span className="text-xs text-white/50 font-medium">Starting server broadcast...</span>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setIsTunnelStarting(true);
-                            fetch('/api/tunnel/start', { method: 'POST' });
-                          }}
-                          className="w-full px-4 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg font-bold transition-all border border-emerald-500/30"
-                        >
-                          Start Server Broadcast
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
-                    <div className="space-y-1">
-                      <span className="text-sm font-medium text-white block">Python Path Override</span>
-                      <span className="text-xs text-white/40 block leading-relaxed">
-                        Specify absolute path to your python executable if it cannot be found in PATH.
-                        Leave empty for auto-detection.
-                      </span>
-                    </div>
-                    <div>
-                      <input
-                        title="Python Executable Path"
-                        type="text"
-                        value={pythonPath}
-                        onChange={(e) => setPythonPath(e.target.value)}
-                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono text-white focus:outline-none focus:border-primary-500 transition-colors"
-                        placeholder="C:\Python310\python.exe or /usr/bin/python3"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
-                    <div className="space-y-1">
-                      <span className="text-sm font-medium text-white block">Environment Recovery</span>
-                      <span className="text-xs text-white/40 block leading-relaxed">
-                        If Python scripts are missing or failed to install correctly, try running the setup background process again. This will create the virtual environment and install pip dependencies.
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setShowThemeSettings(false);
-                        startPythonSetup();
-                      }}
-                      className="px-6 py-2.5 bg-primary-500/20 hover:bg-primary-500/30 text-primary-300 rounded-xl font-bold transition-all border border-primary-500/30 flex items-center gap-2"
-                    >
-                      <RefreshCw size={16} /> Re-run Setup Process
-                    </button>
-                  </div>
-
-                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
-                    <div className="space-y-1">
-                      <span className="text-sm font-medium text-white block">Application Cache</span>
-                      <span className="text-xs text-white/40 block leading-relaxed">
-                        Clear temporary image renders, upload buffers, and cached card previews to free up disk space and force reload fresh assets.
-                      </span>
-                    </div>
-                    <button
-                      onClick={handleClearCache}
-                      disabled={clearCacheStatus === 'clearing'}
-                      className={cn(
-                        "px-6 py-2.5 rounded-xl font-bold transition-all border flex items-center gap-2 text-sm",
-                        clearCacheStatus === 'clearing' && "bg-white/10 text-white/50 border-white/10 cursor-not-allowed",
-                        clearCacheStatus === 'success' && "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-                        clearCacheStatus === 'error' && "bg-rose-500/20 text-rose-300 border-rose-500/30",
-                        clearCacheStatus === 'idle' && "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/20 hover:border-rose-500/40"
-                      )}
-                    >
-                      {clearCacheStatus === 'clearing' ? (
-                        <>
-                          <RefreshCw size={16} className="animate-spin" /> Clearing Cache...
-                        </>
-                      ) : clearCacheStatus === 'success' ? (
-                        <>
-                          <Check size={16} /> Cache Cleared!
-                        </>
-                      ) : clearCacheStatus === 'error' ? (
-                        <>
-                          <AlertCircle size={16} /> Failed to Clear
-                        </>
-                      ) : (
-                        <>
-                          <Trash2 size={16} /> Clear Cache
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {settingsTab === 'updates' && (
-                <div className="space-y-5 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
                   {/* Status & Quick Action Card */}
                   <div className={cn(
                     "p-5 rounded-2xl border transition-all space-y-4",
@@ -7058,7 +6944,7 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold uppercase tracking-wider text-white/50">Current Version</span>
                           <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-white font-bold">
-                            {updateInfo?.currentVersion ? `v${updateInfo.currentVersion}` : '3.0.0-beta'}
+                            {updateInfo?.currentVersion ? `v${updateInfo.currentVersion}` : '3.0.3-beta'}
                           </span>
                         </div>
                         {updateInfo?.hasUpdate ? (
@@ -7071,9 +6957,13 @@ export default function App() {
                               Update Available: {updateInfo.latestVersion}
                             </span>
                           </div>
-                        ) : (
+                        ) : hasUserCheckedUpdates ? (
                           <div className="flex items-center gap-1.5 pt-1 text-emerald-400 text-xs font-semibold">
                             <CheckCircle size={14} /> SCMUI is up to date
+                          </div>
+                        ) : (
+                          <div className="text-xs text-white/40 pt-1">
+                            Click Check Updates to scan GitHub for new releases.
                           </div>
                         )}
                       </div>
@@ -7181,211 +7071,341 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Pick a Version Section */}
-                  <div className="space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
-                      <div>
-                        <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                          <Package size={15} className="text-primary-400" /> Pick Versions
-                        </h4>
-                        <p className="text-xs text-white/40">Select and install any released version, or rollback.</p>
+                  {/* Pick a Version Accordion (Collapsed by Default) */}
+                  <div className="space-y-3 pt-1 border-t border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => setIsVersionPickerOpen(v => !v)}
+                      className="w-full flex items-center justify-between p-3.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all cursor-pointer group text-left active:scale-[0.99]"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-xl bg-primary-600/20 text-primary-400 group-hover:scale-105 transition-transform">
+                          <Package size={16} />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                            Pick Versions / Release History
+                          </h4>
+                          <p className="text-xs text-white/40">Select and install past releases or roll back</p>
+                        </div>
                       </div>
-
-                      {/* Filter tabs */}
-                      <div className="flex bg-black/40 p-1 border border-white/5 rounded-xl gap-1 self-start sm:self-auto">
-                        <button
-                          onClick={() => setVersionFilter('all')}
-                          className={cn(
-                            "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
-                            versionFilter === 'all' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          All ({updateInfo?.releases?.length || 0})
-                        </button>
-                        <button
-                          onClick={() => setVersionFilter('stable')}
-                          className={cn(
-                            "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
-                            versionFilter === 'stable' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          Stable ({updateInfo?.releases?.filter(r => !r.isPrerelease).length || 0})
-                        </button>
-                        <button
-                          onClick={() => setVersionFilter('beta')}
-                          className={cn(
-                            "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
-                            versionFilter === 'beta' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
-                          )}
-                        >
-                          Beta ({updateInfo?.releases?.filter(r => r.isPrerelease).length || 0})
-                        </button>
+                      <div className="flex items-center gap-2 text-white/40 group-hover:text-white transition-colors">
+                        <span className="text-[11px] font-mono bg-white/10 px-2 py-0.5 rounded-md text-white/70">
+                          {updateInfo?.releases?.length || 0} versions
+                        </span>
+                        <ChevronDown size={16} className={cn("transition-transform duration-200", isVersionPickerOpen && "rotate-180")} />
                       </div>
-                    </div>
+                    </button>
 
-                    {/* Releases list */}
-                    <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar">
-                      {(!updateInfo?.releases || updateInfo.releases.length === 0) ? (
-                        <div className="p-8 text-center text-white/30 text-xs border border-white/5 rounded-2xl bg-white/[0.02]">
-                          {isCheckingUpdates ? (
-                            <div className="flex flex-col items-center gap-2">
-                              <RefreshCw size={20} className="animate-spin text-primary-400" />
-                              <span>Fetching available versions from GitHub...</span>
+                    {isVersionPickerOpen && (
+                      <div className="space-y-3 p-1">
+                        {/* Filter tabs */}
+                        <div className="flex items-center justify-between gap-2 px-1">
+                          <span className="text-xs text-white/40">Filter releases:</span>
+                          <div className="flex bg-black/40 p-1 border border-white/5 rounded-xl gap-1">
+                            <button
+                              onClick={() => setVersionFilter('all')}
+                              className={cn(
+                                "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
+                                versionFilter === 'all' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
+                              )}
+                            >
+                              All ({updateInfo?.releases?.length || 0})
+                            </button>
+                            <button
+                              onClick={() => setVersionFilter('stable')}
+                              className={cn(
+                                "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
+                                versionFilter === 'stable' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
+                              )}
+                            >
+                              Stable ({updateInfo?.releases?.filter(r => !r.isPrerelease).length || 0})
+                            </button>
+                            <button
+                              onClick={() => setVersionFilter('beta')}
+                              className={cn(
+                                "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
+                                versionFilter === 'beta' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
+                              )}
+                            >
+                              Beta ({updateInfo?.releases?.filter(r => r.isPrerelease).length || 0})
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Releases list */}
+                        <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
+                          {(!updateInfo?.releases || updateInfo.releases.length === 0) ? (
+                            <div className="p-8 text-center text-white/30 text-xs border border-white/5 rounded-2xl bg-white/[0.02]">
+                              {isCheckingUpdates ? (
+                                <div className="flex flex-col items-center gap-2">
+                                  <RefreshCw size={20} className="animate-spin text-primary-400" />
+                                  <span>Fetching available versions from GitHub...</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <p>No versions loaded yet.</p>
+                                  <button
+                                    onClick={() => checkForUpdates(true, true)}
+                                    className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-bold"
+                                  >
+                                    Fetch Releases
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ) : (
-                            <div className="space-y-2">
-                              <p>No versions loaded yet.</p>
-                              <button
-                                onClick={() => checkForUpdates(true, true)}
-                                className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-bold"
-                              >
-                                Fetch Releases
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        updateInfo.releases
-                          .filter(r => {
-                            if (versionFilter === 'stable') return !r.isPrerelease;
-                            if (versionFilter === 'beta') return r.isPrerelease;
-                            if (!updateSettings.includePrereleases && r.isPrerelease && !r.isCurrent) return false;
-                            return true;
-                          })
-                          .map(release => {
-                            const isExpanded = expandedReleaseNotes.has(release.tag);
-                            const isThisDownloading = downloadState.isDownloading && downloadState.tag === release.tag;
-                            const isThisDownloaded = downloadState.status === 'completed' && downloadState.tag === release.tag;
-                            const asset = release.primaryAsset;
+                            updateInfo.releases
+                              .filter(r => {
+                                if (versionFilter === 'stable') return !r.isPrerelease;
+                                if (versionFilter === 'beta') return r.isPrerelease;
+                                if (!updateSettings.includePrereleases && r.isPrerelease && !r.isCurrent) return false;
+                                return true;
+                              })
+                              .map(release => {
+                                const isExpanded = expandedReleaseNotes.has(release.tag);
+                                const isThisDownloading = downloadState.isDownloading && downloadState.tag === release.tag;
+                                const isThisDownloaded = downloadState.status === 'completed' && downloadState.tag === release.tag;
+                                const asset = release.primaryAsset;
 
-                            return (
-                              <div
-                                key={release.tag}
-                                className={cn(
-                                  "p-4 rounded-2xl border transition-all space-y-3",
-                                  release.isCurrent
-                                    ? "bg-emerald-950/20 border-emerald-500/30"
-                                    : release.isNewer
-                                      ? "bg-primary-950/20 border-primary-500/30 hover:border-primary-500/50"
-                                      : "bg-white/[0.02] border-white/5 hover:border-white/15"
-                                )}
-                              >
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                                  <div className="space-y-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className="font-mono text-sm font-bold text-white">
-                                        {release.tag}
-                                      </span>
-                                      {release.isCurrent && (
-                                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase tracking-wider">
-                                          Current
-                                        </span>
-                                      )}
-                                      {release.isNewer && (
-                                        <span className="px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300 border border-primary-500/30 text-[9px] font-bold uppercase tracking-wider">
-                                          Newer
-                                        </span>
-                                      )}
-                                      {release.isPrerelease ? (
-                                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-bold uppercase tracking-wider">
-                                          Beta
-                                        </span>
-                                      ) : (
-                                        <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/15 text-[9px] font-bold uppercase tracking-wider">
-                                          Stable
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-3 text-[11px] text-white/40">
-                                      <span>{release.name}</span>
-                                      <span>•</span>
-                                      <span>{new Date(release.publishedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    {release.isCurrent ? (
-                                      <span className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5">
-                                        <Check size={12} /> Installed
-                                      </span>
-                                    ) : isThisDownloaded ? (
-                                      <button
-                                        onClick={() => handleLaunchInstaller(downloadState.assetName)}
-                                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
-                                      >
-                                        <Play size={12} fill="currentColor" /> Install Now
-                                      </button>
-                                    ) : isThisDownloading ? (
-                                      <span className="px-3.5 py-1.5 bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-xl text-xs font-mono font-bold">
-                                        {downloadState.progress}%
-                                      </span>
-                                    ) : asset ? (
-                                      <button
-                                        onClick={() => handleStartDownloadVersion(release, asset)}
-                                        disabled={downloadState.isDownloading}
-                                        className={cn(
-                                          "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95",
-                                          release.isNewer
-                                            ? "bg-primary-600 hover:bg-primary-500 text-white shadow-primary-600/20"
-                                            : "bg-white/10 hover:bg-white/20 text-white/80 hover:text-white"
-                                        )}
-                                        title={release.isNewer ? `Update to ${release.tag}` : `Rollback to ${release.tag}`}
-                                      >
-                                        <Download size={12} />
-                                        {release.isNewer ? 'Update' : 'Switch'}
-                                      </button>
-                                    ) : (
-                                      <a
-                                        href={release.htmlUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold flex items-center gap-1"
-                                      >
-                                        View <ExternalLink size={11} />
-                                      </a>
+                                return (
+                                  <div
+                                    key={release.tag}
+                                    className={cn(
+                                      "p-4 rounded-2xl border transition-all space-y-3",
+                                      release.isCurrent
+                                        ? "bg-emerald-950/20 border-emerald-500/30"
+                                        : release.isNewer
+                                          ? "bg-primary-950/20 border-primary-500/30 hover:border-primary-500/50"
+                                          : "bg-white/[0.02] border-white/5 hover:border-white/15"
                                     )}
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                      <div className="space-y-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="font-mono text-sm font-bold text-white">
+                                            {release.tag}
+                                          </span>
+                                          {release.isCurrent && (
+                                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase tracking-wider">
+                                              Current
+                                            </span>
+                                          )}
+                                          {release.isNewer && (
+                                            <span className="px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300 border border-primary-500/30 text-[9px] font-bold uppercase tracking-wider">
+                                              Newer
+                                            </span>
+                                          )}
+                                          {release.isPrerelease ? (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-bold uppercase tracking-wider">
+                                              Beta
+                                            </span>
+                                          ) : (
+                                            <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/15 text-[9px] font-bold uppercase tracking-wider">
+                                              Stable
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-3 text-[11px] text-white/40">
+                                          <span>{release.name}</span>
+                                          <span>•</span>
+                                          <span>{new Date(release.publishedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                                        </div>
+                                      </div>
 
-                                    <a
-                                      href={release.htmlUrl}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="p-1.5 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white rounded-xl transition-colors"
-                                      title="Open release in browser"
-                                    >
-                                      <ExternalLink size={13} />
-                                    </a>
-                                  </div>
-                                </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        {release.isCurrent ? (
+                                          <span className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                                            <Check size={12} /> Installed
+                                          </span>
+                                        ) : isThisDownloaded ? (
+                                          <button
+                                            onClick={() => handleLaunchInstaller(downloadState.assetName)}
+                                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                                          >
+                                            <Play size={12} fill="currentColor" /> Install Now
+                                          </button>
+                                        ) : isThisDownloading ? (
+                                          <span className="px-3.5 py-1.5 bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-xl text-xs font-mono font-bold">
+                                            {downloadState.progress}%
+                                          </span>
+                                        ) : asset ? (
+                                          <button
+                                            onClick={() => handleStartDownloadVersion(release, asset)}
+                                            disabled={downloadState.isDownloading}
+                                            className={cn(
+                                              "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95",
+                                              release.isNewer
+                                                ? "bg-primary-600 hover:bg-primary-500 text-white shadow-primary-600/20"
+                                                : "bg-white/10 hover:bg-white/20 text-white/80 hover:text-white"
+                                            )}
+                                            title={release.isNewer ? `Update to ${release.tag}` : `Rollback to ${release.tag}`}
+                                          >
+                                            <Download size={12} />
+                                            {release.isNewer ? 'Update' : 'Switch'}
+                                          </button>
+                                        ) : (
+                                          <a
+                                            href={release.htmlUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                                          >
+                                            View <ExternalLink size={11} />
+                                          </a>
+                                        )}
 
-                                {release.notes && (
-                                  <div className="pt-2 border-t border-white/5">
-                                    <button
-                                      onClick={() => {
-                                        const next = new Set(expandedReleaseNotes);
-                                        if (next.has(release.tag)) next.delete(release.tag);
-                                        else next.add(release.tag);
-                                        setExpandedReleaseNotes(next);
-                                      }}
-                                      className="text-[11px] font-semibold text-primary-400 hover:text-primary-300 flex items-center gap-1 cursor-pointer transition-colors"
-                                    >
-                                      <ChevronDown size={13} className={cn("transition-transform duration-200", isExpanded && "rotate-180")} />
-                                      {isExpanded ? 'Hide Release Notes' : 'View Release Notes'}
-                                    </button>
+                                        <a
+                                          href={release.htmlUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="p-1.5 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white rounded-xl transition-colors"
+                                          title="Open release in browser"
+                                        >
+                                          <ExternalLink size={13} />
+                                        </a>
+                                      </div>
+                                    </div>
 
-                                    {isExpanded && (
-                                      <div className="mt-2.5 p-3.5 bg-black/40 border border-white/5 rounded-xl text-xs text-white/70 space-y-2 overflow-x-auto max-h-48 overflow-y-auto custom-scrollbar leading-relaxed">
-                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                          {release.notes}
-                                        </ReactMarkdown>
+                                    {release.notes && (
+                                      <div className="pt-2 border-t border-white/5">
+                                        <button
+                                          onClick={() => {
+                                            const next = new Set(expandedReleaseNotes);
+                                            if (next.has(release.tag)) next.delete(release.tag);
+                                            else next.add(release.tag);
+                                            setExpandedReleaseNotes(next);
+                                          }}
+                                          className="text-[11px] font-semibold text-primary-400 hover:text-primary-300 flex items-center gap-1 cursor-pointer transition-colors"
+                                        >
+                                          <ChevronDown size={13} className={cn("transition-transform duration-200", isExpanded && "rotate-180")} />
+                                          {isExpanded ? 'Hide Release Notes' : 'View Release Notes'}
+                                        </button>
+
+                                        {isExpanded && (
+                                          <div className="mt-2.5 p-3.5 bg-black/40 border border-white/5 rounded-xl text-xs text-white/70 space-y-2 overflow-x-auto max-h-48 overflow-y-auto custom-scrollbar leading-relaxed">
+                                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                              {release.notes}
+                                            </ReactMarkdown>
+                                          </div>
+                                        )}
                                       </div>
                                     )}
                                   </div>
-                                )}
-                              </div>
-                            );
-                          })
+                                );
+                              })
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Mobile App Connection URL</span>
+                      <span className="text-xs text-white/40 block leading-relaxed">
+                        Enter this URL into your browser to connect to this desktop backend.
+                      </span>
+                    </div>
+                    <div>
+                      {tunnelUrl ? (
+                        <div className="w-full bg-black/40 border border-emerald-500/30 rounded-lg p-2 text-sm font-mono text-emerald-400 flex items-center justify-between">
+                          <span>{tunnelUrl}</span>
+                          <button onClick={() => navigator.clipboard.writeText(tunnelUrl)} className="text-emerald-500/50 hover:text-emerald-400 font-bold transition-colors">Copy</button>
+                        </div>
+                      ) : isTunnelStarting ? (
+                        <div className="w-full bg-black/40 border border-white/10 rounded-lg p-3 flex items-center justify-center gap-2">
+                          <RefreshCw size={16} className="text-white/40 animate-spin" />
+                          <span className="text-xs text-white/50 font-medium">Starting server broadcast...</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setIsTunnelStarting(true);
+                            fetch('/api/tunnel/start', { method: 'POST' });
+                          }}
+                          className="w-full px-4 py-3 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg font-bold transition-all border border-emerald-500/30"
+                        >
+                          Start Server Broadcast
+                        </button>
                       )}
                     </div>
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Python Path Override</span>
+                      <span className="text-xs text-white/40 block leading-relaxed">
+                        Specify absolute path to your python executable if it cannot be found in PATH.
+                        Leave empty for auto-detection.
+                      </span>
+                    </div>
+                    <div>
+                      <input
+                        title="Python Executable Path"
+                        type="text"
+                        value={pythonPath}
+                        onChange={(e) => setPythonPath(e.target.value)}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono text-white focus:outline-none focus:border-primary-500 transition-colors"
+                        placeholder="C:\Python310\python.exe or /usr/bin/python3"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Environment Recovery</span>
+                      <span className="text-xs text-white/40 block leading-relaxed">
+                        If Python scripts are missing or failed to install correctly, try running the setup background process again. This will create the virtual environment and install pip dependencies.
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowThemeSettings(false);
+                        startPythonSetup();
+                      }}
+                      className="px-6 py-2.5 bg-primary-500/20 hover:bg-primary-500/30 text-primary-300 rounded-xl font-bold transition-all border border-primary-500/30 flex items-center gap-2"
+                    >
+                      <RefreshCw size={16} /> Re-run Setup Process
+                    </button>
+                  </div>
+
+                  <div className="p-4 bg-white/5 border border-white/5 rounded-2xl space-y-4">
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-white block">Application Cache</span>
+                      <span className="text-xs text-white/40 block leading-relaxed">
+                        Clear temporary image renders, upload buffers, and cached card previews to free up disk space and force reload fresh assets.
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleClearCache}
+                      disabled={clearCacheStatus === 'clearing'}
+                      className={cn(
+                        "px-6 py-2.5 rounded-xl font-bold transition-all border flex items-center gap-2 text-sm",
+                        clearCacheStatus === 'clearing' && "bg-white/10 text-white/50 border-white/10 cursor-not-allowed",
+                        clearCacheStatus === 'success' && "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+                        clearCacheStatus === 'error' && "bg-rose-500/20 text-rose-300 border-rose-500/30",
+                        clearCacheStatus === 'idle' && "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/20 hover:border-rose-500/40"
+                      )}
+                    >
+                      {clearCacheStatus === 'clearing' ? (
+                        <>
+                          <RefreshCw size={16} className="animate-spin" /> Clearing Cache...
+                        </>
+                      ) : clearCacheStatus === 'success' ? (
+                        <>
+                          <Check size={16} /> Cache Cleared!
+                        </>
+                      ) : clearCacheStatus === 'error' ? (
+                        <>
+                          <AlertCircle size={16} /> Failed to Clear
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 size={16} /> Clear Cache
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               )}
@@ -8329,67 +8349,107 @@ export default function App() {
                       </select>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By (DPI / Date)</label>
-                      <select
-                        value={scryfallFilters.order}
-                        onChange={(e) => {
-                          const updated = { ...scryfallFilters, order: e.target.value };
-                          setScryfallFilters(updated);
-                          handleSearchArt(artQuery, updated, 'scryfall');
-                        }}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
-                      >
-                        <option value="released" className="bg-[#1a1a20]">Release Date (Newest)</option>
-                        <option value="dpi_desc" className="bg-[#1a1a20]">Highest DPI / Resolution</option>
-                        <option value="dpi_asc" className="bg-[#1a1a20]">Lowest DPI</option>
-                        <option value="name" className="bg-[#1a1a20]">Card Name (A-Z)</option>
-                        <option value="set" className="bg-[#1a1a20]">Set Code</option>
-                        <option value="edhrec" className="bg-[#1a1a20]">EDHREC Popularity</option>
-                        <option value="usd" className="bg-[#1a1a20]">USD Value</option>
-                      </select>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">DPI Filter</label>
-                      <select
-                        value={mpcFilters.dpi}
-                        onChange={(e) => {
-                          const updated = { ...mpcFilters, dpi: e.target.value };
-                          setMpcFilters(updated);
-                          handleSearchArt(artQuery, updated, 'mpcfill');
-                        }}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
-                      >
-                        <option value="all" className="bg-[#1a1a20]">Any DPI</option>
-                        <option value="1210" className="bg-[#1a1a20]">1210 DPI (Ultra Proxxied / MPC)</option>
-                        <option value="1200" className="bg-[#1a1a20]">1200+ DPI (Ultra Res)</option>
-                        <option value="1000" className="bg-[#1a1a20]">1000+ DPI</option>
-                        <option value="800" className="bg-[#1a1a20]">800+ DPI (High Res)</option>
-                        <option value="600" className="bg-[#1a1a20]">600+ DPI</option>
-                        <option value="300" className="bg-[#1a1a20]">300+ DPI</option>
-                      </select>
-                    </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By (DPI / Date)</label>
+                        <select
+                          value={scryfallFilters.order}
+                          onChange={(e) => {
+                            const updated = { ...scryfallFilters, order: e.target.value };
+                            setScryfallFilters(updated);
+                            handleSearchArt(artQuery, updated, 'scryfall');
+                          }}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                        >
+                          <option value="released" className="bg-[#1a1a20]">Release Date (Newest)</option>
+                          <option value="dpi_desc" className="bg-[#1a1a20]">Highest DPI / Resolution</option>
+                          <option value="dpi_asc" className="bg-[#1a1a20]">Lowest DPI</option>
+                          <option value="name" className="bg-[#1a1a20]">Card Name (A-Z)</option>
+                          <option value="set" className="bg-[#1a1a20]">Set Code</option>
+                          <option value="edhrec" className="bg-[#1a1a20]">EDHREC Popularity</option>
+                          <option value="usd" className="bg-[#1a1a20]">USD Value</option>
+                        </select>
+                      </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
-                      <select
-                        value={scryfallFilters.order}
-                        onChange={(e) => {
-                          const updated = { ...scryfallFilters, order: e.target.value };
-                          setScryfallFilters(updated);
-                        }}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
-                      >
-                        <option value="dpi_desc" className="bg-[#1a1a20]">DPI: High to Low</option>
-                        <option value="dpi_asc" className="bg-[#1a1a20]">DPI: Low to High</option>
-                        <option value="name" className="bg-[#1a1a20]">Name (A-Z)</option>
-                      </select>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Code</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. MH3, UNH"
+                          value={scryfallFilters.set}
+                          onChange={(e) => {
+                            const updated = { ...scryfallFilters, set: e.target.value.toUpperCase() };
+                            setScryfallFilters(updated);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSearchArt(artQuery, scryfallFilters, 'scryfall');
+                            }
+                          }}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-mono placeholder:text-white/20 uppercase"
+                        />
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">DPI Filter</label>
+                        <select
+                          value={mpcFilters.dpi}
+                          onChange={(e) => {
+                            const updated = { ...mpcFilters, dpi: e.target.value };
+                            setMpcFilters(updated);
+                            handleSearchArt(artQuery, updated, 'mpcfill');
+                          }}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                        >
+                          <option value="all" className="bg-[#1a1a20]">Any DPI</option>
+                          <option value="1210" className="bg-[#1a1a20]">1210 DPI (Ultra Proxxied / MPC)</option>
+                          <option value="1200" className="bg-[#1a1a20]">1200+ DPI (Ultra Res)</option>
+                          <option value="1000" className="bg-[#1a1a20]">1000+ DPI</option>
+                          <option value="800" className="bg-[#1a1a20]">800+ DPI (High Res)</option>
+                          <option value="600" className="bg-[#1a1a20]">600+ DPI</option>
+                          <option value="300" className="bg-[#1a1a20]">300+ DPI</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
+                        <select
+                          value={scryfallFilters.order}
+                          onChange={(e) => {
+                            const updated = { ...scryfallFilters, order: e.target.value };
+                            setScryfallFilters(updated);
+                          }}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                        >
+                          <option value="dpi_desc" className="bg-[#1a1a20]">DPI: High to Low</option>
+                          <option value="dpi_asc" className="bg-[#1a1a20]">DPI: Low to High</option>
+                          <option value="name" className="bg-[#1a1a20]">Name (A-Z)</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Filter</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. MH3, LTR"
+                          value={mpcFilters.set}
+                          onChange={(e) => {
+                            const updated = { ...mpcFilters, set: e.target.value.toUpperCase() };
+                            setMpcFilters(updated);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSearchArt(artQuery, mpcFilters, 'mpcfill');
+                            }
+                          }}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-mono placeholder:text-white/20 uppercase"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                 {artDownloadMsg && (
                   <div className="text-xs px-3.5 py-2 rounded-xl bg-primary-600/15 border border-primary-500/30 text-primary-300 font-medium">
@@ -9098,7 +9158,7 @@ const _AssetItem: React.FC<AssetItemProps> = ({
             selected ? "border-primary-500 ring-2 ring-primary-500/50" : "border-white/5",
             !selected && "group-hover:border-primary-500/50"
           )}>
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+            <div className={cn("absolute inset-0 flex items-center justify-center", cardDimming !== 'none' && "bg-black/20")}>
               <img
                 src={thumbSrc}
                 alt={name}
@@ -9119,7 +9179,9 @@ const _AssetItem: React.FC<AssetItemProps> = ({
                   }
                 }}
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
+              {cardDimming !== 'none' && (
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 pointer-events-none" />
+              )}
             </div>
 
             {type === 'back' && selected && (
@@ -9156,14 +9218,21 @@ const _AssetItem: React.FC<AssetItemProps> = ({
               className="absolute inset-0 backface-hidden bg-[#0f0f13] border border-white/5 rounded-xl overflow-hidden shadow-lg shadow-black/20"
               style={{ transform: 'rotateY(180deg)' }}
             >
-              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+              <div className={cn("absolute inset-0 flex items-center justify-center", cardDimming !== 'none' && "bg-black/20")}>
                 {backFace ? (
                   <img
                     src={backFaceThumbSrc}
                     alt={backFace.name}
                     loading="lazy"
                     decoding="async"
-                    className="w-full h-full object-cover opacity-100"
+                    className={cn(
+                      "w-full h-full object-cover transition-opacity duration-300",
+                      cardDimming === 'dark'
+                        ? "opacity-50 group-hover:opacity-100"
+                        : cardDimming === 'tint'
+                          ? "opacity-75 group-hover:opacity-100"
+                          : "opacity-100"
+                    )}
                     onError={(e) => {
                       const imgEl = e.currentTarget;
                       if (imgEl.src !== backFaceSrc) {
