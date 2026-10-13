@@ -918,7 +918,7 @@ async function startServer() {
     } catch (e) {}
   };
 
-  let releaseCache: { timestamp: number; data: any } | null = null;
+  let rawReleasesCache: { timestamp: number; data: any[] } | null = null;
 
   app.get('/api/updates/settings', (req, res) => {
     res.json(getUpdateConfig());
@@ -937,57 +937,83 @@ async function startServer() {
       const now = Date.now();
 
       // Read current version from package.json
-      let currentVersion = '3.0.0-beta';
+      let currentVersion = '3.0.4';
       try {
-        const pkgPath = path.join(baseAppPath, 'package.json');
-        if (fs.existsSync(pkgPath)) {
-          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-          currentVersion = pkg.version || currentVersion;
+        const possiblePkgPaths = [
+          path.join(baseAppPath, 'package.json'),
+          path.join(process.cwd(), 'package.json'),
+          path.join(__dirname, 'package.json')
+        ];
+        for (const pkgPath of possiblePkgPaths) {
+          if (fs.existsSync(pkgPath)) {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+            if (pkg.version) {
+              currentVersion = pkg.version;
+              break;
+            }
+          }
         }
       } catch (e) {}
 
-      if (!forceRefresh && releaseCache && (now - releaseCache.timestamp < 300000)) {
-        return res.json({ ...releaseCache.data, currentVersion });
-      }
+      let ghReleases: any[];
+      if (!forceRefresh && rawReleasesCache && (now - rawReleasesCache.timestamp < 300000)) {
+        ghReleases = rawReleasesCache.data;
+      } else {
+        const ghRes = await fetch('https://api.github.com/repos/TomatoMan280/SCM-UI/releases', {
+          headers: {
+            'User-Agent': 'SCMUI-App',
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
 
-      const ghRes = await fetch('https://api.github.com/repos/TomatoMan280/SCM-UI/releases', {
-        headers: {
-          'User-Agent': 'SCMUI-App',
-          'Accept': 'application/vnd.github.v3+json'
+        if (!ghRes.ok) {
+          throw new Error(`GitHub API error: ${ghRes.status} ${ghRes.statusText}`);
         }
-      });
 
-      if (!ghRes.ok) {
-        throw new Error(`GitHub API error: ${ghRes.status} ${ghRes.statusText}`);
+        ghReleases = await ghRes.json();
+        rawReleasesCache = { timestamp: now, data: ghReleases };
       }
-
-      const ghReleases: any[] = await ghRes.json();
 
       const parseVersion = (v: string) => {
-        const clean = v.replace(/^[vV]/, '').trim();
+        const clean = (v || '').replace(/^[vV]/, '').trim();
         const isBeta = /beta/i.test(clean);
-        const base = clean.replace(/-?beta.*$/i, '');
+        const base = clean.replace(/[-_]?(beta|alpha|rc).*$/i, '');
         const parts = base.split('.').map(n => parseInt(n, 10) || 0);
         const betaMatch = clean.match(/beta\.?(\d+)/i);
         const betaNum = betaMatch ? parseInt(betaMatch[1], 10) : 0;
-        return { parts, isBeta, betaNum, raw: v };
+        return { parts, isBeta, betaNum, raw: v, base };
       };
 
-      const compareVersions = (v1: string, v2: string) => {
+      const compareVersions = (v1: string, v2: string, rAssets: any[] = []) => {
+        const clean1 = (v1 || '').replace(/^[vV]/, '').trim().toLowerCase();
+        const clean2 = (v2 || '').replace(/^[vV]/, '').trim().toLowerCase();
+        if (clean1 === clean2) return 0;
+
         const p1 = parseVersion(v1);
         const p2 = parseVersion(v2);
-        for (let i = 0; i < Math.max(p1.parts.length, p2.parts.length); i++) {
+
+        // Check if numeric major.minor.patch parts differ
+        const maxLen = Math.max(p1.parts.length, p2.parts.length);
+        for (let i = 0; i < maxLen; i++) {
           const a = p1.parts[i] || 0;
           const b = p2.parts[i] || 0;
           if (a > b) return 1;
           if (a < b) return -1;
         }
-        if (p1.isBeta && !p2.isBeta) return -1;
-        if (!p1.isBeta && p2.isBeta) return 1;
-        if (p1.isBeta && p2.isBeta) {
-          if (p1.betaNum > p2.betaNum) return 1;
-          if (p1.betaNum < p2.betaNum) return -1;
+
+        // If numeric parts are identical (e.g. 3.0.4 vs 3.0.4-beta):
+        // 1. If release assets contain the user's version string, it's the exact same build
+        if (rAssets && rAssets.some((a: any) => a.name && a.name.toLowerCase().includes(clean2))) {
+          return 0;
         }
+
+        // 2. If both are beta, compare specific beta numbers (e.g. beta2 > beta1)
+        if (p1.isBeta && p2.isBeta && p1.betaNum !== p2.betaNum) {
+          return p1.betaNum > p2.betaNum ? 1 : -1;
+        }
+
+        // 3. In SCMUI, releases tagged V3.0.4 correspond to the 3.0.4 release cycle.
+        // If the base version matches (both 3.0.4), it belongs to the same release cycle, NOT newer!
         return 0;
       };
 
@@ -995,9 +1021,6 @@ async function startServer() {
       const isMac = process.platform === 'darwin';
 
       const releases = (Array.isArray(ghReleases) ? ghReleases : []).map((r: any) => {
-        const isCurrent = compareVersions(r.tag_name, currentVersion) === 0;
-        const isNewer = compareVersions(r.tag_name, currentVersion) > 0;
-
         const assets = (r.assets || []).map((a: any) => {
           const name = a.name || '';
           const isWinInstaller = name.endsWith('.exe');
@@ -1013,6 +1036,9 @@ async function startServer() {
             isPreferred
           };
         });
+
+        const isCurrent = compareVersions(r.tag_name, currentVersion, assets) === 0;
+        const isNewer = compareVersions(r.tag_name, currentVersion, assets) > 0;
 
         const primaryAsset = assets.find((a: any) => a.isPreferred) || assets.find((a: any) => a.isInstaller) || assets[0] || null;
 
@@ -1031,18 +1057,18 @@ async function startServer() {
         };
       });
 
+      const newerRelease = releases.find((r: any) => r.isNewer) || null;
       const latestRelease = releases[0] || null;
-      const hasUpdate = releases.some((r: any) => r.isNewer);
+      const hasUpdate = !!newerRelease;
 
       const result = {
         currentVersion,
         hasUpdate,
-        latestVersion: latestRelease ? latestRelease.tag : currentVersion,
-        latestRelease,
+        latestVersion: newerRelease ? newerRelease.tag : (latestRelease ? latestRelease.tag : currentVersion),
+        latestRelease: newerRelease || latestRelease,
         releases
       };
 
-      releaseCache = { timestamp: now, data: result };
       res.json(result);
     } catch (e: any) {
       console.error('[Updates Check Error]:', e);
