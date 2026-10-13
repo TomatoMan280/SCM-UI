@@ -72,6 +72,36 @@ export interface UpscaleConfig {
   tileSize: number;
 }
 
+export interface ReleaseAsset {
+  name: string;
+  size: number;
+  downloadUrl: string;
+  isInstaller: boolean;
+  isPreferred: boolean;
+}
+
+export interface ReleaseInfo {
+  id: number;
+  tag: string;
+  name: string;
+  publishedAt: string;
+  isPrerelease: boolean;
+  isCurrent: boolean;
+  isNewer: boolean;
+  notes: string;
+  htmlUrl: string;
+  primaryAsset: ReleaseAsset | null;
+  assets: ReleaseAsset[];
+}
+
+export interface UpdateCheckResponse {
+  currentVersion: string;
+  hasUpdate: boolean;
+  latestVersion: string;
+  latestRelease: ReleaseInfo | null;
+  releases: ReleaseInfo[];
+}
+
 export const defaultUpscaleConfig: UpscaleConfig = {
   scaleFactor: 2,
   model: 'high-fidelity-4x',
@@ -1696,7 +1726,160 @@ export default function App() {
   const [pluginSaveName, setPluginSaveName] = useState("");
   const [pluginConfigs, setPluginConfigs] = useState<Record<string, any>>({});
   const [showThemeSettings, setShowThemeSettings] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'theme' | 'shortcuts' | 'system'>('theme');
+  const [settingsTab, setSettingsTab] = useState<'theme' | 'shortcuts' | 'system' | 'updates'>('theme');
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResponse | null>(null);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState<boolean>(false);
+  const [updateSettings, setUpdateSettings] = useState<{ autoCheck: boolean; includePrereleases: boolean; channel: string }>({
+    autoCheck: true,
+    includePrereleases: true,
+    channel: 'all'
+  });
+  const [versionFilter, setVersionFilter] = useState<'all' | 'stable' | 'beta'>('all');
+  const [expandedReleaseNotes, setExpandedReleaseNotes] = useState<Set<string>>(new Set());
+  const [downloadState, setDownloadState] = useState<{
+    isDownloading: boolean;
+    tag: string;
+    assetName: string;
+    progress: number;
+    downloadedBytes: number;
+    totalBytes: number;
+    status: 'idle' | 'downloading' | 'completed' | 'error';
+    error: string | null;
+  }>({
+    isDownloading: false,
+    tag: '',
+    assetName: '',
+    progress: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+    status: 'idle',
+    error: null
+  });
+  const [updateStatusToast, setUpdateStatusToast] = useState<string | null>(null);
+
+  const fetchUpdateSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/updates/settings');
+      if (res.ok) {
+        const data = await res.json();
+        setUpdateSettings(data);
+      }
+    } catch (e) {}
+  }, []);
+
+  const handleSaveUpdateSetting = async (key: 'autoCheck' | 'includePrereleases', value: boolean) => {
+    const next = { ...updateSettings, [key]: value };
+    setUpdateSettings(next);
+    try {
+      await fetch('/api/updates/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next)
+      });
+    } catch (e) {}
+  };
+
+  const checkForUpdates = useCallback(async (manual = false, force = false) => {
+    if (isCheckingUpdates) return;
+    setIsCheckingUpdates(true);
+    try {
+      const res = await fetch(`/api/updates/check${force ? '?force=true' : ''}`);
+      if (res.ok) {
+        const data: UpdateCheckResponse = await res.json();
+        setUpdateInfo(data);
+        if (manual) {
+          if (data.hasUpdate) {
+            setUpdateStatusToast(`New update available: ${data.latestVersion}!`);
+          } else {
+            setUpdateStatusToast(`You are on the latest version (${data.currentVersion})!`);
+          }
+          setTimeout(() => setUpdateStatusToast(null), 4000);
+        }
+      } else if (manual) {
+        setUpdateStatusToast('Could not reach update server. Check internet connection.');
+        setTimeout(() => setUpdateStatusToast(null), 4000);
+      }
+    } catch (e: any) {
+      if (manual) {
+        setUpdateStatusToast(`Update check failed: ${e?.message || 'Network error'}`);
+        setTimeout(() => setUpdateStatusToast(null), 4000);
+      }
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  }, [isCheckingUpdates]);
+
+  useEffect(() => {
+    fetchUpdateSettings();
+    checkForUpdates(false);
+  }, []);
+
+  useEffect(() => {
+    if (!downloadState.isDownloading) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/updates/download-progress');
+        if (res.ok) {
+          const state = await res.json();
+          setDownloadState(state);
+        }
+      } catch (e) {}
+    }, 600);
+    return () => clearInterval(interval);
+  }, [downloadState.isDownloading]);
+
+  const handleStartDownloadVersion = async (release: ReleaseInfo, asset: ReleaseAsset) => {
+    setDownloadState({
+      isDownloading: true,
+      tag: release.tag,
+      assetName: asset.name,
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: asset.size || 0,
+      status: 'downloading',
+      error: null
+    });
+
+    try {
+      const res = await fetch('/api/updates/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tag: release.tag,
+          assetUrl: asset.downloadUrl,
+          assetName: asset.name
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err?.error || 'Failed to initiate download');
+      }
+    } catch (e: any) {
+      setDownloadState(prev => ({
+        ...prev,
+        isDownloading: false,
+        status: 'error',
+        error: e?.message || 'Download initiation failed'
+      }));
+    }
+  };
+
+  const handleLaunchInstaller = async (assetName: string) => {
+    try {
+      const res = await fetch('/api/updates/launch-installer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assetName })
+      });
+      if (res.ok) {
+        setUpdateStatusToast('Installer launched! Follow the prompts to finish installing.');
+        setTimeout(() => setUpdateStatusToast(null), 5000);
+      }
+    } catch (e: any) {
+      setUpdateStatusToast(`Failed to launch installer: ${e?.message}`);
+      setTimeout(() => setUpdateStatusToast(null), 4000);
+    }
+  };
   const [copiedPath, setCopiedPath] = useState(false);
   const [shortcuts, setShortcuts] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('scm_shortcuts');
@@ -4002,9 +4185,32 @@ export default function App() {
                     <span className="text-rose-400 font-mono text-[10px] flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Python Not Found</span>
                   )}
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-white/40 text-[10px]">Version</span>
-                  <span className="text-white/80 font-mono text-[10px]">3.0.0Beta</span>
+                <div
+                  className="flex justify-between items-center cursor-pointer group/ver p-1 -m-1 rounded-lg hover:bg-white/5 transition-all"
+                  onClick={() => {
+                    setShowThemeSettings(true);
+                    setSettingsTab('updates');
+                  }}
+                  title="Click to check updates or switch versions"
+                >
+                  <span className="text-white/40 text-[10px] group-hover/ver:text-white/70 transition-colors flex items-center gap-1">
+                    Version
+                    <ExternalLink size={9} className="opacity-0 group-hover/ver:opacity-100 transition-opacity" />
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {updateInfo?.hasUpdate && (
+                      <span className="flex h-2 w-2 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-500"></span>
+                      </span>
+                    )}
+                    <span className={cn(
+                      "font-mono text-[10px] transition-colors",
+                      updateInfo?.hasUpdate ? "text-primary-400 font-bold" : "text-white/80 group-hover/ver:text-white"
+                    )}>
+                      {updateInfo?.currentVersion ? `v${updateInfo.currentVersion}` : '3.0.3Beta'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -6452,7 +6658,10 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-sm bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col max-h-[90vh]"
+              className={cn(
+                "w-full bg-[#0f0f13] border border-white/10 rounded-3xl p-8 shadow-2xl flex flex-col max-h-[90vh] transition-all duration-300",
+                settingsTab === 'updates' ? "max-w-2xl" : "max-w-sm"
+              )}
             >
               <div className="space-y-1 shrink-0 mb-6">
                 <h3 className="text-xl font-bold text-white">Settings</h3>
@@ -6477,6 +6686,18 @@ export default function App() {
                   className={cn("flex-1 py-1.5 text-xs font-semibold rounded-md transition-all", settingsTab === 'system' ? "bg-white/10 text-white" : "text-white/40 hover:text-white")}
                 >
                   System
+                </button>
+                <button
+                  onClick={() => setSettingsTab('updates')}
+                  className={cn(
+                    "flex-1 py-1.5 text-xs font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 relative",
+                    settingsTab === 'updates' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+                  )}
+                >
+                  <span>Updates</span>
+                  {updateInfo?.hasUpdate && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
+                  )}
                 </button>
               </div>
 
@@ -6819,6 +7040,352 @@ export default function App() {
                         </>
                       )}
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {settingsTab === 'updates' && (
+                <div className="space-y-5 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
+                  {/* Status & Quick Action Card */}
+                  <div className={cn(
+                    "p-5 rounded-2xl border transition-all space-y-4",
+                    updateInfo?.hasUpdate
+                      ? "bg-gradient-to-br from-primary-950/40 via-primary-900/20 to-black/40 border-primary-500/40 shadow-xl shadow-primary-900/20"
+                      : "bg-white/5 border-white/5"
+                  )}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-white/50">Current Version</span>
+                          <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-white font-bold">
+                            {updateInfo?.currentVersion ? `v${updateInfo.currentVersion}` : '3.0.0-beta'}
+                          </span>
+                        </div>
+                        {updateInfo?.hasUpdate ? (
+                          <div className="flex items-center gap-2 pt-1">
+                            <span className="flex h-2.5 w-2.5 relative">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary-500"></span>
+                            </span>
+                            <span className="text-sm font-bold text-primary-300">
+                              Update Available: {updateInfo.latestVersion}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 pt-1 text-emerald-400 text-xs font-semibold">
+                            <CheckCircle size={14} /> SCMUI is up to date
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => checkForUpdates(true, true)}
+                          disabled={isCheckingUpdates}
+                          className="px-3.5 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm active:scale-95"
+                          title="Check GitHub for newer releases"
+                        >
+                          <RefreshCw size={13} className={isCheckingUpdates ? "animate-spin" : ""} />
+                          {isCheckingUpdates ? 'Checking...' : 'Check Updates'}
+                        </button>
+
+                        {updateInfo?.hasUpdate && updateInfo.latestRelease?.primaryAsset && (
+                          <button
+                            onClick={() => handleStartDownloadVersion(updateInfo.latestRelease!, updateInfo.latestRelease!.primaryAsset!)}
+                            disabled={downloadState.isDownloading}
+                            className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-primary-600/30 active:scale-95"
+                          >
+                            <Download size={13} />
+                            Update Now
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Active Download Progress Card */}
+                    {downloadState.isDownloading && (
+                      <div className="p-3.5 bg-black/50 border border-primary-500/30 rounded-xl space-y-2">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-semibold text-primary-300 truncate max-w-[200px]">
+                            Downloading {downloadState.assetName}...
+                          </span>
+                          <span className="font-mono text-white/70">
+                            {downloadState.progress}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                          <div
+                            className="bg-primary-500 h-full rounded-full transition-all duration-300 shadow-sm"
+                            style={{ width: `${downloadState.progress}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-[10px] text-white/40 font-mono">
+                          <span>{((downloadState.downloadedBytes || 0) / (1024 * 1024)).toFixed(1)} MB</span>
+                          <span>{((downloadState.totalBytes || 0) / (1024 * 1024)).toFixed(1)} MB</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {downloadState.status === 'completed' && (
+                      <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-3">
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                            <CheckCircle size={14} /> Download Ready!
+                          </p>
+                          <p className="text-[10px] text-white/40">
+                            {downloadState.assetName} is downloaded.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleLaunchInstaller(downloadState.assetName)}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/30 active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Play size={12} fill="currentColor" /> Install Now
+                        </button>
+                      </div>
+                    )}
+
+                    {downloadState.status === 'error' && (
+                      <div className="p-3 bg-rose-950/40 border border-rose-500/30 rounded-xl text-xs text-rose-300 flex items-center gap-2">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>Download failed: {downloadState.error}</span>
+                      </div>
+                    )}
+
+                    {updateStatusToast && (
+                      <div className="p-2.5 bg-primary-600/20 border border-primary-500/30 rounded-xl text-xs text-primary-200 text-center font-medium">
+                        {updateStatusToast}
+                      </div>
+                    )}
+
+                    {/* Preferences toggles */}
+                    <div className="pt-2 border-t border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <label className="flex items-center gap-2.5 cursor-pointer text-white/70 hover:text-white transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={updateSettings.autoCheck}
+                          onChange={(e) => handleSaveUpdateSetting('autoCheck', e.target.checked)}
+                          className="rounded border-white/20 bg-black/40 text-primary-600 focus:ring-0 cursor-pointer"
+                        />
+                        <span>Check for updates automatically</span>
+                      </label>
+                      <label className="flex items-center gap-2.5 cursor-pointer text-white/70 hover:text-white transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={updateSettings.includePrereleases}
+                          onChange={(e) => handleSaveUpdateSetting('includePrereleases', e.target.checked)}
+                          className="rounded border-white/20 bg-black/40 text-primary-600 focus:ring-0 cursor-pointer"
+                        />
+                        <span>Include Beta / Pre-releases</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Pick a Version Section */}
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+                      <div>
+                        <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                          <Package size={15} className="text-primary-400" /> Pick Versions
+                        </h4>
+                        <p className="text-xs text-white/40">Select and install any released version, or rollback.</p>
+                      </div>
+
+                      {/* Filter tabs */}
+                      <div className="flex bg-black/40 p-1 border border-white/5 rounded-xl gap-1 self-start sm:self-auto">
+                        <button
+                          onClick={() => setVersionFilter('all')}
+                          className={cn(
+                            "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
+                            versionFilter === 'all' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
+                          )}
+                        >
+                          All ({updateInfo?.releases?.length || 0})
+                        </button>
+                        <button
+                          onClick={() => setVersionFilter('stable')}
+                          className={cn(
+                            "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
+                            versionFilter === 'stable' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
+                          )}
+                        >
+                          Stable ({updateInfo?.releases?.filter(r => !r.isPrerelease).length || 0})
+                        </button>
+                        <button
+                          onClick={() => setVersionFilter('beta')}
+                          className={cn(
+                            "px-2.5 py-1 text-[10px] font-bold uppercase rounded-lg transition-all",
+                            versionFilter === 'beta' ? "bg-primary-600 text-white" : "text-white/40 hover:text-white"
+                          )}
+                        >
+                          Beta ({updateInfo?.releases?.filter(r => r.isPrerelease).length || 0})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Releases list */}
+                    <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 custom-scrollbar">
+                      {(!updateInfo?.releases || updateInfo.releases.length === 0) ? (
+                        <div className="p-8 text-center text-white/30 text-xs border border-white/5 rounded-2xl bg-white/[0.02]">
+                          {isCheckingUpdates ? (
+                            <div className="flex flex-col items-center gap-2">
+                              <RefreshCw size={20} className="animate-spin text-primary-400" />
+                              <span>Fetching available versions from GitHub...</span>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <p>No versions loaded yet.</p>
+                              <button
+                                onClick={() => checkForUpdates(true, true)}
+                                className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-bold"
+                              >
+                                Fetch Releases
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        updateInfo.releases
+                          .filter(r => {
+                            if (versionFilter === 'stable') return !r.isPrerelease;
+                            if (versionFilter === 'beta') return r.isPrerelease;
+                            if (!updateSettings.includePrereleases && r.isPrerelease && !r.isCurrent) return false;
+                            return true;
+                          })
+                          .map(release => {
+                            const isExpanded = expandedReleaseNotes.has(release.tag);
+                            const isThisDownloading = downloadState.isDownloading && downloadState.tag === release.tag;
+                            const isThisDownloaded = downloadState.status === 'completed' && downloadState.tag === release.tag;
+                            const asset = release.primaryAsset;
+
+                            return (
+                              <div
+                                key={release.tag}
+                                className={cn(
+                                  "p-4 rounded-2xl border transition-all space-y-3",
+                                  release.isCurrent
+                                    ? "bg-emerald-950/20 border-emerald-500/30"
+                                    : release.isNewer
+                                      ? "bg-primary-950/20 border-primary-500/30 hover:border-primary-500/50"
+                                      : "bg-white/[0.02] border-white/5 hover:border-white/15"
+                                )}
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                  <div className="space-y-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className="font-mono text-sm font-bold text-white">
+                                        {release.tag}
+                                      </span>
+                                      {release.isCurrent && (
+                                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold uppercase tracking-wider">
+                                          Current
+                                        </span>
+                                      )}
+                                      {release.isNewer && (
+                                        <span className="px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-300 border border-primary-500/30 text-[9px] font-bold uppercase tracking-wider">
+                                          Newer
+                                        </span>
+                                      )}
+                                      {release.isPrerelease ? (
+                                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-bold uppercase tracking-wider">
+                                          Beta
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/70 border border-white/15 text-[9px] font-bold uppercase tracking-wider">
+                                          Stable
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-3 text-[11px] text-white/40">
+                                      <span>{release.name}</span>
+                                      <span>•</span>
+                                      <span>{new Date(release.publishedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {release.isCurrent ? (
+                                      <span className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                                        <Check size={12} /> Installed
+                                      </span>
+                                    ) : isThisDownloaded ? (
+                                      <button
+                                        onClick={() => handleLaunchInstaller(downloadState.assetName)}
+                                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                                      >
+                                        <Play size={12} fill="currentColor" /> Install Now
+                                      </button>
+                                    ) : isThisDownloading ? (
+                                      <span className="px-3.5 py-1.5 bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-xl text-xs font-mono font-bold">
+                                        {downloadState.progress}%
+                                      </span>
+                                    ) : asset ? (
+                                      <button
+                                        onClick={() => handleStartDownloadVersion(release, asset)}
+                                        disabled={downloadState.isDownloading}
+                                        className={cn(
+                                          "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95",
+                                          release.isNewer
+                                            ? "bg-primary-600 hover:bg-primary-500 text-white shadow-primary-600/20"
+                                            : "bg-white/10 hover:bg-white/20 text-white/80 hover:text-white"
+                                        )}
+                                        title={release.isNewer ? `Update to ${release.tag}` : `Rollback to ${release.tag}`}
+                                      >
+                                        <Download size={12} />
+                                        {release.isNewer ? 'Update' : 'Switch'}
+                                      </button>
+                                    ) : (
+                                      <a
+                                        href={release.htmlUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                                      >
+                                        View <ExternalLink size={11} />
+                                      </a>
+                                    )}
+
+                                    <a
+                                      href={release.htmlUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-1.5 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white rounded-xl transition-colors"
+                                      title="Open release in browser"
+                                    >
+                                      <ExternalLink size={13} />
+                                    </a>
+                                  </div>
+                                </div>
+
+                                {release.notes && (
+                                  <div className="pt-2 border-t border-white/5">
+                                    <button
+                                      onClick={() => {
+                                        const next = new Set(expandedReleaseNotes);
+                                        if (next.has(release.tag)) next.delete(release.tag);
+                                        else next.add(release.tag);
+                                        setExpandedReleaseNotes(next);
+                                      }}
+                                      className="text-[11px] font-semibold text-primary-400 hover:text-primary-300 flex items-center gap-1 cursor-pointer transition-colors"
+                                    >
+                                      <ChevronDown size={13} className={cn("transition-transform duration-200", isExpanded && "rotate-180")} />
+                                      {isExpanded ? 'Hide Release Notes' : 'View Release Notes'}
+                                    </button>
+
+                                    {isExpanded && (
+                                      <div className="mt-2.5 p-3.5 bg-black/40 border border-white/5 rounded-xl text-xs text-white/70 space-y-2 overflow-x-auto max-h-48 overflow-y-auto custom-scrollbar leading-relaxed">
+                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                          {release.notes}
+                                        </ReactMarkdown>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -8458,6 +9025,17 @@ const _AssetItem: React.FC<AssetItemProps> = ({
     return imgSrc;
   }, [isFlipped, backFace, backFaceSrc, imgSrc]);
 
+  // Thumbnail URLs for ultra-fast, lightweight grid rendering
+  const thumbSrc = useMemo(() => {
+    if (!imgSrc || imgSrc.startsWith('blob:') || imgSrc.startsWith('data:')) return imgSrc;
+    return `/api/thumbnail?src=${encodeURIComponent(imgSrc)}`;
+  }, [imgSrc]);
+
+  const backFaceThumbSrc = useMemo(() => {
+    if (!backFaceSrc || backFaceSrc.startsWith('blob:') || backFaceSrc.startsWith('data:')) return backFaceSrc;
+    return `/api/thumbnail?src=${encodeURIComponent(backFaceSrc)}`;
+  }, [backFaceSrc]);
+
   return (
     <div
       className="group space-y-3 asset-card"
@@ -8522,7 +9100,7 @@ const _AssetItem: React.FC<AssetItemProps> = ({
           )}>
             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
               <img
-                src={imgSrc}
+                src={thumbSrc}
                 alt={name}
                 loading="lazy"
                 decoding="async"
@@ -8534,6 +9112,12 @@ const _AssetItem: React.FC<AssetItemProps> = ({
                       ? "opacity-75 group-hover:opacity-100"
                       : "opacity-100"
                 )}
+                onError={(e) => {
+                  const imgEl = e.currentTarget;
+                  if (imgEl.src !== imgSrc) {
+                    imgEl.src = imgSrc;
+                  }
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60" />
             </div>
@@ -8575,11 +9159,17 @@ const _AssetItem: React.FC<AssetItemProps> = ({
               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                 {backFace ? (
                   <img
-                    src={backFaceSrc}
+                    src={backFaceThumbSrc}
                     alt={backFace.name}
                     loading="lazy"
                     decoding="async"
                     className="w-full h-full object-cover opacity-100"
+                    onError={(e) => {
+                      const imgEl = e.currentTarget;
+                      if (imgEl.src !== backFaceSrc) {
+                        imgEl.src = backFaceSrc;
+                      }
+                    }}
                   />
                 ) : (
                   <div className="flex flex-col items-center gap-2 opacity-20">

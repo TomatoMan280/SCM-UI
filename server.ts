@@ -6,6 +6,8 @@ import fs from "fs";
 import os from "os";
 import { ZipArchive } from "archiver";
 import { execSync, exec, spawnSync } from "child_process";
+import crypto from "crypto";
+import { Jimp } from "jimp";
 
 console.log("[System] Modules imported successfully.");
 
@@ -779,6 +781,395 @@ async function startServer() {
   app.use('/game', express.static(path.join(scmPath, 'game')));
   app.use('/plugins_staging', express.static(path.join(baseDataPath, 'src', 'Library', 'Plugins')));
   app.use('/uploads', express.static(path.join(baseDataPath, 'uploads')));
+
+  // Thumbnail Cache Directory
+  const thumbnailCacheDir = path.join(baseDataPath, 'cache', 'thumbnails');
+  if (!fs.existsSync(thumbnailCacheDir)) {
+    try {
+      fs.mkdirSync(thumbnailCacheDir, { recursive: true });
+    } catch (e) {}
+  }
+
+  const thumbnailQueue = new Map<string, Promise<string>>();
+
+  // Ultra-fast Thumbnail Generator & Disk Cache
+  app.get('/api/thumbnail', async (req: any, res: any) => {
+    try {
+      const srcQuery = req.query.src as string;
+      const viewQuery = req.query.view as string;
+      const typeQuery = req.query.type as string;
+      const nameQuery = req.query.name as string;
+
+      let realSourcePath = '';
+
+      if (srcQuery) {
+        const cleanSrc = srcQuery.split('?')[0];
+        const decodedSrc = decodeURIComponent(cleanSrc);
+
+        if (decodedSrc.startsWith('/library/Temp_Fetch_')) {
+          const match = decodedSrc.match(/^\/library\/Temp_Fetch_([^/]+)\/(?:game\/)?([^/]+)\/(.+)$/);
+          if (match) {
+            const [, tId, tType, tName] = match;
+            const try1 = path.join(libraryPath, `Temp_Fetch_${tId}`, tType, tName);
+            const try2 = path.join(libraryPath, `Temp_Fetch_${tId}`, 'game', tType, tName);
+            if (fs.existsSync(try1)) realSourcePath = try1;
+            else if (fs.existsSync(try2)) realSourcePath = try2;
+          }
+        } else if (decodedSrc.startsWith('/library/')) {
+          realSourcePath = path.join(libraryPath, decodedSrc.replace(/^\/library\//, ''));
+        } else if (decodedSrc.startsWith('/game/')) {
+          realSourcePath = path.join(scmPath, 'game', decodedSrc.replace(/^\/game\//, ''));
+        } else if (decodedSrc.startsWith('/plugins_staging/')) {
+          realSourcePath = path.join(pluginsPath, decodedSrc.replace(/^\/plugins_staging\//, ''));
+        } else if (decodedSrc.startsWith('/uploads/')) {
+          realSourcePath = path.join(baseDataPath, 'uploads', decodedSrc.replace(/^\/uploads\//, ''));
+        }
+      }
+
+      if (!realSourcePath && viewQuery && typeQuery && nameQuery) {
+        const decodedName = decodeURIComponent(nameQuery);
+        if (viewQuery === 'library') {
+          realSourcePath = path.join(libraryPath, typeQuery, decodedName);
+        } else if (viewQuery === 'plugins') {
+          realSourcePath = path.join(pluginsPath, typeQuery, decodedName);
+        } else {
+          realSourcePath = path.join(scmPath, 'game', typeQuery, decodedName);
+        }
+      }
+
+      if (!realSourcePath || !fs.existsSync(realSourcePath)) {
+        return res.status(404).send('Not found');
+      }
+
+      // If file is not a standard image, send original
+      const ext = path.extname(realSourcePath).toLowerCase();
+      if (!['.png', '.jpg', '.jpeg', '.webp', '.bmp'].includes(ext)) {
+        return res.sendFile(realSourcePath);
+      }
+
+      // Compute unique hash for cache filename based on full source path
+      const hash = crypto.createHash('md5').update(realSourcePath).digest('hex');
+      const thumbFilename = `${hash}_thumb.jpg`;
+      const thumbPath = path.join(thumbnailCacheDir, thumbFilename);
+
+      // Check if up-to-date thumbnail exists
+      if (fs.existsSync(thumbPath)) {
+        try {
+          const thumbMtime = fs.statSync(thumbPath).mtimeMs;
+          const srcMtime = fs.statSync(realSourcePath).mtimeMs;
+          if (thumbMtime >= srcMtime) {
+            res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+            return res.sendFile(thumbPath);
+          }
+        } catch (e) {}
+      }
+
+      // Deduplicate concurrent thumbnail requests for same file
+      let genPromise = thumbnailQueue.get(thumbPath);
+      if (!genPromise) {
+        genPromise = (async () => {
+          const image = await Jimp.read(realSourcePath);
+          if (image.width > 360) {
+            image.resize({ w: 360 });
+          }
+          const tempPath = `${thumbPath}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp.jpg`;
+          await image.write(tempPath as any);
+          try {
+            fs.renameSync(tempPath, thumbPath);
+          } catch (renErr) {
+            // In case target was already written by race condition
+            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+          }
+          return thumbPath;
+        })();
+        thumbnailQueue.set(thumbPath, genPromise);
+      }
+
+      try {
+        await genPromise;
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        return res.sendFile(thumbPath);
+      } catch (genErr) {
+        console.warn(`[Thumbnail] Generation failed for ${realSourcePath}, fallback to original:`, genErr);
+        return res.sendFile(realSourcePath);
+      } finally {
+        thumbnailQueue.delete(thumbPath);
+      }
+    } catch (e: any) {
+      console.error('[Thumbnail Error]:', e);
+      return res.status(500).send(e?.message || 'Thumbnail error');
+    }
+  });
+
+  // Updates & Version Management State & Endpoints
+  const updateConfigFile = path.join(baseDataPath, 'update-config.json');
+  const getUpdateConfig = () => {
+    try {
+      if (fs.existsSync(updateConfigFile)) {
+        return JSON.parse(fs.readFileSync(updateConfigFile, 'utf-8'));
+      }
+    } catch (e) {}
+    return { autoCheck: true, includePrereleases: true, channel: 'all' };
+  };
+
+  const saveUpdateConfig = (cfg: any) => {
+    try {
+      fs.writeFileSync(updateConfigFile, JSON.stringify(cfg, null, 2), 'utf-8');
+    } catch (e) {}
+  };
+
+  let releaseCache: { timestamp: number; data: any } | null = null;
+
+  app.get('/api/updates/settings', (req, res) => {
+    res.json(getUpdateConfig());
+  });
+
+  app.post('/api/updates/settings', (req, res) => {
+    const current = getUpdateConfig();
+    const updated = { ...current, ...req.body };
+    saveUpdateConfig(updated);
+    res.json(updated);
+  });
+
+  app.get('/api/updates/check', async (req, res) => {
+    try {
+      const forceRefresh = req.query.force === 'true';
+      const now = Date.now();
+
+      // Read current version from package.json
+      let currentVersion = '3.0.0-beta';
+      try {
+        const pkgPath = path.join(baseAppPath, 'package.json');
+        if (fs.existsSync(pkgPath)) {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+          currentVersion = pkg.version || currentVersion;
+        }
+      } catch (e) {}
+
+      if (!forceRefresh && releaseCache && (now - releaseCache.timestamp < 300000)) {
+        return res.json({ ...releaseCache.data, currentVersion });
+      }
+
+      const ghRes = await fetch('https://api.github.com/repos/TomatoMan280/SCM-UI/releases', {
+        headers: {
+          'User-Agent': 'SCMUI-App',
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+
+      if (!ghRes.ok) {
+        throw new Error(`GitHub API error: ${ghRes.status} ${ghRes.statusText}`);
+      }
+
+      const ghReleases: any[] = await ghRes.json();
+
+      const parseVersion = (v: string) => {
+        const clean = v.replace(/^[vV]/, '').trim();
+        const isBeta = /beta/i.test(clean);
+        const base = clean.replace(/-?beta.*$/i, '');
+        const parts = base.split('.').map(n => parseInt(n, 10) || 0);
+        const betaMatch = clean.match(/beta\.?(\d+)/i);
+        const betaNum = betaMatch ? parseInt(betaMatch[1], 10) : 0;
+        return { parts, isBeta, betaNum, raw: v };
+      };
+
+      const compareVersions = (v1: string, v2: string) => {
+        const p1 = parseVersion(v1);
+        const p2 = parseVersion(v2);
+        for (let i = 0; i < Math.max(p1.parts.length, p2.parts.length); i++) {
+          const a = p1.parts[i] || 0;
+          const b = p2.parts[i] || 0;
+          if (a > b) return 1;
+          if (a < b) return -1;
+        }
+        if (p1.isBeta && !p2.isBeta) return -1;
+        if (!p1.isBeta && p2.isBeta) return 1;
+        if (p1.isBeta && p2.isBeta) {
+          if (p1.betaNum > p2.betaNum) return 1;
+          if (p1.betaNum < p2.betaNum) return -1;
+        }
+        return 0;
+      };
+
+      const isWin = process.platform === 'win32';
+      const isMac = process.platform === 'darwin';
+
+      const releases = (Array.isArray(ghReleases) ? ghReleases : []).map((r: any) => {
+        const isCurrent = compareVersions(r.tag_name, currentVersion) === 0;
+        const isNewer = compareVersions(r.tag_name, currentVersion) > 0;
+
+        const assets = (r.assets || []).map((a: any) => {
+          const name = a.name || '';
+          const isWinInstaller = name.endsWith('.exe');
+          const isMacInstaller = name.endsWith('.dmg');
+          const isLinuxInstaller = name.endsWith('.AppImage');
+          const isPreferred = (isWin && isWinInstaller) || (isMac && isMacInstaller) || (!isWin && !isMac && isLinuxInstaller);
+
+          return {
+            name: a.name,
+            size: a.size,
+            downloadUrl: a.browser_download_url,
+            isInstaller: isWinInstaller || isMacInstaller || isLinuxInstaller,
+            isPreferred
+          };
+        });
+
+        const primaryAsset = assets.find((a: any) => a.isPreferred) || assets.find((a: any) => a.isInstaller) || assets[0] || null;
+
+        return {
+          id: r.id,
+          tag: r.tag_name,
+          name: r.name || r.tag_name,
+          publishedAt: r.published_at,
+          isPrerelease: !!r.prerelease,
+          isCurrent,
+          isNewer,
+          notes: r.body || '',
+          htmlUrl: r.html_url,
+          primaryAsset,
+          assets
+        };
+      });
+
+      const latestRelease = releases[0] || null;
+      const hasUpdate = releases.some((r: any) => r.isNewer);
+
+      const result = {
+        currentVersion,
+        hasUpdate,
+        latestVersion: latestRelease ? latestRelease.tag : currentVersion,
+        latestRelease,
+        releases
+      };
+
+      releaseCache = { timestamp: now, data: result };
+      res.json(result);
+    } catch (e: any) {
+      console.error('[Updates Check Error]:', e);
+      res.status(500).json({ error: e?.message || 'Failed to check updates' });
+    }
+  });
+
+  let activeDownload: {
+    isDownloading: boolean;
+    tag: string;
+    assetName: string;
+    progress: number;
+    downloadedBytes: number;
+    totalBytes: number;
+    status: 'idle' | 'downloading' | 'completed' | 'error';
+    error: string | null;
+    filePath: string | null;
+  } = {
+    isDownloading: false,
+    tag: '',
+    assetName: '',
+    progress: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+    status: 'idle',
+    error: null,
+    filePath: null
+  };
+
+  app.get('/api/updates/download-progress', (req, res) => {
+    res.json(activeDownload);
+  });
+
+  app.post('/api/updates/download', async (req, res) => {
+    const { tag, assetUrl, assetName } = req.body;
+    if (!assetUrl || !assetName) {
+      return res.status(400).json({ error: 'Missing assetUrl or assetName' });
+    }
+
+    if (activeDownload.isDownloading) {
+      return res.json({ message: 'Download already in progress', download: activeDownload });
+    }
+
+    const destDir = path.join(baseDataPath, 'temp-uploads');
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+    const targetFile = path.join(destDir, assetName);
+
+    activeDownload = {
+      isDownloading: true,
+      tag: tag || '',
+      assetName,
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      status: 'downloading',
+      error: null,
+      filePath: targetFile
+    };
+
+    res.json({ success: true, message: 'Download started' });
+
+    (async () => {
+      try {
+        const response = await fetch(assetUrl, {
+          headers: { 'User-Agent': 'SCMUI-App' }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Download HTTP error: ${response.status} ${response.statusText}`);
+        }
+
+        const contentLength = Number(response.headers.get('content-length')) || 0;
+        activeDownload.totalBytes = contentLength;
+
+        const fileStream = fs.createWriteStream(targetFile);
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('Could not get response stream reader');
+
+        let receivedBytes = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            fileStream.write(Buffer.from(value));
+            receivedBytes += value.length;
+            activeDownload.downloadedBytes = receivedBytes;
+            activeDownload.progress = contentLength > 0 ? Math.round((receivedBytes / contentLength) * 100) : 50;
+          }
+        }
+        fileStream.end();
+
+        activeDownload.progress = 100;
+        activeDownload.status = 'completed';
+        activeDownload.isDownloading = false;
+        console.log(`[Updates] Download complete: ${targetFile}`);
+      } catch (err: any) {
+        console.error('[Updates] Download failed:', err);
+        activeDownload.status = 'error';
+        activeDownload.error = err?.message || 'Download failed';
+        activeDownload.isDownloading = false;
+      }
+    })();
+  });
+
+  app.post('/api/updates/launch-installer', (req, res) => {
+    try {
+      const { assetName } = req.body;
+      const installerPath = activeDownload.filePath || path.join(baseDataPath, 'temp-uploads', assetName);
+      if (!fs.existsSync(installerPath)) {
+        return res.status(404).json({ error: 'Installer file not found on disk' });
+      }
+
+      console.log(`[Updates] Launching installer: ${installerPath}`);
+      if (process.platform === 'win32') {
+        exec(`start "" "${installerPath}"`);
+      } else if (process.platform === 'darwin') {
+        exec(`open "${installerPath}"`);
+      } else {
+        exec(`xdg-open "${installerPath}"`);
+      }
+
+      res.json({ success: true, message: 'Installer launched successfully' });
+    } catch (e: any) {
+      console.error('[Updates] Launch installer error:', e);
+      res.status(500).json({ error: e?.message || 'Failed to launch installer' });
+    }
+  });
 
   const upload = multer({ dest: path.join(baseDataPath, 'temp-uploads') });
 
@@ -2641,6 +3032,12 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     safeRemoveDirContents(tempUploadsDir);
     if (!fs.existsSync(tempUploadsDir)) {
       try { fs.mkdirSync(tempUploadsDir, { recursive: true }); } catch (_) {}
+    }
+
+    // 1b. Clear thumbnail cache directory
+    safeRemoveDirContents(thumbnailCacheDir);
+    if (!fs.existsSync(thumbnailCacheDir)) {
+      try { fs.mkdirSync(thumbnailCacheDir, { recursive: true }); } catch (_) {}
     }
 
     // 2. Clear Temp_Fetch_* folders in Library
