@@ -2734,6 +2734,18 @@ export default function App() {
     };
   });
 
+  useEffect(() => {
+    if (pluginState.selectedPlugin?.id === 'pokemon') {
+      if (artSourceTab !== 'limitless') {
+        setArtSourceTab('limitless');
+      }
+    } else {
+      if (artSourceTab === 'limitless') {
+        setArtSourceTab('scryfall');
+      }
+    }
+  }, [pluginState.selectedPlugin?.id]);
+
   const [pluginFile, setPluginFile] = useState<File | null>(null);
   const [customScripts, setCustomScripts] = useState<string[]>([]);
 
@@ -8472,34 +8484,19 @@ export default function App() {
                     /* Provider Tabs */
                     <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
                       {pluginState.selectedPlugin?.id === 'pokemon' ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setArtSourceTab('limitless');
-                              handleSearchArt(artQuery || 'Pikachu', undefined, 'limitless');
-                            }}
-                            className={cn(
-                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                              artSourceTab === 'limitless' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
-                            )}
-                          >
-                            Limitless TCG
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setArtSourceTab('mpcfill');
-                              handleSearchArt(artQuery || 'Pikachu', undefined, 'mpcfill');
-                            }}
-                            className={cn(
-                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                              artSourceTab === 'mpcfill' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
-                            )}
-                          >
-                            MPC
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setArtSourceTab('limitless');
+                            handleSearchArt(artQuery || 'Pikachu', undefined, 'limitless');
+                          }}
+                          className={cn(
+                            "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                            artSourceTab === 'limitless' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                          )}
+                        >
+                          Limitless TCG
+                        </button>
                       ) : (
                         <>
                           <button
@@ -8527,19 +8524,6 @@ export default function App() {
                             )}
                           >
                             MPC
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setArtSourceTab('limitless');
-                              handleSearchArt(artQuery || 'Pikachu', undefined, 'limitless');
-                            }}
-                            className={cn(
-                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                              artSourceTab === 'limitless' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
-                            )}
-                          >
-                            Limitless
                           </button>
                         </>
                       )}
@@ -8716,7 +8700,7 @@ export default function App() {
                         />
                       </div>
                     </div>
-                  ) : (
+                  ) : artSourceTab === 'mpcfill' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                       <div className="space-y-1">
                         <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">DPI Filter</label>
@@ -8775,7 +8759,7 @@ export default function App() {
                         />
                       </div>
                     </div>
-                  )}
+                  ) : null}
 
                 {artDownloadMsg && (
                   <div className="text-xs px-3.5 py-2 rounded-xl bg-primary-600/15 border border-primary-500/30 text-primary-300 font-medium">
@@ -8784,16 +8768,18 @@ export default function App() {
                 )}
 
                 <div className="flex justify-between items-center pt-2">
-                  <button
-                    onClick={() => {
-                      setScryfallFilters({ frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' });
-                      setMpcFilters({ dpi: 'all', tag: 'all', set: '' });
-                      handleSearchArt(artQuery, { frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' }, artSourceTab);
-                    }}
-                    className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors"
-                  >
-                    Clear Filters
-                  </button>
+                  {artSourceTab !== 'limitless' ? (
+                    <button
+                      onClick={() => {
+                        setScryfallFilters({ frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' });
+                        setMpcFilters({ dpi: 'all', tag: 'all', set: '' });
+                        handleSearchArt(artQuery, { frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' }, artSourceTab);
+                      }}
+                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors"
+                    >
+                      Clear Filters
+                    </button>
+                  ) : <div />}
 
                   <div className="flex items-center gap-3">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">Card Size</label>
