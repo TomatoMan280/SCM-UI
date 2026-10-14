@@ -266,8 +266,40 @@ async function startServer() {
   const getOriginalPath = (targetFilePath: string): string => {
     const dir = path.dirname(targetFilePath);
     const base = path.basename(targetFilePath);
-    const origDir = path.join(dir, '.originals');
-    return path.join(origDir, base);
+    const section = path.basename(dir);
+    const parentDir = path.dirname(dir);
+
+    // Safe location outside of front, back, double_sided: <parentDir>/.originals/<section>/<base>
+    let newOrigPath: string;
+    if (['front', 'back', 'double_sided'].includes(section)) {
+      newOrigPath = path.join(parentDir, '.originals', section, base);
+    } else {
+      newOrigPath = path.join(parentDir, '.originals', base);
+    }
+
+    // Check if legacy backup exists in dir/.originals/base (inside front/back/double_sided)
+    const legacyOrigPath = path.join(dir, '.originals', base);
+    if (fs.existsSync(legacyOrigPath)) {
+      try {
+        const newDir = path.dirname(newOrigPath);
+        if (!fs.existsSync(newDir)) fs.mkdirSync(newDir, { recursive: true });
+        if (!fs.existsSync(newOrigPath)) {
+          fs.copyFileSync(legacyOrigPath, newOrigPath);
+        }
+        try { fs.unlinkSync(legacyOrigPath); } catch (_) {}
+        const legacyDir = path.join(dir, '.originals');
+        if (fs.existsSync(legacyDir)) {
+          const remaining = fs.readdirSync(legacyDir);
+          if (remaining.length === 0) {
+            try { fs.rmdirSync(legacyDir); } catch (_) {}
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[Originals Migration] Could not migrate legacy backup: ${legacyOrigPath}`, err?.message || err);
+      }
+    }
+
+    return newOrigPath;
   };
 
   const saveOriginalBackup = (targetFilePath: string): void => {
@@ -287,6 +319,63 @@ async function startServer() {
       console.warn(`[Upscayl Backup Warning] Could not backup original for ${targetFilePath}:`, err?.message || err);
     }
   };
+
+  const sanitizeGameCardDirectories = () => {
+    try {
+      const targets = [
+        path.join(scmPath, 'game'),
+        libraryPath,
+        pluginsPath
+      ];
+      if (fs.existsSync(projectsDir)) {
+        try {
+          fs.readdirSync(projectsDir).forEach(p => {
+            const pDir = path.join(projectsDir, p);
+            try {
+              if (fs.statSync(pDir).isDirectory()) targets.push(pDir);
+            } catch (_) {}
+          });
+        } catch (_) {}
+      }
+      const sections = ['front', 'back', 'double_sided'];
+      targets.forEach(targetBase => {
+        if (!fs.existsSync(targetBase)) return;
+        sections.forEach(section => {
+          const secDir = path.join(targetBase, section);
+          if (!fs.existsSync(secDir)) return;
+          const legacyOrigDir = path.join(secDir, '.originals');
+          if (fs.existsSync(legacyOrigDir)) {
+            const safeOrigDir = path.join(targetBase, '.originals', section);
+            if (!fs.existsSync(safeOrigDir)) fs.mkdirSync(safeOrigDir, { recursive: true });
+            try {
+              const entries = fs.readdirSync(legacyOrigDir);
+              entries.forEach(entry => {
+                const src = path.join(legacyOrigDir, entry);
+                const dst = path.join(safeOrigDir, entry);
+                try {
+                  if (fs.existsSync(src) && fs.statSync(src).isFile()) {
+                    if (!fs.existsSync(dst)) {
+                      fs.copyFileSync(src, dst);
+                    }
+                    fs.unlinkSync(src);
+                  }
+                } catch (_) {}
+              });
+              fs.rmSync(legacyOrigDir, { recursive: true, force: true });
+              console.log(`[Sanitize] Migrated and removed legacy directory: ${legacyOrigDir}`);
+            } catch (e: any) {
+              console.warn(`[Sanitize Warning] Could not remove ${legacyOrigDir}:`, e?.message);
+            }
+          }
+        });
+      });
+    } catch (err: any) {
+      console.warn('[Sanitize Error]', err?.message);
+    }
+  };
+
+  // Run initial sanitization on startup to clean up any nested .originals inside card folders
+  sanitizeGameCardDirectories();
   const resolvePythonExecutable = (pythonOverride?: string): string => {
     let pythonExecutable = pythonOverride ? pythonOverride.trim() : "";
     if (pythonExecutable) {
@@ -1202,28 +1291,44 @@ async function startServer() {
   app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const isLibrary = req.body.library === 'true';
+    const target = req.body.target;
+    const isPlugins = target === 'plugins';
+    const isLibrary = target === 'library' || req.body.library === 'true';
     const type = req.body.type === 'back' ? 'back' : (req.body.type === 'double_sided' ? 'double_sided' : 'front');
     const replaceBack = req.body.replaceBack === 'true';
+    const replaceOriginalFilename = req.body.replaceOriginalFilename;
     
-    const targetBase = isLibrary ? libraryPath : path.join(scmPath, 'game');
+    const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
     const targetDir = path.join(targetBase, type);
     
     fs.mkdirSync(targetDir, { recursive: true });
     
-    if (!isLibrary && type === 'back' && replaceBack) {
+    if (!isLibrary && !isPlugins && type === 'back' && replaceBack) {
         try {
             const existing = fs.readdirSync(targetDir);
             existing.forEach(f => fs.unlinkSync(path.join(targetDir, f)));
         } catch(e) {}
     }
 
-    const targetPath = path.join(targetDir, req.file.originalname);
+    let finalFilename = req.file.originalname;
+    if (replaceOriginalFilename) {
+      const ext = path.extname(req.file.originalname) || path.extname(replaceOriginalFilename) || '.png';
+      const baseName = path.parse(replaceOriginalFilename).name;
+      finalFilename = `${baseName}${ext}`;
+
+      const oldPath = path.join(targetDir, replaceOriginalFilename);
+      const newPath = path.join(targetDir, finalFilename);
+      if (fs.existsSync(oldPath) && oldPath !== newPath) {
+        try { fs.unlinkSync(oldPath); } catch (e) {}
+      }
+    }
+
+    const targetPath = path.join(targetDir, finalFilename);
     
     fs.copyFileSync(req.file.path, targetPath);
     try { fs.unlinkSync(req.file.path); } catch (e) {}
 
-    res.json({ success: true, message: `Uploaded ${req.file.originalname}`, file: req.file.originalname, targetPath });
+    res.json({ success: true, message: `Uploaded ${finalFilename}`, file: finalFilename, targetPath });
   });
 
 
@@ -1838,6 +1943,152 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }).catch((err) => {
       res.status(500).json({ error: "Failed to load https module", details: err.message });
     });
+  });
+
+  // Limitless TCG Card Search Proxy for Pokémon Direct Card Ingestion
+  app.get("/api/limitless/search", async (req, res) => {
+    const q = (req.query.q as string || '').trim();
+    if (!q) {
+      return res.status(400).json({ error: "Query parameter 'q' is required" });
+    }
+
+    try {
+      const url = `https://limitlesstcg.com/cards?q=${encodeURIComponent(q)}&display=list`;
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Limitless responded with HTTP ${response.status}`);
+      }
+
+      const html = await response.text();
+      const results: any[] = [];
+
+      const rowRegex = /<tr[^>]*>[\s\S]*?<span class="card-set"(?: data-tooltip="([^"]*)")?[^>]*>[\s\S]*?alt="([^"]*)"[\s\S]*?<td><a href="\/cards\/[^\/"]+\/([^"]+)">([^<]*)<\/a><\/td>[\s\S]*?<td><a href="\/cards\/[^\/"]+\/[^"]+">([^<]*)<\/a><\/td>[\s\S]*?<\/tr>/g;
+
+      let match;
+      while ((match = rowRegex.exec(html)) !== null && results.length < 40) {
+        const setName = match[1] || match[2];
+        const setCode = match[2];
+        const cardNum = match[3];
+        const cardName = match[5].replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+
+        let paddedNum = cardNum;
+        if (/^\d+$/.test(cardNum)) {
+          paddedNum = cardNum.padStart(3, '0');
+        }
+
+        const smUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/${setCode}/${setCode}_${paddedNum}_R_EN_SM.png`;
+        const lgUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/${setCode}/${setCode}_${paddedNum}_R_EN_LG.png`;
+
+        results.push({
+          id: `${setCode}_${cardNum}`,
+          name: cardName,
+          set: setCode,
+          set_name: setName,
+          collector_number: cardNum,
+          imageUrl: lgUrl,
+          thumbnailUrl: smUrl,
+          image_uris: {
+            small: smUrl,
+            normal: lgUrl,
+            large: lgUrl,
+            png: lgUrl
+          }
+        });
+      }
+
+      // Fallback: grid regex if list had 0 matches
+      if (results.length === 0) {
+        const gridRegex = /<a href="\/cards\/([^\/"]+)\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^">]+)"[^>]*>/g;
+        let gm;
+        while ((gm = gridRegex.exec(html)) !== null && results.length < 40) {
+          const setCode = gm[1];
+          const cardNum = gm[2];
+          const smImg = gm[3];
+          const lgImg = smImg.replace('_SM.', '_LG.');
+          results.push({
+            id: `${setCode}_${cardNum}`,
+            name: q,
+            set: setCode,
+            collector_number: cardNum,
+            imageUrl: lgImg,
+            thumbnailUrl: smImg,
+            image_uris: {
+              small: smImg,
+              normal: lgImg,
+              large: lgImg,
+              png: lgImg
+            }
+          });
+        }
+      }
+
+      res.json({ success: true, count: results.length, data: results });
+    } catch (err: any) {
+      console.error(`[Limitless Search Error]:`, err.message);
+      res.status(500).json({ error: "Limitless search failed", details: err.message, data: [] });
+    }
+  });
+
+  // Limitless TCG Decklist Ingestion Endpoint
+  app.get("/api/limitless/deck", async (req, res) => {
+    let rawUrl = (req.query.url as string || '').trim();
+    if (!rawUrl) {
+      return res.status(400).json({ error: "Deck URL or ID is required" });
+    }
+
+    if (/^\d+$/.test(rawUrl)) {
+      rawUrl = `https://limitlesstcg.com/decks/list/${rawUrl}`;
+    } else if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+      rawUrl = `https://${rawUrl}`;
+    }
+
+    try {
+      const response = await fetch(rawUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch deck from Limitless (HTTP ${response.status})`);
+      }
+
+      const html = await response.text();
+      const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/) || html.match(/<title>([^<]+)<\/title>/);
+      const deckTitle = titleMatch ? titleMatch[1].replace(/– Limitless.*$/, '').trim() : 'Limitless Deck';
+
+      const cardRegex = /<a class="card-link" href="\/cards\/([^\/"]+)\/([^"]+)"[^>]*>[\s\S]*?<span class="card-count">(\d+)<\/span>[\s\S]*?<span class="card-name">([^<]+)<\/span>/g;
+      
+      const lines: string[] = [];
+      let cm;
+      while ((cm = cardRegex.exec(html)) !== null) {
+        const setCode = cm[1];
+        const cardNum = cm[2];
+        const count = cm[3];
+        const cardName = cm[4].replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+        lines.push(`${count} ${cardName} ${setCode} ${cardNum}`);
+      }
+
+      if (lines.length === 0) {
+        return res.status(404).json({ error: "No cards found in the provided Limitless deck URL. Please ensure it is a valid Limitless deck list." });
+      }
+
+      res.json({
+        success: true,
+        title: deckTitle,
+        cardCount: lines.length,
+        decklist: lines.join('\n')
+      });
+    } catch (err: any) {
+      console.error(`[Limitless Deck Fetch Error]:`, err.message);
+      res.status(500).json({ error: err.message || "Failed to fetch Limitless deck" });
+    }
   });
 
   app.get("/api/plugin/:id/readme", (req, res) => {
@@ -2661,12 +2912,24 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       dirs.forEach(dir => {
         if (fs.existsSync(dir)) {
           fs.readdirSync(dir).forEach(file => {
-              if (!file.startsWith('.') && file !== 'README.md' && file !== 'EMPTY.md') {
-                 try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
-              }
+            if (file !== 'README.md' && file !== 'EMPTY.md') {
+              try {
+                const fullPath = path.join(dir, file);
+                if (fs.statSync(fullPath).isDirectory()) {
+                  fs.rmSync(fullPath, { recursive: true, force: true });
+                } else {
+                  fs.unlinkSync(fullPath);
+                }
+              } catch(e) {}
+            }
           });
         }
       });
+      const gameOriginals = path.join(scmPath, 'game', '.originals');
+      if (fs.existsSync(gameOriginals)) {
+        try { fs.rmSync(gameOriginals, { recursive: true, force: true }); } catch (_) {}
+      }
+      sanitizeGameCardDirectories();
       res.json({ success: true, message: "Project cleaned up." });
     });
   });
@@ -2682,12 +2945,24 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       dirs.forEach(dir => {
         if (fs.existsSync(dir)) {
           fs.readdirSync(dir).forEach(file => {
-              if (!file.startsWith('.') && file !== 'README.md' && file !== 'EMPTY.md') {
-                 try { fs.unlinkSync(path.join(dir, file)); } catch(e) {}
-              }
+            if (file !== 'README.md' && file !== 'EMPTY.md') {
+              try {
+                const fullPath = path.join(dir, file);
+                if (fs.statSync(fullPath).isDirectory()) {
+                  fs.rmSync(fullPath, { recursive: true, force: true });
+                } else {
+                  fs.unlinkSync(fullPath);
+                }
+              } catch(e) {}
+            }
           });
         }
       });
+      const gameOriginals = path.join(scmPath, 'game', '.originals');
+      if (fs.existsSync(gameOriginals)) {
+        try { fs.rmSync(gameOriginals, { recursive: true, force: true }); } catch (_) {}
+      }
+      sanitizeGameCardDirectories();
       res.json({ success: true, message: "Project cleared." });
     });
   });
@@ -2981,6 +3256,19 @@ app.get("/api/moxfield-proxy", async (req, res) => {
             results.push({ name, from: srcPath, trashPath, type });
         }
 
+        // Clean up or trash original backup so it never lingers or gets picked up by Python
+        try {
+          const origPath = getOriginalPath(srcPath);
+          if (fs.existsSync(origPath)) {
+            const origTrashPath = path.join(trashDir, `deleted_orig_${Date.now()}_${name}`);
+            try { fs.renameSync(origPath, origTrashPath); } catch (_) { try { fs.unlinkSync(origPath); } catch (_) {} }
+          }
+          const legacyOrig = path.join(dir, '.originals', name);
+          if (fs.existsSync(legacyOrig)) {
+            try { fs.unlinkSync(legacyOrig); } catch (_) {}
+          }
+        } catch (_) {}
+
         if (type === 'front') {
             const doubleSidedSrc = path.join(targetBase, 'double_sided', name);
             if (fs.existsSync(doubleSidedSrc)) {
@@ -2989,6 +3277,16 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                     fs.renameSync(doubleSidedSrc, dsTrashPath);
                     results.push({ name, from: doubleSidedSrc, trashPath: dsTrashPath, type: 'double_sided' });
                 } catch(e) {}
+                try {
+                  const dsOrig = getOriginalPath(doubleSidedSrc);
+                  if (fs.existsSync(dsOrig)) {
+                    try { fs.unlinkSync(dsOrig); } catch (_) {}
+                  }
+                  const legacyDsOrig = path.join(targetBase, 'double_sided', '.originals', name);
+                  if (fs.existsSync(legacyDsOrig)) {
+                    try { fs.unlinkSync(legacyDsOrig); } catch (_) {}
+                  }
+                } catch (_) {}
             }
         } else if (type === 'double_sided') {
             const frontSrc = path.join(targetBase, 'front', name);
@@ -2998,6 +3296,16 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                     fs.renameSync(frontSrc, frontTrashPath);
                     results.push({ name, from: frontSrc, trashPath: frontTrashPath, type: 'front' });
                 } catch(e) {}
+                try {
+                  const frontOrig = getOriginalPath(frontSrc);
+                  if (fs.existsSync(frontOrig)) {
+                    try { fs.unlinkSync(frontOrig); } catch (_) {}
+                  }
+                  const legacyFrontOrig = path.join(targetBase, 'front', '.originals', name);
+                  if (fs.existsSync(legacyFrontOrig)) {
+                    try { fs.unlinkSync(legacyFrontOrig); } catch (_) {}
+                  }
+                } catch (_) {}
             }
         }
     });
@@ -3484,6 +3792,15 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       sendEvent('stdout', `$ ${fullCommand}`);
 
       if (command === 'create_pdf.py') {
+        sanitizeGameCardDirectories();
+        const frontsDir = path.join(scmPath, 'game', 'front');
+        const hasCards = fs.existsSync(frontsDir) && fs.readdirSync(frontsDir).some(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+        if (!hasCards) {
+          sendEvent('error', "[System Error] No card fronts found in the project workspace. Please add at least one card before generating a PDF.");
+          res.end();
+          return;
+        }
+
         const pdfPath = path.join(scmPath, 'game', 'output', 'game.pdf');
         if (fs.existsSync(pdfPath)) {
           try {
@@ -3823,6 +4140,13 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
       // Clean up old PDF if generating PDF
       if (command === 'create_pdf.py') {
+        sanitizeGameCardDirectories();
+        const frontsDir = path.join(scmPath, 'game', 'front');
+        const hasCards = fs.existsSync(frontsDir) && fs.readdirSync(frontsDir).some(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+        if (!hasCards) {
+          return res.json({ success: false, error: "No card fronts found in the project workspace. Please add at least one card before generating a PDF.", output: ["No card fronts found in project workspace."] });
+        }
+
         const pdfPath = path.join(scmPath, 'game', 'output', 'game.pdf');
         if (fs.existsSync(pdfPath)) {
           try {

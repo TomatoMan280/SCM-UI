@@ -1689,6 +1689,8 @@ export default function App() {
   const [localAssets, setLocalAssets] = useState<Array<{ name: string, type: 'front' | 'back' | 'double_sided', view: 'project' | 'library' | 'plugins' }>>([]);
   const [isReplaceBackDialogOpen, setIsReplaceBackDialogOpen] = useState(false);
   const [pendingBackFile, setPendingBackFile] = useState<File | null>(null);
+  const [manualFrontUploadTarget, setManualFrontUploadTarget] = useState<{ name: string; type: 'front' | 'back' | 'double_sided' } | null>(null);
+  const manualFrontUploadInputRef = useRef<HTMLInputElement>(null);
   const [copiedBuffer, setCopiedBuffer] = useState<string[]>([]);
   const [lastSelected, setLastSelected] = useState<string | null>(null);
   const [showConflictModal, setShowConflictModal] = useState(false);
@@ -2512,7 +2514,7 @@ export default function App() {
   // Scryfall / Custom Art Picker State
   // Selected Card for Art Picker
   const [artTargetCard, setArtTargetCard] = useState<{ name: string; type: 'front' | 'back' | 'double_sided'; targetMode?: 'front' | 'double_sided' | 'back' } | null>(null);
-  const [artSourceTab, setArtSourceTab] = useState<'scryfall' | 'mpcfill'>('scryfall');
+  const [artSourceTab, setArtSourceTab] = useState<'scryfall' | 'mpcfill' | 'limitless'>('scryfall');
   const [artCardSize, setArtCardSize] = useState(() => {
     return parseInt(localStorage.getItem('scm_art_card_size') || '150');
   });
@@ -2557,13 +2559,25 @@ export default function App() {
   const [isSearchingArt, setIsSearchingArt] = useState(false);
   const [artDownloadMsg, setArtDownloadMsg] = useState<string | null>(null);
 
-  const handleSearchArt = async (name: string, customFilters?: any, sourceOverride?: 'scryfall' | 'mpcfill') => {
+  const handleSearchArt = async (name: string, customFilters?: any, sourceOverride?: 'scryfall' | 'mpcfill' | 'limitless') => {
     const activeSource = sourceOverride || artSourceTab;
     const queryTerm = (name || '').trim();
     setIsSearchingArt(true);
     setArtDownloadMsg(null);
     try {
-      if (activeSource === 'mpcfill') {
+      if (activeSource === 'limitless') {
+        const res = await fetch(`/api/limitless/search?q=${encodeURIComponent(queryTerm)}`);
+        const data = await res.json();
+        if (data.data && Array.isArray(data.data)) {
+          setArtResults(data.data);
+          if (data.data.length === 0) {
+            setArtDownloadMsg(`No matching Pokémon cards found for "${queryTerm}" on Limitless.`);
+          }
+        } else {
+          setArtResults([]);
+          setArtDownloadMsg(data.error || "No matching Pokémon cards found on Limitless.");
+        }
+      } else if (activeSource === 'mpcfill') {
         const mp = customFilters || mpcFilters;
         const params = new URLSearchParams({
           q: queryTerm,
@@ -2652,7 +2666,7 @@ export default function App() {
     }
   };
 
-  const openArtPickerForCard = (cardFilename: string, type: 'front' | 'back' | 'double_sided' = 'front', targetMode: 'front' | 'double_sided' | 'back' = 'front') => {
+  const openArtPickerForCard = (cardFilename: string, type: 'front' | 'back' | 'double_sided' = 'front', targetMode: 'front' | 'double_sided' | 'back' = 'front', preferredSource?: 'scryfall' | 'limitless' | 'mpcfill') => {
     const isBack = type === 'back' && targetMode !== 'double_sided';
     setIsBacksOnlyModal(isBack);
     if (isBack) {
@@ -2662,22 +2676,37 @@ export default function App() {
       setIsArtPickerOpen(true);
     } else if (targetMode === 'double_sided') {
       const cleaned = cleanCardName(cardFilename);
-      setArtSourceTab('scryfall');
+      const defaultSource = preferredSource || (pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : 'scryfall');
+      setArtSourceTab(defaultSource);
       setArtTargetCard({ name: cardFilename, type: 'double_sided', targetMode: 'double_sided' });
       setArtQuery(cleaned);
       setIsArtPickerOpen(true);
       if (cleaned) {
-        handleSearchArt(cleaned);
+        handleSearchArt(cleaned, undefined, defaultSource);
       }
     } else {
       const cleaned = cleanCardName(cardFilename);
-      setArtSourceTab('scryfall');
+      const defaultSource = preferredSource || (pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : 'scryfall');
+      setArtSourceTab(defaultSource);
       setArtTargetCard({ name: cardFilename, type, targetMode: 'front' });
       setArtQuery(cleaned);
       setIsArtPickerOpen(true);
       if (cleaned) {
-        handleSearchArt(cleaned);
+        handleSearchArt(cleaned, undefined, defaultSource);
       }
+    }
+  };
+
+  const openAddCardPicker = (source: 'limitless' | 'scryfall' = 'limitless', type: 'front' | 'back' = 'front') => {
+    setIsBacksOnlyModal(type === 'back');
+    setArtSourceTab(source);
+    setArtTargetCard(null);
+    setArtQuery('');
+    setArtResults([]);
+    setArtDownloadMsg(null);
+    setIsArtPickerOpen(true);
+    if (source === 'limitless') {
+      handleSearchArt('Pikachu', undefined, 'limitless');
     }
   };
 
@@ -3576,6 +3605,105 @@ export default function App() {
     } catch (err) {
       addLog(`[Error] File upload failed: ${err}`);
       return;
+    }
+  };
+
+  const handleManualCardUploadTrigger = (cardName: string, type: 'front' | 'back' | 'double_sided' = 'front') => {
+    setManualFrontUploadTarget({ name: cardName, type });
+    if (manualFrontUploadInputRef.current) {
+      manualFrontUploadInputRef.current.value = '';
+      manualFrontUploadInputRef.current.click();
+    }
+  };
+  const handleManualFrontUploadTrigger = handleManualCardUploadTrigger;
+
+  const handleManualFrontUploadChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !manualFrontUploadTarget) return;
+
+    const targetCard = manualFrontUploadTarget;
+    const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
+
+    try {
+      const isBack = targetCard.type === 'back';
+      const label = isBack ? 'backing art' : 'front art';
+      setTaskProgress({ current: 0, total: 1, message: `Uploading ${label} for ${targetCard.name}...` });
+      addLog(`[Uploader] Uploading replacement ${label} for ${targetCard.name} (${file.name})...`);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', targetCard.type);
+      formData.append('target', targetMode);
+      if (targetMode === 'library') formData.append('library', 'true');
+      formData.append('replaceOriginalFilename', targetCard.name);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || `Upload failed with status ${res.status}`);
+      }
+
+      const data = await res.json();
+      const finalFilename = data.file || targetCard.name;
+      const now = Date.now();
+
+      setCacheBusts(prev => ({
+        ...prev,
+        [finalFilename]: now,
+        [targetCard.name]: now
+      }));
+
+      const url = URL.createObjectURL(file);
+      setUploadedImages(prev => ({
+        ...prev,
+        [`${targetCard.type}_${finalFilename}`]: url,
+        [`${targetCard.type}_${targetCard.name}`]: url
+      }));
+
+      addLog(`[Uploader] Successfully updated front artwork for ${targetCard.name} to ${finalFilename}`);
+      setTaskProgress({ current: 1, total: 1, message: `Front art updated!` });
+      await fetchStatus();
+    } catch (err: any) {
+      addLog(`[Error] Failed to upload replacement front art: ${err?.message || err}`);
+      setTaskProgress({ current: 0, total: 1, message: 'Upload failed.' });
+    } finally {
+      setManualFrontUploadTarget(null);
+      if (manualFrontUploadInputRef.current) {
+        manualFrontUploadInputRef.current.value = '';
+      }
+      setTimeout(() => setTaskProgress(null), 1500);
+    }
+  };
+
+  const handleFetchLimitlessDeckPrompt = async () => {
+    const url = window.prompt("Enter Limitless TCG Deck URL or Tournament Deck ID (e.g. https://limitlesstcg.com/decks/list/29678 or 29678):");
+    if (!url || !url.trim()) return;
+
+    try {
+      setTaskProgress({ current: 0, total: 1, message: "Importing deck from Limitless TCG..." });
+      addLog(`[Limitless] Ingesting decklist from: ${url.trim()}...`);
+      const res = await fetch(`/api/limitless/deck?url=${encodeURIComponent(url.trim())}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to fetch Limitless deck");
+      }
+
+      setPluginState(prev => ({
+        ...prev,
+        decklist: data.decklist
+      }));
+
+      addLog(`[Limitless] Successfully imported "${data.title}" (${data.cardCount} cards) into decklist.`);
+      setTaskProgress({ current: 1, total: 1, message: `Imported ${data.title}!` });
+    } catch (err: any) {
+      addLog(`[Error] Limitless deck ingestion failed: ${err.message || err}`);
+      setTaskProgress({ current: 0, total: 1, message: "Deck import failed." });
+    } finally {
+      setTimeout(() => setTaskProgress(null), 2000);
     }
   };
 
@@ -5464,6 +5592,17 @@ export default function App() {
                               <div className="flex items-center justify-between mb-4">
                                 <label className="text-xs font-semibold text-white/40">Decklist Content</label>
                                 <div className="flex items-center gap-2">
+                                  {pluginState.selectedPlugin?.id === 'pokemon' && (
+                                    <button
+                                      type="button"
+                                      onClick={handleFetchLimitlessDeckPrompt}
+                                      className="px-3 py-1.5 bg-primary-600/20 border border-primary-500/30 rounded-lg hover:bg-primary-600/30 text-primary-300 transition-colors text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                      title="Import decklist directly from a Limitless URL or Tournament Deck ID"
+                                    >
+                                      <Download size={13} />
+                                      <span>Import Limitless Deck</span>
+                                    </button>
+                                  )}
                                   <button onClick={(e) => { e.stopPropagation(); setIsPluginPresetsOpen(true); }} className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 text-white/70">
                                     <Settings2 size={14} /> Presets
                                   </button>
@@ -5544,32 +5683,45 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Direct Card & Backing Ingestion from MPC / Scryfall (Only for MTG) */}
-                              {pluginState.selectedPlugin.id === 'mtg' && (
+                              {/* Direct Card Ingestion from Scryfall/MPC (MTG) or Limitless TCG (Pokémon) */}
+                              {(pluginState.selectedPlugin.id === 'mtg' || pluginState.selectedPlugin.id === 'pokemon') && (
                                 <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
                                   <div className="space-y-0.5 flex-1">
                                     <div className="flex items-center gap-2">
                                       <PlusCircle size={16} className="text-primary-400" />
                                       <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
                                     </div>
-                                    <p className="text-[11px] text-white/50">Search any card or backing by name and add directly into your project workspace without needing a decklist.</p>
+                                    <p className="text-[11px] text-white/50">
+                                      {pluginState.selectedPlugin.id === 'pokemon'
+                                        ? "Search any Pokémon card on Limitless TCG and add directly into your project workspace without needing a decklist."
+                                        : "Search any card or backing by name and add directly into your project workspace without needing a decklist."}
+                                    </p>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setArtTargetCard(null);
-                                        setIsBacksOnlyModal(false);
-                                        setArtSourceTab('scryfall');
-                                        if (!artQuery) setArtQuery('Black Lotus');
-                                        setIsArtPickerOpen(true);
-                                        handleSearchArt(artQuery || 'Black Lotus');
-                                      }}
-                                      className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
-                                    >
-                                      <PlusCircle size={15} /> Add Cards from Scryfall / MPC
-                                    </button>
-
+                                    {pluginState.selectedPlugin.id === 'pokemon' ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openAddCardPicker('limitless', 'front')}
+                                        className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
+                                      >
+                                        <PlusCircle size={15} /> Add Cards from Limitless TCG
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setArtTargetCard(null);
+                                          setIsBacksOnlyModal(false);
+                                          setArtSourceTab('scryfall');
+                                          if (!artQuery) setArtQuery('Black Lotus');
+                                          setIsArtPickerOpen(true);
+                                          handleSearchArt(artQuery || 'Black Lotus');
+                                        }}
+                                        className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
+                                      >
+                                        <PlusCircle size={15} /> Add Cards from Scryfall / MPC
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               )}
@@ -6127,9 +6279,25 @@ export default function App() {
                                 </span>
                               </h3>
                             </div>
-                            <button onClick={() => setCollapsedSections(s => ({ ...s, fronts: !s.fronts }))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
-                              <ChevronDown size={18} className={cn("transition-transform", collapsedSections.fronts && "-rotate-90")} />
-                            </button>
+                              <div className="flex items-center gap-2">
+                                {pluginState.selectedPlugin?.id === 'pokemon' && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openAddCardPicker('limitless', 'front');
+                                    }}
+                                    className="px-2.5 py-1 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                    title="Search Limitless TCG and add Pokémon card fronts to your workspace"
+                                  >
+                                    <PlusCircle size={13} />
+                                    <span>Add Front (Limitless)</span>
+                                  </button>
+                                )}
+                                <button onClick={() => setCollapsedSections(s => ({ ...s, fronts: !s.fronts }))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
+                                  <ChevronDown size={18} className={cn("transition-transform", collapsedSections.fronts && "-rotate-90")} />
+                                </button>
+                              </div>
                           </div>
 
                           {!collapsedSections.fronts && (
@@ -7524,30 +7692,100 @@ export default function App() {
                 <div className="space-y-0.5">
                   {contextMenu.type !== 'back' ? (
                     <>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
-                          setContextMenu(null);
-                        }}
-                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                        title="Change the front face artwork of this card"
-                      >
-                        <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate">Select Front Art</span>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
-                          setContextMenu(null);
-                        }}
-                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                        title="Set back for this card (search any card or back pattern)"
-                      >
-                        <Layers size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate">Set Back (Double-Sided)</span>
-                      </button>
+                      {pluginState.selectedPlugin?.id === 'mtg' ? (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                              setContextMenu(null);
+                            }}
+                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                            title="Change the front face artwork of this card via Scryfall"
+                          >
+                            <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                            <span className="truncate">Select Front Art (Scryfall)</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleManualFrontUploadTrigger(contextMenu.name, (contextMenu.type as any) || 'front');
+                              setContextMenu(null);
+                            }}
+                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                            title="Upload an image file from your computer for this card's front artwork"
+                          >
+                            <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                            <span className="truncate">Upload Front Art</span>
+                          </button>
+                        </>
+                      ) : pluginState.selectedPlugin?.id === 'pokemon' ? (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front', 'limitless');
+                              setContextMenu(null);
+                            }}
+                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                            title="Search Limitless TCG to change this Pokémon card's front artwork"
+                          >
+                            <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                            <span className="truncate">Select Front Art (Limitless)</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openAddCardPicker('limitless', 'front');
+                              setContextMenu(null);
+                            }}
+                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                            title="Search Limitless TCG and add a new front card to your workspace"
+                          >
+                            <PlusCircle size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                            <span className="truncate">Add Front (Limitless)</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleManualFrontUploadTrigger(contextMenu.name, (contextMenu.type as any) || 'front');
+                              setContextMenu(null);
+                            }}
+                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                            title="Upload an image file from your computer for this card's front artwork"
+                          >
+                            <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                            <span className="truncate">Upload Front Art</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleManualFrontUploadTrigger(contextMenu.name, (contextMenu.type as any) || 'front');
+                            setContextMenu(null);
+                          }}
+                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                          title="Upload an image file from your computer for this card's front artwork"
+                        >
+                          <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                          <span className="truncate">Upload Front Art</span>
+                        </button>
+                      )}
+                      {pluginState.selectedPlugin?.id === 'mtg' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
+                            setContextMenu(null);
+                          }}
+                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                          title="Set back for this card (search any card or back pattern)"
+                        >
+                          <Layers size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                          <span className="truncate">Set Back (Double-Sided)</span>
+                        </button>
+                      )}
                       {assetViewMode !== 'plugins' && (
                         <button
                           onClick={async (e) => {
@@ -7585,18 +7823,47 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openArtPickerForCard(contextMenu.name, 'back', 'back');
-                          setContextMenu(null);
-                        }}
-                        className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                        title="Change this back pattern"
-                      >
-                        <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate">Select Backing Art</span>
-                      </button>
+                      {pluginState.selectedPlugin?.id === 'mtg' ? (
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openArtPickerForCard(contextMenu.name, 'back', 'back');
+                              setContextMenu(null);
+                            }}
+                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                            title="Change this back pattern via MPC/MTG search"
+                          >
+                            <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                            <span className="truncate">Select Backing Art</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleManualCardUploadTrigger(contextMenu.name, 'back');
+                              setContextMenu(null);
+                            }}
+                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                            title="Upload an image file from your computer for this card's back pattern"
+                          >
+                            <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                            <span className="truncate">Upload Back Art</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleManualCardUploadTrigger(contextMenu.name, 'back');
+                            setContextMenu(null);
+                          }}
+                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                          title="Upload an image file from your computer for this card's back pattern"
+                        >
+                          <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                          <span className="truncate">Upload Back Art</span>
+                        </button>
+                      )}
                       {assetViewMode !== 'plugins' && (
                         <button
                           onClick={async (e) => {
@@ -7938,6 +8205,13 @@ export default function App() {
           })()}
         </AnimatePresence>
       </ErrorBoundary>
+      <input
+        type="file"
+        ref={manualFrontUploadInputRef}
+        className="hidden"
+        accept="image/png,image/jpeg,image/jpg,image/webp"
+        onChange={handleManualFrontUploadChange}
+      />
       {activeTab === 'assets' && (assetViewMode === 'library' || assetViewMode === 'plugins') && selectedAssets.size > 0 && (
         <motion.div
           initial={{ opacity: 0, y: 50 }}
@@ -8197,32 +8471,78 @@ export default function App() {
                   ) : (
                     /* Provider Tabs */
                     <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setArtSourceTab('scryfall');
-                          handleSearchArt(artQuery || (isBacksOnlyModal ? 'Cardback' : 'Sol Ring'), undefined, 'scryfall');
-                        }}
-                        className={cn(
-                          "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                          artSourceTab === 'scryfall' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
-                        )}
-                      >
-                        Scryfall
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setArtSourceTab('mpcfill');
-                          handleSearchArt(artQuery || (isBacksOnlyModal ? 'Cardback' : 'Sol Ring'), undefined, 'mpcfill');
-                        }}
-                        className={cn(
-                          "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                          artSourceTab === 'mpcfill' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
-                        )}
-                      >
-                        MPC
-                      </button>
+                      {pluginState.selectedPlugin?.id === 'pokemon' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setArtSourceTab('limitless');
+                              handleSearchArt(artQuery || 'Pikachu', undefined, 'limitless');
+                            }}
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                              artSourceTab === 'limitless' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                            )}
+                          >
+                            Limitless TCG
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setArtSourceTab('mpcfill');
+                              handleSearchArt(artQuery || 'Pikachu', undefined, 'mpcfill');
+                            }}
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                              artSourceTab === 'mpcfill' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                            )}
+                          >
+                            MPC
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setArtSourceTab('scryfall');
+                              handleSearchArt(artQuery || (isBacksOnlyModal ? 'Cardback' : 'Sol Ring'), undefined, 'scryfall');
+                            }}
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                              artSourceTab === 'scryfall' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                            )}
+                          >
+                            Scryfall
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setArtSourceTab('mpcfill');
+                              handleSearchArt(artQuery || (isBacksOnlyModal ? 'Cardback' : 'Sol Ring'), undefined, 'mpcfill');
+                            }}
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                              artSourceTab === 'mpcfill' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                            )}
+                          >
+                            MPC
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setArtSourceTab('limitless');
+                              handleSearchArt(artQuery || 'Pikachu', undefined, 'limitless');
+                            }}
+                            className={cn(
+                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                              artSourceTab === 'limitless' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                            )}
+                          >
+                            Limitless
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -8247,7 +8567,13 @@ export default function App() {
                       type="text"
                       value={artQuery}
                       onChange={(e) => setArtQuery(e.target.value)}
-                      placeholder={isBacksOnlyModal ? "Search back patterns (e.g. Lotus, Retro, Japanese, Dark, Classic)..." : "Search card name (e.g. Black Lotus, Sol Ring, Mana Crypt, Lightning Bolt)..."}
+                      placeholder={
+                        isBacksOnlyModal 
+                          ? "Search back patterns (e.g. Lotus, Retro, Japanese, Dark, Classic)..." 
+                          : artSourceTab === 'limitless'
+                          ? "Search Pokémon cards on Limitless (e.g. Charizard, Mew, Pikachu, Dragapult)..."
+                          : "Search card name (e.g. Black Lotus, Sol Ring, Mana Crypt, Lightning Bolt)..."
+                      }
                       className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-primary-500"
                       autoFocus
                     />
@@ -8489,7 +8815,7 @@ export default function App() {
                 {isSearchingArt ? (
                   <div className="h-72 flex flex-col items-center justify-center gap-3 text-white/40">
                     <Loader2 size={36} className="animate-spin text-primary-400" />
-                    <span className="text-xs">Fetching cards & printings from {artSourceTab === 'scryfall' ? 'Scryfall API' : 'MPCFill'}...</span>
+                    <span className="text-xs">Fetching cards & printings from {artSourceTab === 'limitless' ? 'Limitless TCG' : artSourceTab === 'scryfall' ? 'Scryfall API' : 'MPCFill'}...</span>
                   </div>
                 ) : artResults.length > 0 ? (
                   <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${artCardSize}px, 1fr))` }}>
