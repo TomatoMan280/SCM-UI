@@ -622,6 +622,157 @@ const PLUGINS: PluginConfig[] = [
   }
 ];
 
+interface PluginCardProviderInfo {
+  id: string;
+  providerName: string;
+  defaultQuery: string;
+  tabLabel: string;
+  hasBacks?: boolean;
+}
+
+const PLUGIN_CARD_PROVIDERS: Record<string, PluginCardProviderInfo> = {
+  mtg: {
+    id: 'mtg',
+    providerName: 'Scryfall / MPC',
+    defaultQuery: 'Sol Ring',
+    tabLabel: 'Scryfall',
+    hasBacks: true
+  },
+  pokemon: {
+    id: 'pokemon',
+    providerName: 'Limitless TCG',
+    defaultQuery: 'Pikachu',
+    tabLabel: 'Limitless TCG'
+  },
+  yugioh: {
+    id: 'yugioh',
+    providerName: 'YGOPRODeck',
+    defaultQuery: 'Dark Magician',
+    tabLabel: 'YGOPRODeck'
+  },
+  lorcana: {
+    id: 'lorcana',
+    providerName: 'Lorcast',
+    defaultQuery: 'Mickey Mouse',
+    tabLabel: 'Lorcast'
+  },
+  one_piece: {
+    id: 'one_piece',
+    providerName: 'Limitless OPTCG',
+    defaultQuery: 'Monkey.D.Luffy',
+    tabLabel: 'Limitless OPTCG'
+  },
+  star_wars_unlimited: {
+    id: 'star_wars_unlimited',
+    providerName: 'SWUDB',
+    defaultQuery: 'Luke Skywalker',
+    tabLabel: 'SWUDB'
+  },
+  digimon: {
+    id: 'digimon',
+    providerName: 'Digimoncard',
+    defaultQuery: 'Agumon',
+    tabLabel: 'Digimoncard'
+  },
+  netrunner: {
+    id: 'netrunner',
+    providerName: 'NetrunnerDB',
+    defaultQuery: 'Sure Gamble',
+    tabLabel: 'NetrunnerDB'
+  },
+  final_fantasy: {
+    id: 'final_fantasy',
+    providerName: 'FFTCG',
+    defaultQuery: 'Cloud',
+    tabLabel: 'FFTCG'
+  },
+  arkham_horror_lcg: {
+    id: 'arkham_horror_lcg',
+    providerName: 'ArkhamDB',
+    defaultQuery: 'Machete',
+    tabLabel: 'ArkhamDB'
+  },
+  lotr_lcg: {
+    id: 'lotr_lcg',
+    providerName: 'RingsDB',
+    defaultQuery: 'Gandalf',
+    tabLabel: 'RingsDB'
+  },
+  ashes_reborn: {
+    id: 'ashes_reborn',
+    providerName: 'Ashes.live',
+    defaultQuery: 'Chant',
+    tabLabel: 'Ashes.live'
+  },
+  keyforge: {
+    id: 'keyforge',
+    providerName: 'Archon Arcana',
+    defaultQuery: 'Bimawithpencil',
+    tabLabel: 'Archon Arcana'
+  },
+  grand_archive: {
+    id: 'grand_archive',
+    providerName: 'GATCG',
+    defaultQuery: 'Lorraine',
+    tabLabel: 'GATCG'
+  },
+  flesh_and_blood: {
+    id: 'flesh_and_blood',
+    providerName: 'CardVault',
+    defaultQuery: 'Command and Conquer',
+    tabLabel: 'CardVault'
+  },
+  gundam: {
+    id: 'gundam',
+    providerName: 'Limitless Gundam',
+    defaultQuery: 'Gundam',
+    tabLabel: 'Limitless Gundam'
+  },
+  sorcery_contested_realm: {
+    id: 'sorcery_contested_realm',
+    providerName: 'Curiosa',
+    defaultQuery: 'Pudge Butcher',
+    tabLabel: 'Curiosa'
+  },
+  elestrals: {
+    id: 'elestrals',
+    providerName: 'Carde.io',
+    defaultQuery: 'Centaurbor',
+    tabLabel: 'Carde.io'
+  },
+  riftbound: {
+    id: 'riftbound',
+    providerName: 'Piltover Archive',
+    defaultQuery: 'A01-001',
+    tabLabel: 'Piltover Archive'
+  },
+  bushiroad: {
+    id: 'bushiroad',
+    providerName: 'Deck Log',
+    defaultQuery: 'Vanguard',
+    tabLabel: 'Deck Log'
+  },
+  echoes_of_astra: {
+    id: 'echoes_of_astra',
+    providerName: 'Astra Builder',
+    defaultQuery: 'Cadaver Supplier',
+    tabLabel: 'Astra Builder'
+  },
+  altered: {
+    id: 'altered',
+    providerName: 'Altered',
+    defaultQuery: 'Hero',
+    tabLabel: 'Altered'
+  }
+};
+
+const getPluginCardProvider = (pluginId?: string): PluginCardProviderInfo => {
+  if (pluginId && PLUGIN_CARD_PROVIDERS[pluginId]) {
+    return PLUGIN_CARD_PROVIDERS[pluginId];
+  }
+  return PLUGIN_CARD_PROVIDERS.mtg;
+};
+
 interface AppStatus {
   installed: boolean;
   version: string;
@@ -2514,7 +2665,7 @@ export default function App() {
   // Scryfall / Custom Art Picker State
   // Selected Card for Art Picker
   const [artTargetCard, setArtTargetCard] = useState<{ name: string; type: 'front' | 'back' | 'double_sided'; targetMode?: 'front' | 'double_sided' | 'back' } | null>(null);
-  const [artSourceTab, setArtSourceTab] = useState<'scryfall' | 'mpcfill' | 'limitless'>('scryfall');
+  const [artSourceTab, setArtSourceTab] = useState<string>('scryfall');
   const [artCardSize, setArtCardSize] = useState(() => {
     return parseInt(localStorage.getItem('scm_art_card_size') || '150');
   });
@@ -2559,13 +2710,14 @@ export default function App() {
   const [isSearchingArt, setIsSearchingArt] = useState(false);
   const [artDownloadMsg, setArtDownloadMsg] = useState<string | null>(null);
 
-  const handleSearchArt = async (name: string, customFilters?: any, sourceOverride?: 'scryfall' | 'mpcfill' | 'limitless') => {
+  const handleSearchArt = async (name: string, customFilters?: any, sourceOverride?: string) => {
+    const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
     const activeSource = sourceOverride || artSourceTab;
     const queryTerm = (name || '').trim();
     setIsSearchingArt(true);
     setArtDownloadMsg(null);
     try {
-      if (activeSource === 'limitless') {
+      if (activeSource === 'limitless' || (currentPluginId === 'pokemon' && activeSource !== 'mpcfill')) {
         const res = await fetch(`/api/limitless/search?q=${encodeURIComponent(queryTerm)}`);
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
@@ -2596,7 +2748,7 @@ export default function App() {
           setArtResults([]);
           setArtDownloadMsg("No matching cards found in MPCFill.");
         }
-      } else {
+      } else if (activeSource === 'scryfall' && currentPluginId === 'mtg') {
         const sf = customFilters || scryfallFilters;
         const params = new URLSearchParams({
           q: queryTerm || '',
@@ -2614,6 +2766,20 @@ export default function App() {
         } else {
           setArtResults([]);
           setArtDownloadMsg(data.details || "No matching card printings found.");
+        }
+      } else {
+        const targetPlugin = activeSource in PLUGIN_CARD_PROVIDERS ? activeSource : currentPluginId;
+        const prov = getPluginCardProvider(targetPlugin);
+        const res = await fetch(`/api/plugin/cards/search?plugin=${encodeURIComponent(targetPlugin)}&q=${encodeURIComponent(queryTerm)}`);
+        const data = await res.json();
+        if (data.data && Array.isArray(data.data)) {
+          setArtResults(data.data);
+          if (data.data.length === 0) {
+            setArtDownloadMsg(`No matching cards found for "${queryTerm}" on ${prov.providerName}.`);
+          }
+        } else {
+          setArtResults([]);
+          setArtDownloadMsg(data.error || `Search failed on ${prov.providerName}.`);
         }
       }
     } catch (e: any) {
@@ -2666,7 +2832,8 @@ export default function App() {
     }
   };
 
-  const openArtPickerForCard = (cardFilename: string, type: 'front' | 'back' | 'double_sided' = 'front', targetMode: 'front' | 'double_sided' | 'back' = 'front', preferredSource?: 'scryfall' | 'limitless' | 'mpcfill') => {
+  const openArtPickerForCard = (cardFilename: string, type: 'front' | 'back' | 'double_sided' = 'front', targetMode: 'front' | 'double_sided' | 'back' = 'front', preferredSource?: string) => {
+    const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
     const isBack = type === 'back' && targetMode !== 'double_sided';
     setIsBacksOnlyModal(isBack);
     if (isBack) {
@@ -2676,7 +2843,7 @@ export default function App() {
       setIsArtPickerOpen(true);
     } else if (targetMode === 'double_sided') {
       const cleaned = cleanCardName(cardFilename);
-      const defaultSource = preferredSource || (pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : 'scryfall');
+      const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
       setArtSourceTab(defaultSource);
       setArtTargetCard({ name: cardFilename, type: 'double_sided', targetMode: 'double_sided' });
       setArtQuery(cleaned);
@@ -2686,7 +2853,7 @@ export default function App() {
       }
     } else {
       const cleaned = cleanCardName(cardFilename);
-      const defaultSource = preferredSource || (pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : 'scryfall');
+      const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
       setArtSourceTab(defaultSource);
       setArtTargetCard({ name: cardFilename, type, targetMode: 'front' });
       setArtQuery(cleaned);
@@ -2697,17 +2864,19 @@ export default function App() {
     }
   };
 
-  const openAddCardPicker = (source: 'limitless' | 'scryfall' = 'limitless', type: 'front' | 'back' = 'front') => {
+  const openAddCardPicker = (source?: string, type: 'front' | 'back' = 'front') => {
+    const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
+    const provider = getPluginCardProvider(currentPluginId);
+    const defaultSource = source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
     setIsBacksOnlyModal(type === 'back');
-    setArtSourceTab(source);
+    setArtSourceTab(defaultSource);
     setArtTargetCard(null);
-    setArtQuery('');
+    const initialQuery = provider.defaultQuery;
+    setArtQuery(initialQuery);
     setArtResults([]);
     setArtDownloadMsg(null);
     setIsArtPickerOpen(true);
-    if (source === 'limitless') {
-      handleSearchArt('Pikachu', undefined, 'limitless');
-    }
+    handleSearchArt(initialQuery, undefined, defaultSource);
   };
 
   const [pluginState, setPluginState] = useState(() => {
@@ -2735,13 +2904,15 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (pluginState.selectedPlugin?.id === 'pokemon') {
-      if (artSourceTab !== 'limitless') {
-        setArtSourceTab('limitless');
+    const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
+    if (currentPluginId === 'mtg') {
+      if (artSourceTab !== 'scryfall' && artSourceTab !== 'mpcfill') {
+        setArtSourceTab('scryfall');
       }
     } else {
-      if (artSourceTab === 'limitless') {
-        setArtSourceTab('scryfall');
+      const targetSource = currentPluginId === 'pokemon' ? 'limitless' : currentPluginId;
+      if (artSourceTab !== targetSource) {
+        setArtSourceTab(targetSource);
       }
     }
   }, [pluginState.selectedPlugin?.id]);
@@ -5695,8 +5866,8 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Direct Card Ingestion from Scryfall/MPC (MTG) or Limitless TCG (Pokémon) */}
-                              {(pluginState.selectedPlugin.id === 'mtg' || pluginState.selectedPlugin.id === 'pokemon') && (
+                              {/* Direct Card Ingestion for Every Plugin */}
+                              {pluginState.selectedPlugin && pluginState.selectedPlugin.id !== 'custom_script_upload' && (
                                 <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
                                   <div className="space-y-0.5 flex-1">
                                     <div className="flex items-center gap-2">
@@ -5704,36 +5875,17 @@ export default function App() {
                                       <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
                                     </div>
                                     <p className="text-[11px] text-white/50">
-                                      {pluginState.selectedPlugin.id === 'pokemon'
-                                        ? "Search any Pokémon card on Limitless TCG and add directly into your project workspace without needing a decklist."
-                                        : "Search any card or backing by name and add directly into your project workspace without needing a decklist."}
+                                      Search any {pluginState.selectedPlugin.name} card on {getPluginCardProvider(pluginState.selectedPlugin.id).providerName} and add directly into your project workspace without needing a decklist.
                                     </p>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                                    {pluginState.selectedPlugin.id === 'pokemon' ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openAddCardPicker('limitless', 'front')}
-                                        className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
-                                      >
-                                        <PlusCircle size={15} /> Add Cards from Limitless TCG
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setArtTargetCard(null);
-                                          setIsBacksOnlyModal(false);
-                                          setArtSourceTab('scryfall');
-                                          if (!artQuery) setArtQuery('Black Lotus');
-                                          setIsArtPickerOpen(true);
-                                          handleSearchArt(artQuery || 'Black Lotus');
-                                        }}
-                                        className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
-                                      >
-                                        <PlusCircle size={15} /> Add Cards from Scryfall / MPC
-                                      </button>
-                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => openAddCardPicker()}
+                                      className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
+                                    >
+                                      <PlusCircle size={15} /> Add Cards from {getPluginCardProvider(pluginState.selectedPlugin.id).providerName}
+                                    </button>
                                   </div>
                                 </div>
                               )}
@@ -6292,18 +6444,18 @@ export default function App() {
                               </h3>
                             </div>
                               <div className="flex items-center gap-2">
-                                {pluginState.selectedPlugin?.id === 'pokemon' && (
+                                {pluginState.selectedPlugin?.id && pluginState.selectedPlugin.id !== 'custom_script_upload' && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      openAddCardPicker('limitless', 'front');
+                                      openAddCardPicker();
                                     }}
                                     className="px-2.5 py-1 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                                    title="Search Limitless TCG and add Pokémon card fronts to your workspace"
+                                    title={`Search ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName} and add front cards to your workspace`}
                                   >
                                     <PlusCircle size={13} />
-                                    <span>Add Front (Limitless)</span>
+                                    <span>Add Front ({getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel})</span>
                                   </button>
                                 )}
                                 <button onClick={() => setCollapsedSections(s => ({ ...s, fronts: !s.fronts }))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
@@ -7704,7 +7856,7 @@ export default function App() {
                 <div className="space-y-0.5">
                   {contextMenu.type !== 'back' ? (
                     <>
-                      {pluginState.selectedPlugin?.id === 'mtg' ? (
+                      {pluginState.selectedPlugin?.id && pluginState.selectedPlugin.id !== 'custom_script_upload' ? (
                         <>
                           <button
                             onClick={(e) => {
@@ -7713,49 +7865,22 @@ export default function App() {
                               setContextMenu(null);
                             }}
                             className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title="Change the front face artwork of this card via Scryfall"
+                            title={`Change the front face artwork of this card via ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName}`}
                           >
                             <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Select Front Art (Scryfall)</span>
+                            <span className="truncate">Select Front Art ({getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel})</span>
                           </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleManualFrontUploadTrigger(contextMenu.name, (contextMenu.type as any) || 'front');
+                              openAddCardPicker();
                               setContextMenu(null);
                             }}
                             className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title="Upload an image file from your computer for this card's front artwork"
-                          >
-                            <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Upload Front Art</span>
-                          </button>
-                        </>
-                      ) : pluginState.selectedPlugin?.id === 'pokemon' ? (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front', 'limitless');
-                              setContextMenu(null);
-                            }}
-                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title="Search Limitless TCG to change this Pokémon card's front artwork"
-                          >
-                            <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Select Front Art (Limitless)</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openAddCardPicker('limitless', 'front');
-                              setContextMenu(null);
-                            }}
-                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title="Search Limitless TCG and add a new front card to your workspace"
+                            title={`Search ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName} and add a new front card to your workspace`}
                           >
                             <PlusCircle size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Add Front (Limitless)</span>
+                            <span className="truncate">Add Front ({getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel})</span>
                           </button>
                           <button
                             onClick={(e) => {
@@ -8483,21 +8608,7 @@ export default function App() {
                   ) : (
                     /* Provider Tabs */
                     <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
-                      {pluginState.selectedPlugin?.id === 'pokemon' ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setArtSourceTab('limitless');
-                            handleSearchArt(artQuery || 'Pikachu', undefined, 'limitless');
-                          }}
-                          className={cn(
-                            "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                            artSourceTab === 'limitless' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
-                          )}
-                        >
-                          Limitless TCG
-                        </button>
-                      ) : (
+                      {pluginState.selectedPlugin?.id === 'mtg' ? (
                         <>
                           <button
                             type="button"
@@ -8526,6 +8637,21 @@ export default function App() {
                             MPC
                           </button>
                         </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const provKey = pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : (pluginState.selectedPlugin?.id || 'pokemon');
+                            setArtSourceTab(provKey);
+                            handleSearchArt(artQuery || getPluginCardProvider(pluginState.selectedPlugin?.id).defaultQuery, undefined, provKey);
+                          }}
+                          className={cn(
+                            "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                            "bg-primary-600 text-white shadow-lg shadow-primary-600/30"
+                          )}
+                        >
+                          {getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel}
+                        </button>
                       )}
                     </div>
                   )}
@@ -8554,9 +8680,7 @@ export default function App() {
                       placeholder={
                         isBacksOnlyModal 
                           ? "Search back patterns (e.g. Lotus, Retro, Japanese, Dark, Classic)..." 
-                          : artSourceTab === 'limitless'
-                          ? "Search Pokémon cards on Limitless (e.g. Charizard, Mew, Pikachu, Dragapult)..."
-                          : "Search card name (e.g. Black Lotus, Sol Ring, Mana Crypt, Lightning Bolt)..."
+                          : `Search ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName} cards (e.g. ${getPluginCardProvider(pluginState.selectedPlugin?.id).defaultQuery})...`
                       }
                       className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-primary-500"
                       autoFocus
@@ -8768,7 +8892,7 @@ export default function App() {
                 )}
 
                 <div className="flex justify-between items-center pt-2">
-                  {artSourceTab !== 'limitless' ? (
+                  {pluginState.selectedPlugin?.id === 'mtg' ? (
                     <button
                       onClick={() => {
                         setScryfallFilters({ frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' });

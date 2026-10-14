@@ -2035,6 +2035,413 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
   });
 
+  // Universal Plugin Direct Card Ingestion Endpoint
+  let cachedArkhamCards: any[] | null = null;
+  let cachedRingsCards: any[] | null = null;
+
+  app.get("/api/plugin/cards/search", async (req, res) => {
+    const plugin = (req.query.plugin as string || '').trim().toLowerCase();
+    const q = (req.query.q as string || '').trim();
+
+    if (!q) {
+      return res.json({ success: true, count: 0, data: [] });
+    }
+
+    try {
+      let results: any[] = [];
+
+      switch (plugin) {
+        case 'yugioh': {
+          let response = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(q)}`);
+          if (!response.ok) {
+            response = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?name=${encodeURIComponent(q)}`);
+          }
+          if (response.ok) {
+            const json: any = await response.json();
+            const items = (json.data || []).slice(0, 40);
+            results = items.map((c: any) => ({
+              id: String(c.id),
+              name: c.name,
+              set: c.card_sets?.[0]?.set_code || 'YGO',
+              set_name: c.card_sets?.[0]?.set_name || 'Yu-Gi-Oh!',
+              collector_number: String(c.id),
+              imageUrl: c.card_images?.[0]?.image_url || `https://images.ygoprodeck.com/images/cards/${c.id}.jpg`,
+              thumbnailUrl: c.card_images?.[0]?.image_url_small || `https://images.ygoprodeck.com/images/cards_small/${c.id}.jpg`
+            }));
+          }
+          break;
+        }
+
+        case 'lorcana': {
+          const response = await fetch(`https://api.lorcast.com/v0/cards/search?q=${encodeURIComponent(q)}`, {
+            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+          });
+          if (response.ok) {
+            const json: any = await response.json();
+            const items = (json.results || []).slice(0, 40);
+            results = items.map((c: any) => {
+              const img = c.image_uris?.digital?.large || c.image_uris?.digital?.normal || c.image_uris?.digital?.small;
+              return {
+                id: c.id,
+                name: c.name,
+                set: c.set?.code || 'LOR',
+                set_name: c.set?.name || 'Disney Lorcana',
+                collector_number: c.collector_number || '1',
+                imageUrl: img,
+                thumbnailUrl: c.image_uris?.digital?.small || img
+              };
+            }).filter((c: any) => !!c.imageUrl);
+          }
+          break;
+        }
+
+        case 'star_wars_unlimited': {
+          const response = await fetch(`https://swudb.com/api/search/${encodeURIComponent(q)}?grouping=cards&sortorder=setno&sortdir=desc`, {
+            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+          });
+          if (response.ok) {
+            const json: any = await response.json();
+            const printings = (json.printings || []).slice(0, 40);
+            results = printings.map((p: any) => {
+              const cardName = p.cardName || p.name || q;
+              const title = p.subtitle ? `, ${p.subtitle}` : '';
+              const artRef = (p.frontImagePath || '').replace(/^.*cards\//, '');
+              const img = artRef ? `https://swudb.com/images/cards/${artRef}` : '';
+              return {
+                id: `${p.set || 'SWU'}_${p.number || '1'}`,
+                name: `${cardName}${title}`,
+                set: p.set || 'SWU',
+                set_name: p.setName || 'Star Wars: Unlimited',
+                collector_number: String(p.number || '1'),
+                imageUrl: img,
+                thumbnailUrl: img
+              };
+            }).filter((c: any) => !!c.imageUrl);
+          }
+          break;
+        }
+
+        case 'digimon': {
+          const response = await fetch(`https://digimoncard.io/api-public/search.php?n=${encodeURIComponent(q)}`);
+          if (response.ok) {
+            const json: any = await response.json();
+            if (Array.isArray(json)) {
+              results = json.slice(0, 40).map((c: any) => {
+                const id = c.id || c.cardnumber || '';
+                const img = `https://world.digimoncard.com/images/cardlist/card/${id}.png`;
+                const thumb = `https://images.digimoncard.io/images/cards/${id}.jpg`;
+                return {
+                  id,
+                  name: c.name,
+                  set: c.set_name || 'Digimon',
+                  set_name: c.set_name || 'Digimon Card Game',
+                  collector_number: id,
+                  imageUrl: img,
+                  thumbnailUrl: thumb
+                };
+              });
+            }
+          }
+          break;
+        }
+
+        case 'one_piece': {
+          const response = await fetch(`https://onepiece.limitlesstcg.com/cards?q=${encodeURIComponent(q)}&display=list`, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            }
+          });
+          if (response.ok) {
+            const html = await response.text();
+            const rowRegex = /<tr\s+data-hover="([^"]+)"[^>]*>[\s\S]*?<td><a[^>]*>([^<]+)<\/a><\/td>[\s\S]*?<td><a[^>]*>([^<]+)<\/a><\/td>/g;
+            let m;
+            while ((m = rowRegex.exec(html)) !== null && results.length < 40) {
+              const imgUrl = m[1];
+              const cardNum = m[2].trim();
+              const cardName = m[3].replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+              results.push({
+                id: cardNum,
+                name: cardName,
+                set: cardNum.split('-')[0] || 'OP',
+                set_name: 'One Piece Card Game',
+                collector_number: cardNum,
+                imageUrl: imgUrl,
+                thumbnailUrl: imgUrl
+              });
+            }
+          }
+          break;
+        }
+
+        case 'netrunner': {
+          const response = await fetch(`https://api.netrunnerdb.com/api/v3/public/cards?filter[search]=${encodeURIComponent(q)}`, {
+            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+          });
+          if (response.ok) {
+            const json: any = await response.json();
+            const items = (json.data || []).slice(0, 40);
+            results = items.map((c: any) => {
+              const printId = c.attributes?.latest_printing_id;
+              const imgUrl = printId ? `https://nro-public.s3.nl-ams.scw.cloud/nro/card-printings/v2/webp/english/card/${printId}.webp` : '';
+              return {
+                id: c.id,
+                name: c.attributes?.title || q,
+                set: 'NR',
+                set_name: 'Android: Netrunner',
+                collector_number: String(printId || '1'),
+                imageUrl: imgUrl,
+                thumbnailUrl: imgUrl
+              };
+            }).filter((c: any) => !!c.imageUrl);
+          }
+          break;
+        }
+
+        case 'final_fantasy': {
+          const response = await fetch('https://fftcg.square-enix-games.com/na/get-cards', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'User-Agent': 'silhouette-card-maker/0.1' },
+            body: JSON.stringify({ language: 'en', text: q, exactmatch: 0 })
+          });
+          if (response.ok) {
+            const json: any = await response.json();
+            const cards = (json.cards || []).slice(0, 40);
+            results = cards.map((c: any) => {
+              const img = c.images?.full?.[0] || '';
+              return {
+                id: c.code,
+                name: c.name_en || c.name,
+                set: c.set?.[0] || 'FF',
+                set_name: 'Final Fantasy TCG',
+                collector_number: c.code,
+                imageUrl: img,
+                thumbnailUrl: c.images?.thumbs?.[0] || img
+              };
+            }).filter((c: any) => !!c.imageUrl);
+          }
+          break;
+        }
+
+        case 'arkham_horror_lcg': {
+          if (!cachedArkhamCards) {
+            const response = await fetch('https://arkhamdb.com/api/public/cards/', {
+              headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+            });
+            if (response.ok) {
+              cachedArkhamCards = await response.json();
+            }
+          }
+          if (cachedArkhamCards && Array.isArray(cachedArkhamCards)) {
+            const queryLower = q.toLowerCase();
+            const matches = cachedArkhamCards
+              .filter((c: any) => c.name && c.name.toLowerCase().includes(queryLower) && c.imagesrc)
+              .slice(0, 40);
+            results = matches.map((c: any) => ({
+              id: c.code,
+              name: c.subname ? `${c.name}: ${c.subname}` : c.name,
+              set: c.pack_code || 'AH',
+              set_name: c.pack_name || 'Arkham Horror: The Card Game',
+              collector_number: c.code,
+              imageUrl: `https://arkhamdb.com${c.imagesrc}`,
+              thumbnailUrl: `https://arkhamdb.com${c.imagesrc}`
+            }));
+          }
+          break;
+        }
+
+        case 'lotr_lcg': {
+          if (!cachedRingsCards) {
+            const response = await fetch('https://ringsdb.com/api/public/cards/', {
+              headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+            });
+            if (response.ok) {
+              cachedRingsCards = await response.json();
+            }
+          }
+          if (cachedRingsCards && Array.isArray(cachedRingsCards)) {
+            const queryLower = q.toLowerCase();
+            const matches = cachedRingsCards
+              .filter((c: any) => c.name && c.name.toLowerCase().includes(queryLower) && c.imagesrc)
+              .slice(0, 40);
+            results = matches.map((c: any) => ({
+              id: c.code,
+              name: c.name,
+              set: c.pack_code || 'LOTR',
+              set_name: c.pack_name || 'The Lord of the Rings: LCG',
+              collector_number: c.code,
+              imageUrl: `https://ringsdb.com${c.imagesrc}`,
+              thumbnailUrl: `https://ringsdb.com${c.imagesrc}`
+            }));
+          }
+          break;
+        }
+
+        case 'ashes_reborn': {
+          const response = await fetch(`https://api.ashes.live/v2/cards?q=${encodeURIComponent(q)}`, {
+            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+          });
+          if (response.ok) {
+            const json: any = await response.json();
+            const items = (json.results || []).slice(0, 40);
+            results = items.map((c: any) => ({
+              id: c.stub,
+              name: c.name,
+              set: c.release?.name || 'Ashes',
+              set_name: c.release?.name || 'Ashes Reborn',
+              collector_number: c.stub,
+              imageUrl: `https://cdn.ashes.live/images/cards/${c.stub}.jpg`,
+              thumbnailUrl: `https://cdn.ashes.live/images/cards/${c.stub}.jpg`
+            }));
+          }
+          break;
+        }
+
+        case 'echoes_of_astra': {
+          const response = await fetch(`https://pphqxjttokwymgemkqvh.supabase.co/rest/v1/cards?name=ilike.*${encodeURIComponent(q)}*&select=*&limit=40`, {
+            headers: {
+              'ApiKey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwaHF4anR0b2t3eW1nZW1rcXZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzQ3OTcsImV4cCI6MjA3NDMxMDc5N30.z-xZSeC4Jl_s3EpeoCXfD8nl6Q4yDV6EohAgmsSUaS0'
+            }
+          });
+          if (response.ok) {
+            const data: any = await response.json();
+            if (Array.isArray(data)) {
+              results = data.map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                set: c.raw_payload?.setId || 'Astra',
+                set_name: 'Echoes of Astra',
+                collector_number: String(c.number || c.id),
+                imageUrl: c.raw_payload?.cardImageLargeUrl || c.image_url,
+                thumbnailUrl: c.image_url
+              })).filter((c: any) => !!c.imageUrl);
+            }
+          }
+          break;
+        }
+
+        case 'keyforge': {
+          const openSearchRes = await fetch(`https://www.archonarcana.com/w139/api.php?action=opensearch&search=${encodeURIComponent(q)}&limit=15&format=json`, {
+            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+          });
+          if (openSearchRes.ok) {
+            const searchData: any = await openSearchRes.json();
+            const titles: string[] = (searchData[1] || []).slice(0, 10);
+            for (const title of titles) {
+              try {
+                const imgRes = await fetch(`https://www.archonarcana.com/w139/api.php?action=query&titles=${encodeURIComponent(title)}&prop=pageimages&piprop=original&redirects=1&format=json&formatversion=2`, {
+                  headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+                });
+                if (imgRes.ok) {
+                  const imgData: any = await imgRes.json();
+                  const page = imgData.query?.pages?.[0];
+                  const imgSrc = page?.original?.source;
+                  if (imgSrc) {
+                    results.push({
+                      id: title.replace(/\s+/g, '_'),
+                      name: title,
+                      set: 'KF',
+                      set_name: 'KeyForge',
+                      collector_number: '1',
+                      imageUrl: imgSrc,
+                      thumbnailUrl: imgSrc
+                    });
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+          break;
+        }
+
+        case 'gundam': {
+          const response = await fetch(`https://gundam.limitlesstcg.com/cards?q=${encodeURIComponent(q)}&display=list`, {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            }
+          });
+          if (response.ok) {
+            const html = await response.text();
+            const rowRegex = /<tr\s+data-hover="([^"]+)"[^>]*>[\s\S]*?<td><a[^>]*>([^<]+)<\/a><\/td>[\s\S]*?<td><a[^>]*>([^<]+)<\/a><\/td>/g;
+            let m;
+            while ((m = rowRegex.exec(html)) !== null && results.length < 40) {
+              const imgUrl = m[1];
+              const cardNum = m[2].trim();
+              const cardName = m[3].replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+              results.push({
+                id: cardNum,
+                name: cardName,
+                set: cardNum.split('-')[0] || 'GD',
+                set_name: 'Gundam Card Game',
+                collector_number: cardNum,
+                imageUrl: imgUrl,
+                thumbnailUrl: imgUrl
+              });
+            }
+          }
+          break;
+        }
+
+        case 'grand_archive': {
+          const response = await fetch(`https://api.gatcg.com/cards/search?name=${encodeURIComponent(q)}`, {
+            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+          });
+          if (response.ok) {
+            const json: any = await response.json();
+            if (Array.isArray(json)) {
+              results = json.slice(0, 40).map((c: any) => {
+                const imgSuffix = c.editions?.[0]?.image;
+                const img = imgSuffix ? `https://api.gatcg.com/${imgSuffix}` : '';
+                return {
+                  id: c.uuid || c.slug || c.name,
+                  name: c.name,
+                  set: c.editions?.[0]?.set?.prefix || 'GA',
+                  set_name: c.editions?.[0]?.set?.name || 'Grand Archive',
+                  collector_number: c.slug || '1',
+                  imageUrl: img,
+                  thumbnailUrl: img
+                };
+              }).filter((c: any) => !!c.imageUrl);
+            }
+          }
+          break;
+        }
+
+        case 'flesh_and_blood': {
+          const response = await fetch(`https://api.fabdb.net/cards?q=${encodeURIComponent(q)}`, {
+            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+          });
+          if (response.ok) {
+            const json: any = await response.json();
+            const items = (json.data || []).slice(0, 40);
+            results = items.map((c: any) => ({
+              id: c.identifier || c.name,
+              name: c.name,
+              set: c.set || 'FAB',
+              set_name: 'Flesh and Blood',
+              collector_number: c.identifier || '1',
+              imageUrl: c.image,
+              thumbnailUrl: c.image
+            })).filter((c: any) => !!c.imageUrl);
+          }
+          break;
+        }
+
+        default: {
+          // Fallback: If plugin is unrecognized or custom, return empty array with clean message
+          results = [];
+          break;
+        }
+      }
+
+      res.json({ success: true, count: results.length, data: results });
+    } catch (err: any) {
+      console.error(`[Plugin Search Error - ${plugin}]:`, err.message);
+      res.status(500).json({ error: `Card search failed for ${plugin}`, details: err.message, data: [] });
+    }
+  });
+
   // Limitless TCG Decklist Ingestion Endpoint
   app.get("/api/limitless/deck", async (req, res) => {
     let rawUrl = (req.query.url as string || '').trim();
