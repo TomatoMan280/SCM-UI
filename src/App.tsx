@@ -1850,7 +1850,11 @@ export default function App() {
   const [localAssets, setLocalAssets] = useState<Array<{ name: string, type: 'front' | 'back' | 'double_sided', view: 'project' | 'library' | 'plugins' }>>([]);
   const [isReplaceBackDialogOpen, setIsReplaceBackDialogOpen] = useState(false);
   const [pendingBackFile, setPendingBackFile] = useState<File | null>(null);
-  const [manualFrontUploadTarget, setManualFrontUploadTarget] = useState<{ name: string; type: 'front' | 'back' | 'double_sided' } | null>(null);
+  const [manualFrontUploadTarget, setManualFrontUploadTarget] = useState<{
+    name: string;
+    type: 'front' | 'back' | 'double_sided';
+    targets?: { name: string; type: 'front' | 'back' | 'double_sided' }[];
+  } | null>(null);
   const manualFrontUploadInputRef = useRef<HTMLInputElement>(null);
   const [copiedBuffer, setCopiedBuffer] = useState<string[]>([]);
   const [lastSelected, setLastSelected] = useState<string | null>(null);
@@ -2677,8 +2681,12 @@ export default function App() {
   ];
 
   // Scryfall / Custom Art Picker State
-  // Selected Card for Art Picker
-  const [artTargetCard, setArtTargetCard] = useState<{ name: string; type: 'front' | 'back' | 'double_sided'; targetMode?: 'front' | 'double_sided' | 'back' } | null>(null);
+  const [artTargetCard, setArtTargetCard] = useState<{
+    name: string;
+    type: 'front' | 'back' | 'double_sided';
+    targetMode?: 'front' | 'double_sided' | 'back';
+    targets?: { name: string; type: 'front' | 'back' | 'double_sided' }[];
+  } | null>(null);
   const [artSourceTab, setArtSourceTab] = useState<string>('scryfall');
   const [artCardSize, setArtCardSize] = useState(() => {
     return parseInt(localStorage.getItem('scm_art_card_size') || '150');
@@ -2828,7 +2836,12 @@ export default function App() {
     }
   };
 
-  const handleDownloadCardArt = async (card: any, target: 'project' | 'library' | 'plugins', type: 'front' | 'back' | 'double_sided' = 'front', replaceOriginalFilename?: string) => {
+  const handleDownloadCardArt = async (
+    card: any,
+    target: 'project' | 'library' | 'plugins',
+    type: 'front' | 'back' | 'double_sided' = 'front',
+    replaceOriginalFilename?: string | string[]
+  ) => {
     try {
       const imgUrl = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
       if (!imgUrl) {
@@ -2838,9 +2851,14 @@ export default function App() {
       const cleanTitle = (card.name || 'Card').replace(/[/\\?%*:|"<>]/g, '-').trim();
       const setTag = (card.set || 'custom').toUpperCase();
       const numTag = card.collector_number || '1';
-      const safeName = replaceOriginalFilename || (type === 'back' ? `${cleanTitle}.png` : `${cleanTitle} (${setTag} ${numTag}).png`);
 
-      setArtDownloadMsg(`Downloading ${card.name || safeName}...`);
+      const fileList: string[] = Array.isArray(replaceOriginalFilename)
+        ? replaceOriginalFilename
+        : (replaceOriginalFilename ? [replaceOriginalFilename] : []);
+
+      const safeName = fileList.length > 0 ? fileList[0] : (type === 'back' ? `${cleanTitle}.png` : `${cleanTitle} (${setTag} ${numTag}).png`);
+
+      setArtDownloadMsg(fileList.length > 1 ? `Downloading art for ${fileList.length} cards...` : `Downloading ${card.name || safeName}...`);
 
       const res = await fetch('/api/scryfall/download', {
         method: 'POST',
@@ -2848,20 +2866,31 @@ export default function App() {
         body: JSON.stringify({
           imageUrl: imgUrl,
           filename: safeName,
+          filenames: fileList.length > 0 ? fileList : undefined,
           target,
           type
         })
       });
       const data = await res.json();
       if (data.success) {
-        setArtDownloadMsg(`✓ Applied "${safeName}" as ${type === 'double_sided' ? 'reverse back' : type} to ${target}!`);
-        const finalFilename = data.filename || safeName;
-        setLocalAssets(prev => [{ name: finalFilename, type, view: target }, ...prev]);
-        setCacheBusts(prev => ({
-          ...prev,
-          [finalFilename]: Date.now(),
-          ...(replaceOriginalFilename ? { [replaceOriginalFilename]: Date.now() } : {})
-        }));
+        const affectedFiles: string[] = data.filenames || (data.filename ? [data.filename] : [safeName]);
+        const msg = affectedFiles.length > 1
+          ? `✓ Applied art to ${affectedFiles.length} selected cards!`
+          : `✓ Applied "${safeName}" as ${type === 'double_sided' ? 'reverse back' : type} to ${target}!`;
+        setArtDownloadMsg(msg);
+        addLog(`[Card Art] ${msg}`);
+
+        const now = Date.now();
+        const busts: Record<string, number> = {};
+        affectedFiles.forEach(f => { busts[f] = now; });
+        fileList.forEach(f => { busts[f] = now; });
+        setCacheBusts(prev => ({ ...prev, ...busts }));
+
+        setLocalAssets(prev => [
+          ...affectedFiles.map(f => ({ name: f, type, view: target })),
+          ...prev.filter(p => !affectedFiles.includes(p.name))
+        ]);
+
         await fetchStatus();
       } else {
         setArtDownloadMsg(`Error: ${data.error}`);
@@ -2871,21 +2900,27 @@ export default function App() {
     }
   };
 
-  const openArtPickerForCard = (cardFilename: string, type: 'front' | 'back' | 'double_sided' = 'front', targetMode: 'front' | 'double_sided' | 'back' = 'front', preferredSource?: string) => {
+  const openArtPickerForCard = (
+    cardFilename: string,
+    type: 'front' | 'back' | 'double_sided' = 'front',
+    targetMode: 'front' | 'double_sided' | 'back' = 'front',
+    preferredSource?: string,
+    targets?: { name: string; type: 'front' | 'back' | 'double_sided' }[]
+  ) => {
     const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
     if (!pluginSupportsCardIngestion(currentPluginId)) return;
     const isBack = type === 'back' && targetMode !== 'double_sided';
     setIsBacksOnlyModal(isBack);
     if (isBack) {
       setArtSourceTab('mpcfill');
-      setArtTargetCard({ name: cardFilename, type: 'back', targetMode: 'back' });
+      setArtTargetCard({ name: cardFilename, type: 'back', targetMode: 'back', targets });
       setArtQuery('');
       setIsArtPickerOpen(true);
     } else if (targetMode === 'double_sided') {
       const cleaned = cleanCardName(cardFilename);
       const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
       setArtSourceTab(defaultSource);
-      setArtTargetCard({ name: cardFilename, type: 'double_sided', targetMode: 'double_sided' });
+      setArtTargetCard({ name: cardFilename, type: 'double_sided', targetMode: 'double_sided', targets });
       setArtQuery(cleaned);
       setIsArtPickerOpen(true);
       if (cleaned) {
@@ -2895,7 +2930,7 @@ export default function App() {
       const cleaned = cleanCardName(cardFilename);
       const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
       setArtSourceTab(defaultSource);
-      setArtTargetCard({ name: cardFilename, type, targetMode: 'front' });
+      setArtTargetCard({ name: cardFilename, type, targetMode: 'front', targets });
       setArtQuery(cleaned);
       setIsArtPickerOpen(true);
       if (cleaned) {
@@ -3832,8 +3867,16 @@ export default function App() {
     }
   };
 
-  const handleManualCardUploadTrigger = (cardName: string, type: 'front' | 'back' | 'double_sided' = 'front') => {
-    setManualFrontUploadTarget({ name: cardName, type });
+  const handleManualCardUploadTrigger = (
+    cardName: string,
+    type: 'front' | 'back' | 'double_sided' = 'front',
+    targets?: { name: string; type: 'front' | 'back' | 'double_sided' }[]
+  ) => {
+    setManualFrontUploadTarget({
+      name: cardName,
+      type,
+      targets: targets && targets.length > 0 ? targets : undefined
+    });
     if (manualFrontUploadInputRef.current) {
       manualFrontUploadInputRef.current.value = '';
       manualFrontUploadInputRef.current.click();
@@ -3846,13 +3889,17 @@ export default function App() {
     if (!file || !manualFrontUploadTarget) return;
 
     const targetCard = manualFrontUploadTarget;
+    const targetCards = (targetCard.targets && targetCard.targets.length > 0)
+      ? targetCard.targets
+      : [{ name: targetCard.name, type: targetCard.type }];
+    const count = targetCards.length;
     const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
 
     try {
-      const isBack = targetCard.type === 'back';
+      const isBack = targetCard.type === 'back' || targetCard.type === 'double_sided';
       const label = isBack ? 'backing art' : 'front art';
-      setTaskProgress({ current: 0, total: 1, message: `Uploading ${label} for ${targetCard.name}...` });
-      addLog(`[Uploader] Uploading replacement ${label} for ${targetCard.name} (${file.name})...`);
+      setTaskProgress({ current: 0, total: count, message: `Uploading ${label} for ${count > 1 ? `${count} cards` : targetCard.name}...` });
+      addLog(`[Uploader] Uploading replacement ${label} for ${count > 1 ? `${count} selected cards` : targetCard.name} (${file.name})...`);
 
       const formData = new FormData();
       formData.append('file', file);
@@ -3860,6 +3907,7 @@ export default function App() {
       formData.append('target', targetMode);
       if (targetMode === 'library') formData.append('library', 'true');
       formData.append('replaceOriginalFilename', targetCard.name);
+      formData.append('replaceOriginalFilenames', JSON.stringify(targetCards.map(c => c.name)));
 
       const res = await fetch('/api/upload', {
         method: 'POST',
@@ -3872,27 +3920,35 @@ export default function App() {
       }
 
       const data = await res.json();
-      const finalFilename = data.file || targetCard.name;
+      const affectedFiles: string[] = data.files || [data.file || targetCard.name];
       const now = Date.now();
 
+      const busts: Record<string, number> = {};
+      affectedFiles.forEach(f => { busts[f] = now; });
+      targetCards.forEach(c => { busts[c.name] = now; });
       setCacheBusts(prev => ({
         ...prev,
-        [finalFilename]: now,
-        [targetCard.name]: now
+        ...busts
       }));
 
       const url = URL.createObjectURL(file);
+      const newUploaded: Record<string, string> = {};
+      affectedFiles.forEach(f => {
+        newUploaded[`${targetCard.type}_${f}`] = url;
+      });
+      targetCards.forEach(c => {
+        newUploaded[`${c.type}_${c.name}`] = url;
+      });
       setUploadedImages(prev => ({
         ...prev,
-        [`${targetCard.type}_${finalFilename}`]: url,
-        [`${targetCard.type}_${targetCard.name}`]: url
+        ...newUploaded
       }));
 
-      addLog(`[Uploader] Successfully updated front artwork for ${targetCard.name} to ${finalFilename}`);
-      setTaskProgress({ current: 1, total: 1, message: `Front art updated!` });
+      addLog(`[Uploader] Successfully updated ${label} for ${count > 1 ? `${count} cards` : targetCard.name}`);
+      setTaskProgress({ current: count, total: count, message: `${isBack ? 'Back' : 'Front'} art updated for ${count} card${count === 1 ? '' : 's'}!` });
       await fetchStatus();
     } catch (err: any) {
-      addLog(`[Error] Failed to upload replacement front art: ${err?.message || err}`);
+      addLog(`[Error] Failed to upload replacement art: ${err?.message || err}`);
       setTaskProgress({ current: 0, total: 1, message: 'Upload failed.' });
     } finally {
       setManualFrontUploadTarget(null);
@@ -3904,6 +3960,7 @@ export default function App() {
   };
 
   const handleFetchLimitlessDeckPrompt = async () => {
+    console.log('Import Limitless Deck button clicked');
     const url = window.prompt("Enter Limitless TCG Deck URL or Tournament Deck ID (e.g. https://limitlesstcg.com/decks/list/29678 or 29678):");
     if (!url || !url.trim()) return;
 
@@ -3911,6 +3968,7 @@ export default function App() {
       setTaskProgress({ current: 0, total: 1, message: "Importing deck from Limitless TCG..." });
       addLog(`[Limitless] Ingesting decklist from: ${url.trim()}...`);
       const res = await fetch(`/api/limitless/deck?url=${encodeURIComponent(url.trim())}`);
+      console.log('Limitless fetch response status:', res.status);
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Failed to fetch Limitless deck");
@@ -5449,7 +5507,7 @@ export default function App() {
                               className="flex items-center gap-2 px-3 py-2 bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 rounded-lg text-xs font-bold transition-all text-rose-500 active:scale-95"
                               title="Clear Project Assets"
                             >
-                              <Trash2 size={14} />
+      
                               Clear
                             </button>
                           )}
@@ -7892,6 +7950,10 @@ export default function App() {
             const identity = contextMenu.type ? `${contextMenu.type}:${contextMenu.name}` : contextMenu.name;
             const isMultiSelected = selectedAssets.size > 1 && selectedAssets.has(identity);
             const targets = selectedAssets.size > 0 && selectedAssets.has(identity) ? Array.from(selectedAssets) : [identity];
+            const targetCards = targets.map(target => {
+              const [itemType, itemName] = target.includes(':') ? target.split(':') : [(contextMenu.type || 'front'), target];
+              return { name: itemName, type: itemType as 'front' | 'back' | 'double_sided' };
+            });
             const modelLabel = getModelShortName(upscaleConfig.model);
             const multiplier = upscaleConfig.scaleFactor;
             const itemBaseCls = "w-full h-8.5 px-2.5 rounded-lg flex items-center gap-2.5 transition-all active:scale-[0.98] text-xs font-medium cursor-pointer";
@@ -8008,15 +8070,21 @@ export default function App() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                            openArtPickerForCard(
+                              contextMenu.name,
+                              (contextMenu.type as any) || 'front',
+                              'front',
+                              undefined,
+                              isMultiSelected ? targetCards : undefined
+                            );
                             setContextMenu(null);
                             setIsCardArtSubmenuOpen(false);
                           }}
                           className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                          title="Search and set front card artwork via card ingestion"
+                          title={isMultiSelected ? `Search and set front card artwork for all ${targets.length} selected cards via card ingestion` : "Search and set front card artwork via card ingestion"}
                         >
                           <ImageIcon size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                          <span className="truncate font-medium">Set Art (Card Ingestion)</span>
+                          <span className="truncate font-medium">Set Art (Card Ingestion){isMultiSelected ? ` (${targets.length})` : ''}</span>
                         </button>
                       )}
 
@@ -8024,15 +8092,19 @@ export default function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleManualFrontUploadTrigger(contextMenu.name, (contextMenu.type as any) || 'front');
+                          handleManualFrontUploadTrigger(
+                            contextMenu.name,
+                            (contextMenu.type as any) || 'front',
+                            isMultiSelected ? targetCards : undefined
+                          );
                           setContextMenu(null);
                           setIsCardArtSubmenuOpen(false);
                         }}
                         className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                        title="Upload front artwork file from your computer"
+                        title={isMultiSelected ? `Upload front artwork file to apply to all ${targets.length} selected cards` : "Upload front artwork file from your computer"}
                       >
                         <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate font-medium">Set Art (Manual Upload)</span>
+                        <span className="truncate font-medium">Set Art (Manual Upload){isMultiSelected ? ` (${targets.length})` : ''}</span>
                       </button>
 
                       {/* Set Back (Card Ingestion) */}
@@ -8040,19 +8112,23 @@ export default function App() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (contextMenu.type === 'back') {
-                              openArtPickerForCard(contextMenu.name, 'back', 'back');
-                            } else {
-                              openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
-                            }
+                            const backTargetMode = contextMenu.type === 'back' ? 'back' : 'double_sided';
+                            const backType = contextMenu.type === 'back' ? 'back' : ((contextMenu.type as any) || 'front');
+                            openArtPickerForCard(
+                              contextMenu.name,
+                              backType,
+                              backTargetMode,
+                              undefined,
+                              isMultiSelected ? targetCards : undefined
+                            );
                             setContextMenu(null);
                             setIsCardArtSubmenuOpen(false);
                           }}
                           className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                          title="Search and set card back pattern via card ingestion"
+                          title={isMultiSelected ? `Search and set card back pattern for all ${targets.length} selected cards via card ingestion` : "Search and set card back pattern via card ingestion"}
                         >
                           <Layers size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                          <span className="truncate font-medium">Set Back (Card Ingestion)</span>
+                          <span className="truncate font-medium">Set Back (Card Ingestion){isMultiSelected ? ` (${targets.length})` : ''}</span>
                         </button>
                       )}
 
@@ -8060,15 +8136,20 @@ export default function App() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleManualCardUploadTrigger(contextMenu.name, 'back');
+                          const backType = contextMenu.type === 'back' ? 'back' : 'double_sided';
+                          handleManualCardUploadTrigger(
+                            contextMenu.name,
+                            backType,
+                            isMultiSelected ? targetCards : undefined
+                          );
                           setContextMenu(null);
                           setIsCardArtSubmenuOpen(false);
                         }}
                         className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                        title="Upload card back pattern from your computer"
+                        title={isMultiSelected ? `Upload card back pattern to apply to all ${targets.length} selected cards` : "Upload card back pattern from your computer"}
                       >
                         <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate font-medium">Set Back (Manual Upload)</span>
+                        <span className="truncate font-medium">Set Back (Manual Upload){isMultiSelected ? ` (${targets.length})` : ''}</span>
                       </button>
 
                     </div>
@@ -8578,7 +8659,9 @@ export default function App() {
                       </h3>
                       {artTargetCard && (
                         <span className="px-2 py-0.5 rounded-full bg-primary-600/30 text-primary-300 text-[10px] font-mono border border-primary-500/30">
-                          {artTargetCard.name} ({artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})
+                          {artTargetCard.targets && artTargetCard.targets.length > 1
+                            ? `${artTargetCard.targets.length} Cards Selected (${artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})`
+                            : `${artTargetCard.name} (${artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})`}
                         </span>
                       )}
                     </div>
@@ -8698,7 +8781,7 @@ export default function App() {
 
                   {artTargetCard && (
                     <span className="text-xs text-white/40 font-mono">
-                      Target: <span className="text-primary-300 font-bold">{artTargetCard.name}</span>
+                      Target: <span className="text-primary-300 font-bold">{artTargetCard.targets && artTargetCard.targets.length > 1 ? `${artTargetCard.targets.length} Selected Cards` : artTargetCard.name}</span>
                     </span>
                   )}
                 </div>
@@ -9047,37 +9130,52 @@ export default function App() {
                                   type="button"
                                   onClick={() => {
                                     const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
-                                    handleDownloadCardArt(card, targetMode, 'double_sided', artTargetCard.name);
+                                    const names = artTargetCard.targets && artTargetCard.targets.length > 0
+                                      ? artTargetCard.targets.map(t => t.name)
+                                      : [artTargetCard.name];
+                                    handleDownloadCardArt(card, targetMode, 'double_sided', names);
                                   }}
                                   className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1"
-                                  title={`Pair this art as the reverse back of ${artTargetCard.name}`}
+                                  title={artTargetCard.targets && artTargetCard.targets.length > 1
+                                    ? `Pair this art as the reverse back of all ${artTargetCard.targets.length} selected cards`
+                                    : `Pair this art as the reverse back of ${artTargetCard.name}`}
                                 >
                                   <Layers size={12} />
-                                  <span>Set Back</span>
+                                  <span>{artTargetCard.targets && artTargetCard.targets.length > 1 ? `Set Back (${artTargetCard.targets.length} Cards)` : 'Set Back'}</span>
                                 </button>
                               ) : artTargetCard?.type === 'back' ? (
                                 <button
                                   type="button"
                                   onClick={() => {
                                     const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
-                                    handleDownloadCardArt(card, targetMode, 'back', artTargetCard.name);
+                                    const names = artTargetCard.targets && artTargetCard.targets.length > 0
+                                      ? artTargetCard.targets.map(t => t.name)
+                                      : [artTargetCard.name];
+                                    handleDownloadCardArt(card, targetMode, 'back', names);
                                   }}
                                   className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm"
-                                  title={`Replace ${artTargetCard.name} with this back`}
+                                  title={artTargetCard.targets && artTargetCard.targets.length > 1
+                                    ? `Replace all ${artTargetCard.targets.length} selected card backs with this back`
+                                    : `Replace ${artTargetCard.name} with this back`}
                                 >
-                                  Replace This Back
+                                  {artTargetCard.targets && artTargetCard.targets.length > 1 ? `Replace Back (${artTargetCard.targets.length} Cards)` : 'Replace This Back'}
                                 </button>
                               ) : artTargetCard?.targetMode === 'front' ? (
                                 <button
                                   type="button"
                                   onClick={() => {
                                     const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
-                                    handleDownloadCardArt(card, targetMode, 'front', artTargetCard.name);
+                                    const names = artTargetCard.targets && artTargetCard.targets.length > 0
+                                      ? artTargetCard.targets.map(t => t.name)
+                                      : [artTargetCard.name];
+                                    handleDownloadCardArt(card, targetMode, 'front', names);
                                   }}
                                   className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm"
-                                  title={`Replace ${artTargetCard.name} with this art`}
+                                  title={artTargetCard.targets && artTargetCard.targets.length > 1
+                                    ? `Replace front art for all ${artTargetCard.targets.length} selected cards with this art`
+                                    : `Replace ${artTargetCard.name} with this art`}
                                 >
-                                  Replace Front Art
+                                  {artTargetCard.targets && artTargetCard.targets.length > 1 ? `Replace Front Art (${artTargetCard.targets.length} Cards)` : 'Replace Front Art'}
                                 </button>
                               ) : isBacksOnlyModal ? (
                                 <button

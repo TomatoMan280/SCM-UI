@@ -1297,6 +1297,17 @@ async function startServer() {
     const type = req.body.type === 'back' ? 'back' : (req.body.type === 'double_sided' ? 'double_sided' : 'front');
     const replaceBack = req.body.replaceBack === 'true';
     const replaceOriginalFilename = req.body.replaceOriginalFilename;
+    let replaceOriginalFilenames: string[] | null = null;
+    if (req.body.replaceOriginalFilenames) {
+      try {
+        const parsed = typeof req.body.replaceOriginalFilenames === 'string'
+          ? JSON.parse(req.body.replaceOriginalFilenames)
+          : req.body.replaceOriginalFilenames;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          replaceOriginalFilenames = parsed;
+        }
+      } catch (_) {}
+    }
     
     const targetBase = isPlugins ? pluginsPath : (isLibrary ? libraryPath : path.join(scmPath, 'game'));
     const targetDir = path.join(targetBase, type);
@@ -1308,6 +1319,31 @@ async function startServer() {
             const existing = fs.readdirSync(targetDir);
             existing.forEach(f => fs.unlinkSync(path.join(targetDir, f)));
         } catch(e) {}
+    }
+
+    if (replaceOriginalFilenames && replaceOriginalFilenames.length > 0) {
+      const ext = path.extname(req.file.originalname) || '.png';
+      const createdFiles: string[] = [];
+      for (const origName of replaceOriginalFilenames) {
+        const fileExt = path.extname(origName) || ext;
+        const baseName = path.parse(origName).name;
+        const fname = `${baseName}${fileExt}`;
+        const oldPath = path.join(targetDir, origName);
+        const newPath = path.join(targetDir, fname);
+        if (fs.existsSync(oldPath) && oldPath !== newPath) {
+          try { fs.unlinkSync(oldPath); } catch (e) {}
+        }
+        fs.copyFileSync(req.file.path, newPath);
+        createdFiles.push(fname);
+      }
+      try { fs.unlinkSync(req.file.path); } catch (e) {}
+      return res.json({
+        success: true,
+        message: `Uploaded art for ${createdFiles.length} card(s)`,
+        files: createdFiles,
+        file: createdFiles[0],
+        targetPath: path.join(targetDir, createdFiles[0])
+      });
     }
 
     let finalFilename = req.file.originalname;
@@ -1328,7 +1364,7 @@ async function startServer() {
     fs.copyFileSync(req.file.path, targetPath);
     try { fs.unlinkSync(req.file.path); } catch (e) {}
 
-    res.json({ success: true, message: `Uploaded ${finalFilename}`, file: finalFilename, targetPath });
+    res.json({ success: true, message: `Uploaded ${finalFilename}`, file: finalFilename, files: [finalFilename], targetPath });
   });
 
 
@@ -1851,9 +1887,12 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
   });
 
   app.post("/api/scryfall/download", async (req, res) => {
-    const { imageUrl, filename, target, type } = req.body;
-    if (!imageUrl || !filename) {
-      return res.status(400).json({ error: "imageUrl and filename are required" });
+    const { imageUrl, filename, filenames, target, type } = req.body;
+    const fileList: string[] = Array.isArray(filenames) && filenames.length > 0
+      ? filenames
+      : (filename ? [filename] : []);
+    if (!imageUrl || fileList.length === 0) {
+      return res.status(400).json({ error: "imageUrl and filename/filenames are required" });
     }
 
     try {
@@ -1867,11 +1906,6 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
         fs.mkdirSync(destDir, { recursive: true });
       }
 
-      const safeFilename = filename.endsWith('.png') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? filename : `${filename}.png`;
-      const filePath = path.join(destDir, safeFilename);
-
-      console.log(`[Art Download] Target: ${target}, Type: ${destType}, File: ${filePath}`);
-
       const headers: Record<string, string> = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
@@ -1881,10 +1915,25 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
       if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
 
       const arrayBuffer = await response.arrayBuffer();
-      fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
+      const buffer = Buffer.from(arrayBuffer);
 
-      console.log(`[Art Download] Successfully saved ${destType} image: ${safeFilename} (${arrayBuffer.byteLength} bytes)`);
-      res.json({ success: true, filename: safeFilename, path: filePath, size: arrayBuffer.byteLength });
+      const createdFiles: string[] = [];
+      for (const fn of fileList) {
+        const safeFilename = fn.endsWith('.png') || fn.endsWith('.jpg') || fn.endsWith('.jpeg') ? fn : `${fn}.png`;
+        const filePath = path.join(destDir, safeFilename);
+        fs.writeFileSync(filePath, buffer);
+        createdFiles.push(safeFilename);
+      }
+
+      console.log(`[Art Download] Target: ${target}, Type: ${destType}, Saved ${createdFiles.length} file(s): ${createdFiles.join(', ')} (${arrayBuffer.byteLength} bytes)`);
+      res.json({
+        success: true,
+        filename: createdFiles[0],
+        filenames: createdFiles,
+        count: createdFiles.length,
+        path: path.join(destDir, createdFiles[0]),
+        size: arrayBuffer.byteLength
+      });
     } catch (err: any) {
       console.error(`[Art Download Error]:`, err.message);
       res.status(500).json({ error: "Failed to download card art", details: err.message });
