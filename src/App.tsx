@@ -5943,7 +5943,7 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Direct Card Ingestion for Supported Plugins */}
+                              {/* Direct Card Ingestion */}
                               {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
                                 <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
                                   <div className="space-y-0.5 flex-1">
@@ -5952,7 +5952,7 @@ export default function App() {
                                       <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
                                     </div>
                                     <p className="text-[11px] text-white/50">
-                                      Search any {pluginState.selectedPlugin.name} card on {getPluginCardProvider(pluginState.selectedPlugin.id).providerName} and add directly into your project workspace without needing a decklist.
+                                      Search any card or backing by name and add directly into your project workspace without needing a decklist.
                                     </p>
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
@@ -5961,7 +5961,7 @@ export default function App() {
                                       onClick={() => openAddCardPicker()}
                                       className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
                                     >
-                                      <PlusCircle size={15} /> Add Cards from {getPluginCardProvider(pluginState.selectedPlugin.id).providerName}
+                                      <PlusCircle size={15} /> Direct Card Ingestion
                                     </button>
                                   </div>
                                 </div>
