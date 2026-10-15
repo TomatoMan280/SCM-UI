@@ -2901,6 +2901,22 @@ export default function App() {
     }
   };
 
+  const openAddCardPicker = (source?: string, type: 'front' | 'back' = 'front') => {
+    const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
+    if (!pluginSupportsCardIngestion(currentPluginId)) return;
+    const provider = getPluginCardProvider(currentPluginId);
+    const defaultSource = source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
+    setIsBacksOnlyModal(type === 'back');
+    setArtSourceTab(defaultSource);
+    setArtTargetCard(null);
+    const initialQuery = provider.defaultQuery;
+    setArtQuery(initialQuery);
+    setArtResults([]);
+    setArtDownloadMsg(null);
+    setIsArtPickerOpen(true);
+    handleSearchArt(initialQuery, undefined, defaultSource);
+  };
+
   const [pluginState, setPluginState] = useState(() => {
     const saved = localStorage.getItem('scm_plugin_state');
     if (saved) {
@@ -5784,30 +5800,7 @@ export default function App() {
                                             />
                                           ) : opt.type === 'text' ? (
                                             <div className="space-y-1.5 relative">
-                                              <div className="flex items-center justify-between">
-                                                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 block">{opt.label}</span>
-                                                {(opt.flag === '-s' || opt.flag === '--ignore_set') && (
-                                                  <MtgSetCodeTooltip
-                                                    mtgSets={mtgSets}
-                                                    mode="append"
-                                                    label="Browse Sets"
-                                                    onSelectSet={(code) => {
-                                                      setPluginState(prev => {
-                                                        const current = (prev.options[opt.flag] as string) || '';
-                                                        const parts = current.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-                                                        if (!parts.includes(code.toUpperCase())) {
-                                                          parts.push(code.toUpperCase());
-                                                        }
-                                                        return {
-                                                          ...prev,
-                                                          options: { ...prev.options, [opt.flag]: parts.join(', ') }
-                                                        };
-                                                      });
-                                                    }}
-                                                    align="right"
-                                                  />
-                                                )}
-                                              </div>
+                                              <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 block">{opt.label}</span>
                                               <input
                                                 type="text"
                                                 value={(pluginState.options[opt.flag] as string) || ''}
@@ -5816,7 +5809,6 @@ export default function App() {
                                                   options: { ...prev.options, [opt.flag]: e.target.value }
                                                 }))}
                                                 placeholder="e.g. eld, woe"
-                                                title={opt.flag === '-s' || opt.flag === '--ignore_set' ? "Enter comma-separated MTG set codes (e.g. MH3, ELD). Hover 'Browse Sets' above to view all sets." : undefined}
                                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono transition-colors"
                                               />
                                             </div>
@@ -5947,6 +5939,30 @@ export default function App() {
                                   <div className="space-y-1">
                                     <span className="font-bold text-white/70 block uppercase tracking-wider text-[10px]">Format Guideline</span>
                                     <p className="leading-relaxed">{FORMAT_HINTS[pluginState.format]}</p>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Direct Card Ingestion for Supported Plugins */}
+                              {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
+                                <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+                                  <div className="space-y-0.5 flex-1">
+                                    <div className="flex items-center gap-2">
+                                      <PlusCircle size={16} className="text-primary-400" />
+                                      <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
+                                    </div>
+                                    <p className="text-[11px] text-white/50">
+                                      Search any {pluginState.selectedPlugin.name} card on {getPluginCardProvider(pluginState.selectedPlugin.id).providerName} and add directly into your project workspace without needing a decklist.
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                                    <button
+                                      type="button"
+                                      onClick={() => openAddCardPicker()}
+                                      className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
+                                    >
+                                      <PlusCircle size={15} /> Add Cards from {getPluginCardProvider(pluginState.selectedPlugin.id).providerName}
+                                    </button>
                                   </div>
                                 </div>
                               )}
