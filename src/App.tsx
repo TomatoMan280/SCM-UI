@@ -631,6 +631,32 @@ interface PluginCardProviderInfo {
   hasBacks?: boolean;
 }
 
+export const INGESTION_SUPPORTED_PLUGINS = new Set<string>([
+  'mtg',
+  'pokemon',
+  'yugioh',
+  'lorcana',
+  'one_piece',
+  'star_wars_unlimited',
+  'sorcery_contested_realm',
+  'digimon',
+  'netrunner',
+  'final_fantasy',
+  'arkham_horror_lcg',
+  'lotr_lcg',
+  'ashes_reborn',
+  'echoes_of_astra',
+  'keyforge',
+  'grand_archive',
+  'flesh_and_blood',
+  'gundam'
+]);
+
+export const pluginSupportsCardIngestion = (pluginId?: string): boolean => {
+  if (!pluginId) return false;
+  return INGESTION_SUPPORTED_PLUGINS.has(pluginId.toLowerCase());
+};
+
 const PLUGIN_CARD_PROVIDERS: Record<string, PluginCardProviderInfo> = {
   mtg: {
     id: 'mtg',
@@ -735,35 +761,11 @@ const PLUGIN_CARD_PROVIDERS: Record<string, PluginCardProviderInfo> = {
     defaultQuery: 'Pudge Butcher',
     tabLabel: 'Curiosa'
   },
-  elestrals: {
-    id: 'elestrals',
-    providerName: 'Carde.io',
-    defaultQuery: 'Centaurbor',
-    tabLabel: 'Carde.io'
-  },
-  riftbound: {
-    id: 'riftbound',
-    providerName: 'Piltover Archive',
-    defaultQuery: 'A01-001',
-    tabLabel: 'Piltover Archive'
-  },
-  bushiroad: {
-    id: 'bushiroad',
-    providerName: 'Deck Log',
-    defaultQuery: 'Vanguard',
-    tabLabel: 'Deck Log'
-  },
   echoes_of_astra: {
     id: 'echoes_of_astra',
     providerName: 'Astra Builder',
     defaultQuery: 'Cadaver Supplier',
     tabLabel: 'Astra Builder'
-  },
-  altered: {
-    id: 'altered',
-    providerName: 'Altered',
-    defaultQuery: 'Hero',
-    tabLabel: 'Altered'
   }
 };
 
@@ -2864,6 +2866,7 @@ export default function App() {
 
   const openArtPickerForCard = (cardFilename: string, type: 'front' | 'back' | 'double_sided' = 'front', targetMode: 'front' | 'double_sided' | 'back' = 'front', preferredSource?: string) => {
     const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
+    if (!pluginSupportsCardIngestion(currentPluginId)) return;
     const isBack = type === 'back' && targetMode !== 'double_sided';
     setIsBacksOnlyModal(isBack);
     if (isBack) {
@@ -2896,6 +2899,7 @@ export default function App() {
 
   const openAddCardPicker = (source?: string, type: 'front' | 'back' = 'front') => {
     const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
+    if (!pluginSupportsCardIngestion(currentPluginId)) return;
     const provider = getPluginCardProvider(currentPluginId);
     const defaultSource = source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
     setIsBacksOnlyModal(type === 'back');
@@ -5959,8 +5963,8 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Direct Card Ingestion for Every Plugin */}
-                              {pluginState.selectedPlugin && pluginState.selectedPlugin.id !== 'custom_script_upload' && (
+                              {/* Direct Card Ingestion for Supported Plugins */}
+                              {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
                                 <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
                                   <div className="space-y-0.5 flex-1">
                                     <div className="flex items-center gap-2">
@@ -6537,7 +6541,7 @@ export default function App() {
                               </h3>
                             </div>
                               <div className="flex items-center gap-2">
-                                {pluginState.selectedPlugin?.id && pluginState.selectedPlugin.id !== 'custom_script_upload' && (
+                                {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -7985,19 +7989,21 @@ export default function App() {
                       )}
                     >
                       {/* Set Art (card ingestion) */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
-                          setContextMenu(null);
-                          setIsCardArtSubmenuOpen(false);
-                        }}
-                        className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                        title="Search and set front card artwork via card ingestion"
-                      >
-                        <ImageIcon size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                        <span className="truncate font-medium">Set Art (card ingestion)</span>
-                      </button>
+                      {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                            setContextMenu(null);
+                            setIsCardArtSubmenuOpen(false);
+                          }}
+                          className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
+                          title="Search and set front card artwork via card ingestion"
+                        >
+                          <ImageIcon size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                          <span className="truncate font-medium">Set Art (card ingestion)</span>
+                        </button>
+                      )}
 
                       {/* Set art (manual upload) */}
                       <button
@@ -8015,23 +8021,25 @@ export default function App() {
                       </button>
 
                       {/* Set Back (Card Ingestion) */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (contextMenu.type === 'back') {
-                            openArtPickerForCard(contextMenu.name, 'back', 'back');
-                          } else {
-                            openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
-                          }
-                          setContextMenu(null);
-                          setIsCardArtSubmenuOpen(false);
-                        }}
-                        className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                        title="Search and set card back pattern via card ingestion"
-                      >
-                        <Layers size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                        <span className="truncate font-medium">Set Back (Card Ingestion)</span>
-                      </button>
+                      {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (contextMenu.type === 'back') {
+                              openArtPickerForCard(contextMenu.name, 'back', 'back');
+                            } else {
+                              openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
+                            }
+                            setContextMenu(null);
+                            setIsCardArtSubmenuOpen(false);
+                          }}
+                          className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
+                          title="Search and set card back pattern via card ingestion"
+                        >
+                          <Layers size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                          <span className="truncate font-medium">Set Back (Card Ingestion)</span>
+                        </button>
+                      )}
 
                       {/* Set Back (Manual Upload) */}
                       <button
