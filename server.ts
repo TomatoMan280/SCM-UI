@@ -2844,6 +2844,10 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
         sendEvent('stdout', 'Installing requirements...');
         await runCommand(pipExecutable, ['install', '-r', 'requirements.txt'], scmPath);
+        try {
+          sendEvent('stdout', 'Installing AI inpainting acceleration packages (opencv, onnxruntime)...');
+          await runCommand(pipExecutable, ['install', 'opencv-python-headless', 'onnxruntime'], scmPath);
+        } catch (_) {}
 
         sendEvent('progress', { step: 'Ready', detail: 'Python environment setup complete', percent: 100 });
         sendEvent('stdout', 'Ready');
@@ -5426,9 +5430,62 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         } catch (_) {}
       }
 
-      const scriptPath = path.join(baseAppPath, 'remove_sample.py');
-      const fallbackScriptPath = path.join(__dirname, 'remove_sample.py');
-      const actualScriptPath = fs.existsSync(scriptPath) ? scriptPath : fallbackScriptPath;
+      // Ensure remove_sample.py is available on a physical disk path outside of app.asar
+      const diskScriptPath = path.join(baseDataPath, 'remove_sample.py');
+      const candidateScripts = [
+        path.join(baseAppPath, 'remove_sample.py'),
+        path.join(baseAppPath, '..', 'app.asar.unpacked', 'remove_sample.py'),
+        path.join(__dirname, 'remove_sample.py'),
+        path.join(__dirname, '..', 'remove_sample.py'),
+        path.join(process.cwd(), 'remove_sample.py')
+      ];
+
+      for (const src of candidateScripts) {
+        if (fs.existsSync(src)) {
+          try {
+            const code = fs.readFileSync(src, 'utf-8');
+            fs.writeFileSync(diskScriptPath, code, 'utf-8');
+            break;
+          } catch (_) {}
+        }
+      }
+
+      const actualScriptPath = fs.existsSync(diskScriptPath) 
+        ? diskScriptPath 
+        : (candidateScripts.find(p => fs.existsSync(p) && !p.includes('.asar')) || diskScriptPath);
+
+      // Model resolution: check baseDataPath, baseAppPath, process.cwd()
+      const modelCandidates = [
+        path.join(baseDataPath, 'data', 'models', 'inpainting_lama_2025jan.onnx'),
+        path.join(baseDataPath, 'models', 'inpainting_lama_2025jan.onnx'),
+        path.join(baseAppPath, 'data', 'models', 'inpainting_lama_2025jan.onnx'),
+        path.join(process.cwd(), 'data', 'models', 'inpainting_lama_2025jan.onnx'),
+      ];
+      const modelPath = modelCandidates.find(p => fs.existsSync(p));
+
+      // Resolve best python executable (user Python311, venv, or system)
+      let pythonExecutable = '';
+      const venvPy = path.join(scmPath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin', process.platform === 'win32' ? 'python.exe' : 'python3');
+      const winUserPy = path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'python.exe');
+
+      const pythonCandidates = [
+        winUserPy,
+        venvPy,
+        resolvePythonExecutable(),
+        process.platform === 'win32' ? 'python.exe' : 'python3',
+        'python'
+      ].filter(Boolean);
+
+      for (const cand of pythonCandidates) {
+        try {
+          const test = spawnSync(cand, ['--version'], { encoding: 'utf-8', windowsHide: true });
+          if (test.status === 0) {
+            pythonExecutable = cand;
+            break;
+          }
+        } catch (_) {}
+      }
+      if (!pythonExecutable) pythonExecutable = 'python';
 
       const tmpListPath = path.join(os.tmpdir(), `sample_remove_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
       fs.writeFileSync(tmpListPath, JSON.stringify(targetPaths), 'utf-8');
@@ -5436,9 +5493,10 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       sendEvent('start', { total: targetPaths.length, message: `Starting automated SAMPLE watermark remover for ${targetPaths.length} card(s)...` });
 
       const args = [actualScriptPath, '--file-list', tmpListPath];
+      if (modelPath) args.push('--model', modelPath);
       if (force) args.push('--force');
 
-      const proc = spawn('python', args);
+      const proc = spawn(pythonExecutable, args);
 
       let stderrData = '';
       let cleanedCount = 0;
