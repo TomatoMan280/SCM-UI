@@ -1026,7 +1026,7 @@ async function startServer() {
       const now = Date.now();
 
       // Read current version from package.json
-      let currentVersion = '3.0.5';
+      let currentVersion = '3.0.6';
       try {
         const possiblePkgPaths = [
           path.join(baseAppPath, 'package.json'),
