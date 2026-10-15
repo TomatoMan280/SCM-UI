@@ -1026,7 +1026,7 @@ async function startServer() {
       const now = Date.now();
 
       // Read current version from package.json
-      let currentVersion = '3.0.4';
+      let currentVersion = '3.0.5';
       try {
         const possiblePkgPaths = [
           path.join(baseAppPath, 'package.json'),
@@ -2035,9 +2035,58 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
   });
 
+  // Universal MTG Sets Endpoint
+  let cachedMtgSets: any[] | null = null;
+  app.get("/api/mtg/sets", async (req, res) => {
+    try {
+      if (cachedMtgSets && cachedMtgSets.length > 0) {
+        return res.json({ success: true, count: cachedMtgSets.length, data: cachedMtgSets });
+      }
+      const candidatePaths = [
+        path.join(__dirname, 'data', 'mtg_sets.json'),
+        path.join(__dirname, '..', 'data', 'mtg_sets.json'),
+        path.join(process.cwd(), 'data', 'mtg_sets.json'),
+        path.join(process.cwd(), 'dist', 'data', 'mtg_sets.json')
+      ];
+      const localSetsPath = candidatePaths.find(p => fs.existsSync(p));
+      if (localSetsPath) {
+        try {
+          const raw = fs.readFileSync(localSetsPath, 'utf-8');
+          cachedMtgSets = JSON.parse(raw);
+          return res.json({ success: true, count: cachedMtgSets!.length, data: cachedMtgSets });
+        } catch (e) {
+          console.error("[MTG Sets] Failed to read local sets json:", e);
+        }
+      }
+      // Fallback: fetch from Scryfall
+      const resp = await fetch('https://api.scryfall.com/sets', {
+        headers: { 'User-Agent': 'SCM/1.0', 'Accept': 'application/json' }
+      });
+      if (resp.ok) {
+        const d: any = await resp.json();
+        if (d.data) {
+          cachedMtgSets = d.data.map((s: any) => ({
+            code: s.code.toUpperCase(),
+            name: s.name,
+            type: s.set_type,
+            released: s.released_at ? s.released_at.substring(0, 4) : '',
+            card_count: s.card_count
+          }));
+          return res.json({ success: true, count: cachedMtgSets.length, data: cachedMtgSets });
+        }
+      }
+      res.json({ success: false, data: [] });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message, data: [] });
+    }
+  });
+
   // Universal Plugin Direct Card Ingestion Endpoint
   let cachedArkhamCards: any[] | null = null;
   let cachedRingsCards: any[] | null = null;
+  let cachedSorceryCards: any[] | null = null;
+  let cachedNetrunnerCards: any[] | null = null;
+  let cachedFabCards: any[] | null = null;
 
   app.get("/api/plugin/cards/search", async (req, res) => {
     const plugin = (req.query.plugin as string || '').trim().toLowerCase();
@@ -2122,26 +2171,30 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         }
 
         case 'digimon': {
-          const response = await fetch(`https://digimoncard.io/api-public/search.php?n=${encodeURIComponent(q)}`);
-          if (response.ok) {
-            const json: any = await response.json();
-            if (Array.isArray(json)) {
-              results = json.slice(0, 40).map((c: any) => {
-                const id = c.id || c.cardnumber || '';
-                const img = `https://world.digimoncard.com/images/cardlist/card/${id}.png`;
-                const thumb = `https://images.digimoncard.io/images/cards/${id}.jpg`;
-                return {
-                  id,
-                  name: c.name,
-                  set: c.set_name || 'Digimon',
-                  set_name: c.set_name || 'Digimon Card Game',
-                  collector_number: id,
-                  imageUrl: img,
-                  thumbnailUrl: thumb
-                };
-              });
+          try {
+            const response = await fetch(`https://digimoncard.io/api-public/search.php?n=${encodeURIComponent(q)}`);
+            if (response.ok) {
+              const json: any = await response.json();
+              if (Array.isArray(json)) {
+                results = json.slice(0, 40).map((c: any) => {
+                  const id = c.id || c.cardnumber || '';
+                  const img = `https://world.digimoncard.com/images/cardlist/card/${id}.png`;
+                  const thumb = `https://images.digimoncard.io/images/cards/${id}.jpg`;
+                  const setName = Array.isArray(c.set_name) ? (c.set_name[0] || 'Digimon Card Game') : (c.set_name || 'Digimon Card Game');
+                  const setCode = id.split('-')[0] || 'BT';
+                  return {
+                    id,
+                    name: c.name,
+                    set: setCode,
+                    set_name: setName,
+                    collector_number: id,
+                    imageUrl: img,
+                    thumbnailUrl: thumb
+                  };
+                });
+              }
             }
-          }
+          } catch (_) {}
           break;
         }
 
@@ -2175,25 +2228,34 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         }
 
         case 'netrunner': {
-          const response = await fetch(`https://api.netrunnerdb.com/api/v3/public/cards?filter[search]=${encodeURIComponent(q)}`, {
-            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
-          });
-          if (response.ok) {
-            const json: any = await response.json();
-            const items = (json.data || []).slice(0, 40);
-            results = items.map((c: any) => {
-              const printId = c.attributes?.latest_printing_id;
-              const imgUrl = printId ? `https://nro-public.s3.nl-ams.scw.cloud/nro/card-printings/v2/webp/english/card/${printId}.webp` : '';
-              return {
-                id: c.id,
-                name: c.attributes?.title || q,
-                set: 'NR',
-                set_name: 'Android: Netrunner',
-                collector_number: String(printId || '1'),
-                imageUrl: imgUrl,
-                thumbnailUrl: imgUrl
-              };
-            }).filter((c: any) => !!c.imageUrl);
+          if (!cachedNetrunnerCards) {
+            try {
+              const response = await fetch('https://netrunnerdb.com/api/2.0/public/cards', {
+                headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+              });
+              if (response.ok) {
+                const json: any = await response.json();
+                cachedNetrunnerCards = json.data || [];
+              }
+            } catch (fetchErr: any) {
+              console.error('[Netrunner Cache Fetch Error]:', fetchErr.message);
+            }
+          }
+
+          if (cachedNetrunnerCards && Array.isArray(cachedNetrunnerCards)) {
+            const queryLower = q.toLowerCase();
+            const matches = cachedNetrunnerCards
+              .filter((c: any) => c.title && c.title.toLowerCase().includes(queryLower))
+              .slice(0, 40);
+            results = matches.map((c: any) => ({
+              id: c.code,
+              name: c.title,
+              set: c.pack_code?.toUpperCase() || 'NR',
+              set_name: 'Android: Netrunner',
+              collector_number: String(c.position || c.code),
+              imageUrl: `https://netrunnerdb.com/card_image/${c.code}.png`,
+              thumbnailUrl: `https://netrunnerdb.com/card_image/${c.code}.png`
+            }));
           }
           break;
         }
@@ -2389,41 +2451,108 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           });
           if (response.ok) {
             const json: any = await response.json();
-            if (Array.isArray(json)) {
-              results = json.slice(0, 40).map((c: any) => {
-                const imgSuffix = c.editions?.[0]?.image;
-                const img = imgSuffix ? `https://api.gatcg.com/${imgSuffix}` : '';
-                return {
-                  id: c.uuid || c.slug || c.name,
-                  name: c.name,
-                  set: c.editions?.[0]?.set?.prefix || 'GA',
-                  set_name: c.editions?.[0]?.set?.name || 'Grand Archive',
-                  collector_number: c.slug || '1',
-                  imageUrl: img,
-                  thumbnailUrl: img
-                };
-              }).filter((c: any) => !!c.imageUrl);
-            }
+            const cards = json.data || (Array.isArray(json) ? json : []);
+            results = cards.slice(0, 40).map((c: any) => {
+              const ed = c.editions?.[0] || c.result_editions?.[0];
+              const imgSuffix = ed?.image;
+              const img = imgSuffix ? (imgSuffix.startsWith('http') ? imgSuffix : `https://api.gatcg.com${imgSuffix}`) : '';
+              return {
+                id: c.uuid || c.slug || c.name,
+                name: c.name,
+                set: ed?.set?.prefix || 'GA',
+                set_name: ed?.set?.name || 'Grand Archive',
+                collector_number: ed?.slug || c.slug || '1',
+                imageUrl: img,
+                thumbnailUrl: img
+              };
+            }).filter((c: any) => !!c.imageUrl);
           }
           break;
         }
 
         case 'flesh_and_blood': {
-          const response = await fetch(`https://api.fabdb.net/cards?q=${encodeURIComponent(q)}`, {
-            headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
-          });
-          if (response.ok) {
-            const json: any = await response.json();
-            const items = (json.data || []).slice(0, 40);
-            results = items.map((c: any) => ({
-              id: c.identifier || c.name,
-              name: c.name,
-              set: c.set || 'FAB',
-              set_name: 'Flesh and Blood',
-              collector_number: c.identifier || '1',
-              imageUrl: c.image,
-              thumbnailUrl: c.image
-            })).filter((c: any) => !!c.imageUrl);
+          if (!cachedFabCards) {
+            try {
+              const response = await fetch('https://raw.githubusercontent.com/the-fab-cube/flesh-and-blood-cards/develop/json/english/card.json', {
+                headers: { 'User-Agent': 'silhouette-card-maker/0.1' }
+              });
+              if (response.ok) {
+                cachedFabCards = await response.json();
+              }
+            } catch (fetchErr: any) {
+              console.error('[FAB Cache Fetch Error]:', fetchErr.message);
+            }
+          }
+
+          if (cachedFabCards && Array.isArray(cachedFabCards)) {
+            const queryLower = q.toLowerCase();
+            const matches = cachedFabCards.filter((c: any) => c.name && c.name.toLowerCase().includes(queryLower));
+            for (const c of matches) {
+              const printings = Array.isArray(c.printings) && c.printings.length > 0 ? c.printings : [];
+              for (const p of printings) {
+                if (results.length >= 40) break;
+                if (!p.image_url) continue;
+                results.push({
+                  id: p.unique_id || p.id || c.name,
+                  name: `${c.name}${p.foiling && p.foiling !== 'S' ? ` [${p.foiling}]` : ''}`,
+                  set: p.set_id || 'FAB',
+                  set_name: `Flesh and Blood (${p.set_id || 'FAB'})`,
+                  collector_number: p.id || '1',
+                  imageUrl: p.image_url,
+                  thumbnailUrl: p.image_url
+                });
+              }
+              if (results.length >= 40) break;
+            }
+          }
+          break;
+        }
+
+        case 'sorcery':
+        case 'sorcery_contested_realm': {
+          if (!cachedSorceryCards) {
+            try {
+              const response = await fetch('https://api.sorcerytcg.com/api/cards', {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SCMUI/1.1' }
+              });
+              if (response.ok) {
+                cachedSorceryCards = await response.json();
+              }
+            } catch (fetchErr: any) {
+              console.error('[Sorcery Card Cache Fetch Error]:', fetchErr.message);
+            }
+          }
+
+          if (cachedSorceryCards && Array.isArray(cachedSorceryCards)) {
+            const queryLower = q.toLowerCase();
+            const matchedCards = cachedSorceryCards.filter((c: any) => 
+              (c.name && c.name.toLowerCase().includes(queryLower)) ||
+              (c.slug && c.slug.toLowerCase().includes(queryLower)) ||
+              (c.engine?.subtypes && Array.isArray(c.engine.subtypes) && c.engine.subtypes.some((st: string) => st.toLowerCase().includes(queryLower)))
+            );
+
+            for (const card of matchedCards) {
+              const printings = Array.isArray(card.printings) && card.printings.length > 0 
+                ? card.printings 
+                : [{ slug: card.slug, set: { name: 'Core', code: 'SCR' }, meta: {} }];
+              
+              for (const p of printings) {
+                if (results.length >= 40) break;
+                const imgUrl = `https://d27a44hjr9gen3.cloudfront.net/cards/${p.slug}.png`;
+                const finishTag = p.meta?.finish && p.meta.finish !== 'Standard' ? ` [${p.meta.finish}]` : '';
+                const setName = p.set?.name ? `Sorcery: ${p.set.name}` : 'Sorcery: Contested Realm';
+                results.push({
+                  id: p.id || p.slug,
+                  name: `${card.name}${finishTag}`,
+                  set: p.set?.code || 'SCR',
+                  set_name: setName,
+                  collector_number: p.slug,
+                  imageUrl: imgUrl,
+                  thumbnailUrl: imgUrl
+                });
+              }
+              if (results.length >= 40) break;
+            }
           }
           break;
         }
@@ -2439,6 +2568,58 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     } catch (err: any) {
       console.error(`[Plugin Search Error - ${plugin}]:`, err.message);
       res.status(500).json({ error: `Card search failed for ${plugin}`, details: err.message, data: [] });
+    }
+  });
+
+  // Curiosa / Sorcery: Contested Realm Decklist Ingestion Endpoint
+  app.get("/api/curiosa/deck", async (req, res) => {
+    let rawUrl = (req.query.url as string || '').trim();
+    if (!rawUrl) {
+      return res.status(400).json({ error: "Curiosa deck URL or ID is required" });
+    }
+
+    try {
+      let deckId = rawUrl;
+      const idMatch = deckId.match(/decks\/([a-zA-Z0-9_-]+)/);
+      if (idMatch) deckId = idMatch[1];
+
+      const fetchUrl = `https://sorcerytcg.com/decks/${deckId}`;
+      const response = await fetch(fetchUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch deck from Curiosa / Sorcery (HTTP ${response.status})`);
+      }
+
+      const html = await response.text();
+      const titleMatch = html.match(/\\"name\\":\\"([^\\"]+)\\",\\"format\\"/);
+      const deckTitle = titleMatch ? titleMatch[1].trim() : 'Sorcery Deck';
+
+      const cardRegex = /\\"quantity\\":(\d+),\\"deckId\\":\\"[^\\"]+\\",\\"cardId\\":\\"[^\\"]+\\",\\"printingId\\":\\"[^\\"]+\\",\\"card\\":\{[^\}]*?\\"name\\":\\"([^\\"]+)\\",\\"slug\\":\\"([^\\"]+)\\"/g;
+      const lines: string[] = [];
+      let m;
+      while ((m = cardRegex.exec(html)) !== null) {
+        const count = m[1];
+        const cardName = m[2];
+        lines.push(`${count} ${cardName}`);
+      }
+
+      if (lines.length === 0) {
+        return res.status(404).json({ error: "No cards found in the provided Curiosa deck URL. Please ensure it is a public Curiosa deck." });
+      }
+
+      res.json({
+        success: true,
+        title: deckTitle,
+        cardCount: lines.length,
+        decklist: lines.join('\n')
+      });
+    } catch (err: any) {
+      console.error(`[Curiosa Deck Fetch Error]:`, err.message);
+      res.status(500).json({ error: err.message || "Failed to fetch Curiosa deck" });
     }
   });
 

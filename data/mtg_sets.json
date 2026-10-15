@@ -1,0 +1,7415 @@
+[
+  {
+    "code": "MDD",
+    "name": "Marvel: Darkhold Destiny",
+    "type": "expansion",
+    "released": "2027",
+    "card_count": 12
+  },
+  {
+    "code": "MDC",
+    "name": "Darkhold Destiny Commander",
+    "type": "commander",
+    "released": "2027",
+    "card_count": 1
+  },
+  {
+    "code": "TMDD",
+    "name": "Marvel: Darkhold Destiny Tokens",
+    "type": "token",
+    "released": "2027",
+    "card_count": 6
+  },
+  {
+    "code": "NAU",
+    "name": "Nauctis: The Sunken Realm",
+    "type": "expansion",
+    "released": "2027",
+    "card_count": 0
+  },
+  {
+    "code": "TNAU",
+    "name": "Nauctis: The Sunken Realm Tokens",
+    "type": "token",
+    "released": "2027",
+    "card_count": 1
+  },
+  {
+    "code": "PF27",
+    "name": "MagicFest 2027",
+    "type": "promo",
+    "released": "2027",
+    "card_count": 1
+  },
+  {
+    "code": "TTRK",
+    "name": "Star Trek Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 1
+  },
+  {
+    "code": "TRK",
+    "name": "Star Trek",
+    "type": "expansion",
+    "released": "2026",
+    "card_count": 135
+  },
+  {
+    "code": "TRC",
+    "name": "Star Trek Commander",
+    "type": "commander",
+    "released": "2026",
+    "card_count": 41
+  },
+  {
+    "code": "SDS",
+    "name": "Stardates",
+    "type": "masterpiece",
+    "released": "2026",
+    "card_count": 1
+  },
+  {
+    "code": "MBC",
+    "name": "Mystery Booster Commander Edition",
+    "type": "draft_innovation",
+    "released": "2026",
+    "card_count": 80
+  },
+  {
+    "code": "YFRA",
+    "name": "Alchemy: Reality Fracture",
+    "type": "alchemy",
+    "released": "2026",
+    "card_count": 31
+  },
+  {
+    "code": "TFRA",
+    "name": "Reality Fracture Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 18
+  },
+  {
+    "code": "TFRC",
+    "name": "Reality Fracture Commander Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 17
+  },
+  {
+    "code": "FRC",
+    "name": "Reality Fracture Commander",
+    "type": "commander",
+    "released": "2026",
+    "card_count": 103
+  },
+  {
+    "code": "TFDC",
+    "name": "Foundations Commander Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 17
+  },
+  {
+    "code": "PFRA",
+    "name": "Reality Fracture Promos",
+    "type": "promo",
+    "released": "2026",
+    "card_count": 90
+  },
+  {
+    "code": "FRA",
+    "name": "Reality Fracture",
+    "type": "expansion",
+    "released": "2026",
+    "card_count": 462
+  },
+  {
+    "code": "SLZ",
+    "name": "The Zeta Set",
+    "type": "box",
+    "released": "2026",
+    "card_count": 363
+  },
+  {
+    "code": "HOC",
+    "name": "The Hobbit Eternal",
+    "type": "eternal",
+    "released": "2026",
+    "card_count": 158
+  },
+  {
+    "code": "THOB",
+    "name": "The Hobbit Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 15
+  },
+  {
+    "code": "HOB",
+    "name": "The Hobbit",
+    "type": "expansion",
+    "released": "2026",
+    "card_count": 321
+  },
+  {
+    "code": "MSH",
+    "name": "Marvel Super Heroes",
+    "type": "expansion",
+    "released": "2026",
+    "card_count": 453
+  },
+  {
+    "code": "AMSH",
+    "name": "Marvel Super Heroes Art Series",
+    "type": "memorabilia",
+    "released": "2026",
+    "card_count": 66
+  },
+  {
+    "code": "MSC",
+    "name": "Marvel Super Heroes Commander",
+    "type": "commander",
+    "released": "2026",
+    "card_count": 866
+  },
+  {
+    "code": "FMSC",
+    "name": "Marvel Super Heroes Jumpstart Front Cards",
+    "type": "memorabilia",
+    "released": "2026",
+    "card_count": 61
+  },
+  {
+    "code": "TMSH",
+    "name": "Marvel Super Heroes Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 27
+  },
+  {
+    "code": "TMSC",
+    "name": "Marvel Super Heroes Commander Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 32
+  },
+  {
+    "code": "YSOS",
+    "name": "Alchemy: Secrets of Strixhaven",
+    "type": "alchemy",
+    "released": "2026",
+    "card_count": 32
+  },
+  {
+    "code": "PSOS",
+    "name": "Secrets of Strixhaven Promos",
+    "type": "promo",
+    "released": "2026",
+    "card_count": 80
+  },
+  {
+    "code": "TSOS",
+    "name": "Secrets of Strixhaven Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 14
+  },
+  {
+    "code": "TSOC",
+    "name": "Secrets of Strixhaven Commander Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 30
+  },
+  {
+    "code": "ASOS",
+    "name": "Secrets of Strixhaven Art Series",
+    "type": "memorabilia",
+    "released": "2026",
+    "card_count": 54
+  },
+  {
+    "code": "SOC",
+    "name": "Secrets of Strixhaven Commander",
+    "type": "commander",
+    "released": "2026",
+    "card_count": 426
+  },
+  {
+    "code": "SOS",
+    "name": "Secrets of Strixhaven",
+    "type": "expansion",
+    "released": "2026",
+    "card_count": 368
+  },
+  {
+    "code": "SOA",
+    "name": "Secrets of Strixhaven Mystical Archive",
+    "type": "masterpiece",
+    "released": "2026",
+    "card_count": 195
+  },
+  {
+    "code": "TTMT",
+    "name": "Teenage Mutant Ninja Turtles Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 10
+  },
+  {
+    "code": "TTMC",
+    "name": "Teenage Mutant Ninja Turtles Eternal Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 31
+  },
+  {
+    "code": "PZA",
+    "name": "Teenage Mutant Ninja Turtles Source Material",
+    "type": "masterpiece",
+    "released": "2026",
+    "card_count": 20
+  },
+  {
+    "code": "TMC",
+    "name": "Teenage Mutant Ninja Turtles Eternal",
+    "type": "eternal",
+    "released": "2026",
+    "card_count": 132
+  },
+  {
+    "code": "ATMT",
+    "name": "Teenage Mutant Ninja Turtles Art Series",
+    "type": "memorabilia",
+    "released": "2026",
+    "card_count": 54
+  },
+  {
+    "code": "TMT",
+    "name": "Teenage Mutant Ninja Turtles",
+    "type": "expansion",
+    "released": "2026",
+    "card_count": 320
+  },
+  {
+    "code": "FTMC",
+    "name": "Teenage Mutant Ninja Turtles Eternal Front Cards",
+    "type": "memorabilia",
+    "released": "2026",
+    "card_count": 5
+  },
+  {
+    "code": "PL26",
+    "name": "Year of the Horse 2026",
+    "type": "promo",
+    "released": "2026",
+    "card_count": 5
+  },
+  {
+    "code": "YECL",
+    "name": "Alchemy: Lorwyn Eclipsed",
+    "type": "alchemy",
+    "released": "2026",
+    "card_count": 33
+  },
+  {
+    "code": "PECL",
+    "name": "Lorwyn Eclipsed Promos",
+    "type": "promo",
+    "released": "2026",
+    "card_count": 80
+  },
+  {
+    "code": "AECL",
+    "name": "Lorwyn Eclipsed Art Series",
+    "type": "memorabilia",
+    "released": "2026",
+    "card_count": 54
+  },
+  {
+    "code": "ECL",
+    "name": "Lorwyn Eclipsed",
+    "type": "expansion",
+    "released": "2026",
+    "card_count": 408
+  },
+  {
+    "code": "TECC",
+    "name": "Lorwyn Eclipsed Commander Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 13
+  },
+  {
+    "code": "TECL",
+    "name": "Lorwyn Eclipsed Tokens",
+    "type": "token",
+    "released": "2026",
+    "card_count": 13
+  },
+  {
+    "code": "ECC",
+    "name": "Lorwyn Eclipsed Commander",
+    "type": "commander",
+    "released": "2026",
+    "card_count": 176
+  },
+  {
+    "code": "PF26",
+    "name": "MagicFest 2026",
+    "type": "promo",
+    "released": "2026",
+    "card_count": 17
+  },
+  {
+    "code": "PW26",
+    "name": "Wizards Play Network 2026",
+    "type": "promo",
+    "released": "2026",
+    "card_count": 23
+  },
+  {
+    "code": "AFIC",
+    "name": "Final Fantasy Scene Box",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 24
+  },
+  {
+    "code": "PTLA",
+    "name": "Avatar: The Last Airbender Promos",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 80
+  },
+  {
+    "code": "TTLA",
+    "name": "Avatar: The Last Airbender Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 22
+  },
+  {
+    "code": "FTLA",
+    "name": "Avatar: The Last Airbender Beginner Box Front Cards",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 10
+  },
+  {
+    "code": "JTLA",
+    "name": "Avatar: The Last Airbender Jumpstart Front Cards",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 46
+  },
+  {
+    "code": "TTLE",
+    "name": "Avatar: The Last Airbender Eternal Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 2
+  },
+  {
+    "code": "ATLE",
+    "name": "Avatar: the Last Airbender Eternal Art Series",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 12
+  },
+  {
+    "code": "TLA",
+    "name": "Avatar: The Last Airbender",
+    "type": "expansion",
+    "released": "2025",
+    "card_count": 394
+  },
+  {
+    "code": "TLE",
+    "name": "Avatar: The Last Airbender Eternal",
+    "type": "eternal",
+    "released": "2025",
+    "card_count": 317
+  },
+  {
+    "code": "ATLA",
+    "name": "Avatar: the Last Airbender Art Series",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 54
+  },
+  {
+    "code": "LMAR",
+    "name": "Marvel Legends Series Inserts",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 8
+  },
+  {
+    "code": "TSPM",
+    "name": "Marvel's Spider-Man Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 7
+  },
+  {
+    "code": "ASPM",
+    "name": "Marvel's Spider-Man Art Series",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 54
+  },
+  {
+    "code": "PSPM",
+    "name": "Marvel's Spider-Man Promos",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 68
+  },
+  {
+    "code": "SPE",
+    "name": "Marvel's Spider-Man Eternal",
+    "type": "eternal",
+    "released": "2025",
+    "card_count": 26
+  },
+  {
+    "code": "MAR",
+    "name": "Marvel Universe",
+    "type": "masterpiece",
+    "released": "2025",
+    "card_count": 100
+  },
+  {
+    "code": "SPM",
+    "name": "Marvel's Spider-Man",
+    "type": "expansion",
+    "released": "2025",
+    "card_count": 286
+  },
+  {
+    "code": "AA4",
+    "name": "Arena Anthology 4",
+    "type": "box",
+    "released": "2025",
+    "card_count": 28
+  },
+  {
+    "code": "OM1",
+    "name": "Through the Omenpaths",
+    "type": "expansion",
+    "released": "2025",
+    "card_count": 189
+  },
+  {
+    "code": "AA3",
+    "name": "Arena Anthology 3",
+    "type": "box",
+    "released": "2025",
+    "card_count": 25
+  },
+  {
+    "code": "OMB",
+    "name": "Through the Omenpaths Bonus Sheet",
+    "type": "masterpiece",
+    "released": "2025",
+    "card_count": 40
+  },
+  {
+    "code": "PH23",
+    "name": "2023 Heroes of the Realm",
+    "type": "funny",
+    "released": "2025",
+    "card_count": 2
+  },
+  {
+    "code": "AA2",
+    "name": "Arena Anthology 2",
+    "type": "box",
+    "released": "2025",
+    "card_count": 25
+  },
+  {
+    "code": "YEOE",
+    "name": "Alchemy: Edge of Eternities",
+    "type": "alchemy",
+    "released": "2025",
+    "card_count": 41
+  },
+  {
+    "code": "AA1",
+    "name": "Arena Anthology 1",
+    "type": "box",
+    "released": "2025",
+    "card_count": 26
+  },
+  {
+    "code": "AEOE",
+    "name": "Edge of Eternities Art Series",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 54
+  },
+  {
+    "code": "PEOE",
+    "name": "Edge of Eternities Promos",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 160
+  },
+  {
+    "code": "TEOC",
+    "name": "Edge of Eternities Commander Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 16
+  },
+  {
+    "code": "PBIG",
+    "name": "The Big Score Promos",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 30
+  },
+  {
+    "code": "EOC",
+    "name": "Edge of Eternities Commander",
+    "type": "commander",
+    "released": "2025",
+    "card_count": 191
+  },
+  {
+    "code": "EOE",
+    "name": "Edge of Eternities",
+    "type": "expansion",
+    "released": "2025",
+    "card_count": 400
+  },
+  {
+    "code": "TEOE",
+    "name": "Edge of Eternities Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 12
+  },
+  {
+    "code": "EOS",
+    "name": "Edge of Eternities: Stellar Sights",
+    "type": "masterpiece",
+    "released": "2025",
+    "card_count": 180
+  },
+  {
+    "code": "TFIN",
+    "name": "Final Fantasy Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 37
+  },
+  {
+    "code": "RFIN",
+    "name": "Final Fantasy Regional Promos",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 2
+  },
+  {
+    "code": "PFIN",
+    "name": "Final Fantasy Promos",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 94
+  },
+  {
+    "code": "AFIN",
+    "name": "Final Fantasy Art Series",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 53
+  },
+  {
+    "code": "FCA",
+    "name": "Final Fantasy: Through the Ages",
+    "type": "masterpiece",
+    "released": "2025",
+    "card_count": 65
+  },
+  {
+    "code": "TFIC",
+    "name": "Final Fantasy Commander Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 11
+  },
+  {
+    "code": "FIC",
+    "name": "Final Fantasy Commander",
+    "type": "commander",
+    "released": "2025",
+    "card_count": 486
+  },
+  {
+    "code": "FIN",
+    "name": "Final Fantasy",
+    "type": "expansion",
+    "released": "2025",
+    "card_count": 598
+  },
+  {
+    "code": "WFIN",
+    "name": "FIN Asia WPN Promo Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 3
+  },
+  {
+    "code": "PSS5",
+    "name": "FIN Standard Showdown",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 2
+  },
+  {
+    "code": "PA1",
+    "name": "Pioneer Anthology 1",
+    "type": "box",
+    "released": "2025",
+    "card_count": 11
+  },
+  {
+    "code": "YTDM",
+    "name": "Alchemy: Tarkir",
+    "type": "alchemy",
+    "released": "2025",
+    "card_count": 30
+  },
+  {
+    "code": "PTDM",
+    "name": "Tarkir: Dragonstorm Promos",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 160
+  },
+  {
+    "code": "ATDM",
+    "name": "Tarkir: Dragonstorm Art Series",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 54
+  },
+  {
+    "code": "TTDM",
+    "name": "Tarkir: Dragonstorm Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 16
+  },
+  {
+    "code": "TTDC",
+    "name": "Tarkir: Dragonstorm Commander Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 34
+  },
+  {
+    "code": "TDC",
+    "name": "Tarkir: Dragonstorm Commander",
+    "type": "commander",
+    "released": "2025",
+    "card_count": 413
+  },
+  {
+    "code": "TDM",
+    "name": "Tarkir: Dragonstorm",
+    "type": "expansion",
+    "released": "2025",
+    "card_count": 426
+  },
+  {
+    "code": "PLG25",
+    "name": "Love Your LGS 2025",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 2
+  },
+  {
+    "code": "YDFT",
+    "name": "Alchemy: Aetherdrift",
+    "type": "alchemy",
+    "released": "2025",
+    "card_count": 31
+  },
+  {
+    "code": "PSSC",
+    "name": "Secret Lair Showcase Planes",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 10
+  },
+  {
+    "code": "ADFT",
+    "name": "Aetherdrift Art Series",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 54
+  },
+  {
+    "code": "PDFT",
+    "name": "Aetherdrift Promos",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 160
+  },
+  {
+    "code": "TDRC",
+    "name": "Aetherdrift Commander Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 17
+  },
+  {
+    "code": "PL25",
+    "name": "Year of the Snake 2025",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 6
+  },
+  {
+    "code": "DFT",
+    "name": "Aetherdrift",
+    "type": "expansion",
+    "released": "2025",
+    "card_count": 553
+  },
+  {
+    "code": "DRC",
+    "name": "Aetherdrift Commander",
+    "type": "commander",
+    "released": "2025",
+    "card_count": 184
+  },
+  {
+    "code": "TDFT",
+    "name": "Aetherdrift Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 14
+  },
+  {
+    "code": "PJSC",
+    "name": "Japan Standard Cup",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 4
+  },
+  {
+    "code": "AINR",
+    "name": "Innistrad Remastered Art Series",
+    "type": "memorabilia",
+    "released": "2025",
+    "card_count": 25
+  },
+  {
+    "code": "INR",
+    "name": "Innistrad Remastered",
+    "type": "masters",
+    "released": "2025",
+    "card_count": 495
+  },
+  {
+    "code": "TINR",
+    "name": "Innistrad Remastered Tokens",
+    "type": "token",
+    "released": "2025",
+    "card_count": 27
+  },
+  {
+    "code": "PSPL",
+    "name": "Spotlight Series",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 13
+  },
+  {
+    "code": "PW25",
+    "name": "Wizards Play Network 2025",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 16
+  },
+  {
+    "code": "PF25",
+    "name": "MagicFest 2025",
+    "type": "promo",
+    "released": "2025",
+    "card_count": 19
+  },
+  {
+    "code": "PIO",
+    "name": "Pioneer Masters",
+    "type": "masters",
+    "released": "2024",
+    "card_count": 398
+  },
+  {
+    "code": "PFDN",
+    "name": "Foundations Promos",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 106
+  },
+  {
+    "code": "AFDN",
+    "name": "Foundations Art Series",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 55
+  },
+  {
+    "code": "J25",
+    "name": "Foundations Jumpstart",
+    "type": "draft_innovation",
+    "released": "2024",
+    "card_count": 779
+  },
+  {
+    "code": "TFDN",
+    "name": "Foundations Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 33
+  },
+  {
+    "code": "FDN",
+    "name": "Foundations",
+    "type": "core",
+    "released": "2024",
+    "card_count": 771
+  },
+  {
+    "code": "FFDN",
+    "name": "Foundations Front Cards",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 10
+  },
+  {
+    "code": "FJ25",
+    "name": "Foundations Jumpstart Front Cards",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 46
+  },
+  {
+    "code": "FDC",
+    "name": "Foundations Commander",
+    "type": "commander",
+    "released": "2024",
+    "card_count": 319
+  },
+  {
+    "code": "PLTC",
+    "name": "Tales of Middle-earth Deluxe Commander Kit",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 4
+  },
+  {
+    "code": "YDSK",
+    "name": "Alchemy: Duskmourn",
+    "type": "alchemy",
+    "released": "2024",
+    "card_count": 30
+  },
+  {
+    "code": "TDSC",
+    "name": "Duskmourn Commander Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 23
+  },
+  {
+    "code": "PDSK",
+    "name": "Duskmourn: House of Horror Promos",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 160
+  },
+  {
+    "code": "TDSK",
+    "name": "Duskmourn: House of Horror Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 19
+  },
+  {
+    "code": "DSC",
+    "name": "Duskmourn: House of Horror Commander",
+    "type": "commander",
+    "released": "2024",
+    "card_count": 373
+  },
+  {
+    "code": "DSK",
+    "name": "Duskmourn: House of Horror",
+    "type": "expansion",
+    "released": "2024",
+    "card_count": 417
+  },
+  {
+    "code": "ADSK",
+    "name": "Duskmourn: House of Horror Art Series",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 54
+  },
+  {
+    "code": "YBLB",
+    "name": "Alchemy: Bloomburrow",
+    "type": "alchemy",
+    "released": "2024",
+    "card_count": 30
+  },
+  {
+    "code": "PLG24",
+    "name": "Love Your LGS 2024",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 7
+  },
+  {
+    "code": "ABLB",
+    "name": "Bloomburrow Art Series",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 54
+  },
+  {
+    "code": "TBLB",
+    "name": "Bloomburrow Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 30
+  },
+  {
+    "code": "TBLC",
+    "name": "Bloomburrow Commander Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 41
+  },
+  {
+    "code": "PBLB",
+    "name": "Bloomburrow Promos",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 160
+  },
+  {
+    "code": "BLC",
+    "name": "Bloomburrow Commander",
+    "type": "commander",
+    "released": "2024",
+    "card_count": 356
+  },
+  {
+    "code": "MB2",
+    "name": "Mystery Booster 2",
+    "type": "masters",
+    "released": "2024",
+    "card_count": 385
+  },
+  {
+    "code": "BLB",
+    "name": "Bloomburrow",
+    "type": "expansion",
+    "released": "2024",
+    "card_count": 397
+  },
+  {
+    "code": "PCBB",
+    "name": "Cowboy Bebop",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 5
+  },
+  {
+    "code": "MACR",
+    "name": "Assassin's Creed Minigames",
+    "type": "minigame",
+    "released": "2024",
+    "card_count": 3
+  },
+  {
+    "code": "AACR",
+    "name": "Assassin's Creed Art Series",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 20
+  },
+  {
+    "code": "TACR",
+    "name": "Assassin's Creed Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 8
+  },
+  {
+    "code": "ACR",
+    "name": "Assassin's Creed",
+    "type": "draft_innovation",
+    "released": "2024",
+    "card_count": 309
+  },
+  {
+    "code": "SMH3",
+    "name": "Modern Horizons 3 Substitute Cards",
+    "type": "token",
+    "released": "2024",
+    "card_count": 1
+  },
+  {
+    "code": "PMH3",
+    "name": "Modern Horizons 3 Promos",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 92
+  },
+  {
+    "code": "AMH3",
+    "name": "Modern Horizons 3 Art Series",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 54
+  },
+  {
+    "code": "M3C",
+    "name": "Modern Horizons 3 Commander",
+    "type": "commander",
+    "released": "2024",
+    "card_count": 398
+  },
+  {
+    "code": "MH3",
+    "name": "Modern Horizons 3",
+    "type": "draft_innovation",
+    "released": "2024",
+    "card_count": 524
+  },
+  {
+    "code": "TM3C",
+    "name": "Modern Horizons 3 Commander Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 28
+  },
+  {
+    "code": "TMH3",
+    "name": "Modern Horizons 3 Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 43
+  },
+  {
+    "code": "H2R",
+    "name": "Modern Horizons 2 Timeshifts",
+    "type": "draft_innovation",
+    "released": "2024",
+    "card_count": 16
+  },
+  {
+    "code": "YOTJ",
+    "name": "Alchemy: Outlaws of Thunder Junction",
+    "type": "alchemy",
+    "released": "2024",
+    "card_count": 30
+  },
+  {
+    "code": "TOTJ",
+    "name": "Outlaws of Thunder Junction Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 19
+  },
+  {
+    "code": "AOTJ",
+    "name": "Outlaws of Thunder Junction Art Series",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 54
+  },
+  {
+    "code": "POTJ",
+    "name": "Outlaws of Thunder Junction Promos",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 160
+  },
+  {
+    "code": "OTC",
+    "name": "Outlaws of Thunder Junction Commander",
+    "type": "commander",
+    "released": "2024",
+    "card_count": 342
+  },
+  {
+    "code": "OTP",
+    "name": "Breaking News",
+    "type": "masterpiece",
+    "released": "2024",
+    "card_count": 80
+  },
+  {
+    "code": "TOTP",
+    "name": "Breaking News Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 5
+  },
+  {
+    "code": "OTJ",
+    "name": "Outlaws of Thunder Junction",
+    "type": "expansion",
+    "released": "2024",
+    "card_count": 374
+  },
+  {
+    "code": "TOTC",
+    "name": "Outlaws of Thunder Junction Commander Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 41
+  },
+  {
+    "code": "BIG",
+    "name": "The Big Score",
+    "type": "expansion",
+    "released": "2024",
+    "card_count": 95
+  },
+  {
+    "code": "TBIG",
+    "name": "The Big Score Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 7
+  },
+  {
+    "code": "TPIP",
+    "name": "Fallout Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 22
+  },
+  {
+    "code": "PIP",
+    "name": "Fallout",
+    "type": "commander",
+    "released": "2024",
+    "card_count": 1068
+  },
+  {
+    "code": "YMKM",
+    "name": "Alchemy: Murders at Karlov Manor",
+    "type": "alchemy",
+    "released": "2024",
+    "card_count": 30
+  },
+  {
+    "code": "PUNK",
+    "name": "Black Lotus Unknown Planechase",
+    "type": "funny",
+    "released": "2024",
+    "card_count": 52
+  },
+  {
+    "code": "FCLU",
+    "name": "Ravnica: Clue Edition Front Cards",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 10
+  },
+  {
+    "code": "CLU",
+    "name": "Ravnica: Clue Edition",
+    "type": "draft_innovation",
+    "released": "2024",
+    "card_count": 284
+  },
+  {
+    "code": "PSS4",
+    "name": "MKM Standard Showdown",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 5
+  },
+  {
+    "code": "TMKC",
+    "name": "Murders at Karlov Manor Commander Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 31
+  },
+  {
+    "code": "PMKM",
+    "name": "Murders at Karlov Manor Promos",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 180
+  },
+  {
+    "code": "AMKM",
+    "name": "Murders at Karlov Manor Art Series",
+    "type": "memorabilia",
+    "released": "2024",
+    "card_count": 54
+  },
+  {
+    "code": "TMKM",
+    "name": "Murders at Karlov Manor Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 22
+  },
+  {
+    "code": "WMKM",
+    "name": "MKM Japanese Promo Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 4
+  },
+  {
+    "code": "MKM",
+    "name": "Murders at Karlov Manor",
+    "type": "expansion",
+    "released": "2024",
+    "card_count": 451
+  },
+  {
+    "code": "MKC",
+    "name": "Murders at Karlov Manor Commander",
+    "type": "commander",
+    "released": "2024",
+    "card_count": 358
+  },
+  {
+    "code": "PL24",
+    "name": "Year of the Dragon 2024",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 7
+  },
+  {
+    "code": "TRVR",
+    "name": "Ravnica Remastered Tokens",
+    "type": "token",
+    "released": "2024",
+    "card_count": 20
+  },
+  {
+    "code": "RVR",
+    "name": "Ravnica Remastered",
+    "type": "masters",
+    "released": "2024",
+    "card_count": 531
+  },
+  {
+    "code": "PF24",
+    "name": "MagicFest 2024",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 2
+  },
+  {
+    "code": "PW24",
+    "name": "Wizards Play Network 2024",
+    "type": "promo",
+    "released": "2024",
+    "card_count": 18
+  },
+  {
+    "code": "YLCI",
+    "name": "Alchemy: Ixalan",
+    "type": "alchemy",
+    "released": "2023",
+    "card_count": 31
+  },
+  {
+    "code": "ALCI",
+    "name": "The Lost Caverns of Ixalan Art Series",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 81
+  },
+  {
+    "code": "SPG",
+    "name": "Special Guests",
+    "type": "masterpiece",
+    "released": "2023",
+    "card_count": 175
+  },
+  {
+    "code": "PLCI",
+    "name": "The Lost Caverns of Ixalan Promos",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 136
+  },
+  {
+    "code": "TLCC",
+    "name": "The Lost Caverns of Ixalan Commander Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 18
+  },
+  {
+    "code": "PMAT",
+    "name": "March of the Machine: The Aftermath Promos",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 8
+  },
+  {
+    "code": "LCC",
+    "name": "The Lost Caverns of Ixalan Commander",
+    "type": "commander",
+    "released": "2023",
+    "card_count": 370
+  },
+  {
+    "code": "TREX",
+    "name": "Jurassic World Collection Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 2
+  },
+  {
+    "code": "SLCI",
+    "name": "The Lost Caverns of Ixalan Substitute Cards",
+    "type": "token",
+    "released": "2023",
+    "card_count": 1
+  },
+  {
+    "code": "LCI",
+    "name": "The Lost Caverns of Ixalan",
+    "type": "expansion",
+    "released": "2023",
+    "card_count": 415
+  },
+  {
+    "code": "TLCI",
+    "name": "The Lost Caverns of Ixalan Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 19
+  },
+  {
+    "code": "REX",
+    "name": "Jurassic World Collection",
+    "type": "eternal",
+    "released": "2023",
+    "card_count": 45
+  },
+  {
+    "code": "ALTC",
+    "name": "Tales of Middle-earth Scene Box",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 24
+  },
+  {
+    "code": "TWHO",
+    "name": "Doctor Who Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 64
+  },
+  {
+    "code": "WHO",
+    "name": "Doctor Who",
+    "type": "commander",
+    "released": "2023",
+    "card_count": 1178
+  },
+  {
+    "code": "YWOE",
+    "name": "Alchemy: Wilds of Eldraine",
+    "type": "alchemy",
+    "released": "2023",
+    "card_count": 31
+  },
+  {
+    "code": "PWOE",
+    "name": "Wilds of Eldraine Promos",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 160
+  },
+  {
+    "code": "WOT",
+    "name": "Wilds of Eldraine: Enchanting Tales",
+    "type": "masterpiece",
+    "released": "2023",
+    "card_count": 103
+  },
+  {
+    "code": "AWOE",
+    "name": "Wilds of Eldraine Art Series",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 81
+  },
+  {
+    "code": "WOC",
+    "name": "Wilds of Eldraine Commander",
+    "type": "commander",
+    "released": "2023",
+    "card_count": 173
+  },
+  {
+    "code": "TWOE",
+    "name": "Wilds of Eldraine Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 18
+  },
+  {
+    "code": "WWOE",
+    "name": "WOE Japanese Promo Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 6
+  },
+  {
+    "code": "TWOC",
+    "name": "Wilds of Eldraine Commander Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 10
+  },
+  {
+    "code": "PTSR",
+    "name": "Time Spiral Remastered Promos",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 3
+  },
+  {
+    "code": "WOE",
+    "name": "Wilds of Eldraine",
+    "type": "expansion",
+    "released": "2023",
+    "card_count": 381
+  },
+  {
+    "code": "PMDA",
+    "name": "Magic × Duel Masters Promos",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 4
+  },
+  {
+    "code": "P30T",
+    "name": "30th Anniversary Celebration Tokyo",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 2
+  },
+  {
+    "code": "TCMM",
+    "name": "Commander Masters Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 81
+  },
+  {
+    "code": "ACMM",
+    "name": "Commander Masters Art Series",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 81
+  },
+  {
+    "code": "CMM",
+    "name": "Commander Masters",
+    "type": "masters",
+    "released": "2023",
+    "card_count": 1067
+  },
+  {
+    "code": "PH22",
+    "name": "2022 Heroes of the Realm",
+    "type": "funny",
+    "released": "2023",
+    "card_count": 5
+  },
+  {
+    "code": "HA7",
+    "name": "Historic Anthology 7",
+    "type": "box",
+    "released": "2023",
+    "card_count": 25
+  },
+  {
+    "code": "EA3",
+    "name": "Explorer Anthology 3",
+    "type": "box",
+    "released": "2023",
+    "card_count": 25
+  },
+  {
+    "code": "PF23",
+    "name": "MagicFest 2023",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 4
+  },
+  {
+    "code": "PLTR",
+    "name": "Tales of Middle-earth Promos",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 86
+  },
+  {
+    "code": "LTC",
+    "name": "Tales of Middle-earth Commander",
+    "type": "commander",
+    "released": "2023",
+    "card_count": 591
+  },
+  {
+    "code": "FLTR",
+    "name": "Tales of Middle-earth Front Cards",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 10
+  },
+  {
+    "code": "LTR",
+    "name": "The Lord of the Rings: Tales of Middle-earth",
+    "type": "draft_innovation",
+    "released": "2023",
+    "card_count": 854
+  },
+  {
+    "code": "TLTC",
+    "name": "Tales of Middle-earth Commander Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 15
+  },
+  {
+    "code": "TLTR",
+    "name": "Tales of Middle-earth Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 25
+  },
+  {
+    "code": "MLTR",
+    "name": "The Lord of the Rings: Tales of Middle-earth Minigames",
+    "type": "minigame",
+    "released": "2023",
+    "card_count": 1
+  },
+  {
+    "code": "ALTR",
+    "name": "Tales of Middle-earth Art Series",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 81
+  },
+  {
+    "code": "MAT",
+    "name": "March of the Machine: The Aftermath",
+    "type": "expansion",
+    "released": "2023",
+    "card_count": 230
+  },
+  {
+    "code": "FMOM",
+    "name": "March of the Machine Jumpstart Front Cards",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 5
+  },
+  {
+    "code": "TMOC",
+    "name": "March of the Machine Commander Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 46
+  },
+  {
+    "code": "MOM",
+    "name": "March of the Machine",
+    "type": "expansion",
+    "released": "2023",
+    "card_count": 387
+  },
+  {
+    "code": "AMOM",
+    "name": "March of the Machine Art Series",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 81
+  },
+  {
+    "code": "MOC",
+    "name": "March of the Machine Commander",
+    "type": "commander",
+    "released": "2023",
+    "card_count": 450
+  },
+  {
+    "code": "SMOM",
+    "name": "March of the Machine Substitute Cards",
+    "type": "token",
+    "released": "2023",
+    "card_count": 1
+  },
+  {
+    "code": "TMOM",
+    "name": "March of the Machine Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 23
+  },
+  {
+    "code": "PMOM",
+    "name": "March of the Machine Promos",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 134
+  },
+  {
+    "code": "MUL",
+    "name": "Multiverse Legends",
+    "type": "masterpiece",
+    "released": "2023",
+    "card_count": 260
+  },
+  {
+    "code": "WMOM",
+    "name": "MOM Japanese Promo Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 12
+  },
+  {
+    "code": "TMUL",
+    "name": "Multiverse Legends Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 2
+  },
+  {
+    "code": "SIS",
+    "name": "Shadows of the Past",
+    "type": "masters",
+    "released": "2023",
+    "card_count": 76
+  },
+  {
+    "code": "SIR",
+    "name": "Shadows over Innistrad Remastered",
+    "type": "masters",
+    "released": "2023",
+    "card_count": 294
+  },
+  {
+    "code": "YONE",
+    "name": "Alchemy: Phyrexia",
+    "type": "alchemy",
+    "released": "2023",
+    "card_count": 31
+  },
+  {
+    "code": "SLP",
+    "name": "Secret Lair Promo",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 57
+  },
+  {
+    "code": "UNK",
+    "name": "Unknown Event",
+    "type": "funny",
+    "released": "2023",
+    "card_count": 527
+  },
+  {
+    "code": "ONC",
+    "name": "Phyrexia: All Will Be One Commander",
+    "type": "commander",
+    "released": "2023",
+    "card_count": 174
+  },
+  {
+    "code": "AONE",
+    "name": "Phyrexia: All Will Be One Art Series",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 81
+  },
+  {
+    "code": "FONE",
+    "name": "Phyrexia: All Will Be One Jumpstart Front Cards",
+    "type": "memorabilia",
+    "released": "2023",
+    "card_count": 5
+  },
+  {
+    "code": "MONE",
+    "name": "Phyrexia: All Will Be One Minigames",
+    "type": "minigame",
+    "released": "2023",
+    "card_count": 5
+  },
+  {
+    "code": "ONE",
+    "name": "Phyrexia: All Will Be One",
+    "type": "expansion",
+    "released": "2023",
+    "card_count": 479
+  },
+  {
+    "code": "PONE",
+    "name": "Phyrexia: All Will Be One Promos",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 160
+  },
+  {
+    "code": "PL23",
+    "name": "Year of the Rabbit 2023",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 6
+  },
+  {
+    "code": "TONE",
+    "name": "Phyrexia: All Will Be One Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 14
+  },
+  {
+    "code": "TONC",
+    "name": "Phyrexia: All Will Be One Commander Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 23
+  },
+  {
+    "code": "WONE",
+    "name": "ONE Japanese Promo Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 6
+  },
+  {
+    "code": "TDMR",
+    "name": "Dominaria Remastered Tokens",
+    "type": "token",
+    "released": "2023",
+    "card_count": 14
+  },
+  {
+    "code": "DMR",
+    "name": "Dominaria Remastered",
+    "type": "masters",
+    "released": "2023",
+    "card_count": 457
+  },
+  {
+    "code": "PR23",
+    "name": "Regional Championship Qualifiers 2023",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 3
+  },
+  {
+    "code": "PW23",
+    "name": "Wizards Play Network 2023",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 11
+  },
+  {
+    "code": "P23",
+    "name": "Judge Gift Cards 2023",
+    "type": "promo",
+    "released": "2023",
+    "card_count": 10
+  },
+  {
+    "code": "YBRO",
+    "name": "Alchemy: The Brothers' War",
+    "type": "alchemy",
+    "released": "2022",
+    "card_count": 31
+  },
+  {
+    "code": "EA2",
+    "name": "Explorer Anthology 2",
+    "type": "box",
+    "released": "2022",
+    "card_count": 25
+  },
+  {
+    "code": "TSCD",
+    "name": "Starter Commander Deck Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 27
+  },
+  {
+    "code": "SCD",
+    "name": "Starter Commander Decks",
+    "type": "commander",
+    "released": "2022",
+    "card_count": 352
+  },
+  {
+    "code": "FJ22",
+    "name": "Jumpstart 2022 Front Cards",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 46
+  },
+  {
+    "code": "J22",
+    "name": "Jumpstart 2022",
+    "type": "draft_innovation",
+    "released": "2022",
+    "card_count": 835
+  },
+  {
+    "code": "30A",
+    "name": "30th Anniversary Edition",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 594
+  },
+  {
+    "code": "T30A",
+    "name": "30th Anniversary Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 16
+  },
+  {
+    "code": "PEWK",
+    "name": "Eternal Weekend",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 10
+  },
+  {
+    "code": "BRC",
+    "name": "The Brothers' War Commander",
+    "type": "commander",
+    "released": "2022",
+    "card_count": 209
+  },
+  {
+    "code": "BRR",
+    "name": "The Brothers' War Retro Artifacts",
+    "type": "masterpiece",
+    "released": "2022",
+    "card_count": 189
+  },
+  {
+    "code": "PBRO",
+    "name": "The Brothers' War Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 171
+  },
+  {
+    "code": "TBOT",
+    "name": "Transformers Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 2
+  },
+  {
+    "code": "PTBRO",
+    "name": "The Brothers' War Southeast Asia Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "BOT",
+    "name": "Transformers",
+    "type": "eternal",
+    "released": "2022",
+    "card_count": 29
+  },
+  {
+    "code": "TBRC",
+    "name": "The Brothers' War Commander Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 14
+  },
+  {
+    "code": "MBRO",
+    "name": "The Brothers' War Minigames",
+    "type": "minigame",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "TBRO",
+    "name": "The Brothers' War Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 12
+  },
+  {
+    "code": "FBRO",
+    "name": "The Brothers' War Jumpstart Front Cards",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 5
+  },
+  {
+    "code": "ABRO",
+    "name": "The Brothers' War Art Series",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 81
+  },
+  {
+    "code": "BRO",
+    "name": "The Brothers' War",
+    "type": "expansion",
+    "released": "2022",
+    "card_count": 387
+  },
+  {
+    "code": "SBRO",
+    "name": "The Brothers' War Substitute Cards",
+    "type": "token",
+    "released": "2022",
+    "card_count": 1
+  },
+  {
+    "code": "SLC",
+    "name": "Secret Lair Countdown",
+    "type": "box",
+    "released": "2022",
+    "card_count": 84
+  },
+  {
+    "code": "TGN3",
+    "name": "Game Night: Free-for-All Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 10
+  },
+  {
+    "code": "GN3",
+    "name": "Game Night: Free-for-All",
+    "type": "box",
+    "released": "2022",
+    "card_count": 135
+  },
+  {
+    "code": "ULST",
+    "name": "The List (Unfinity Foil Edition)",
+    "type": "funny",
+    "released": "2022",
+    "card_count": 62
+  },
+  {
+    "code": "TUNF",
+    "name": "Unfinity Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 14
+  },
+  {
+    "code": "UNF",
+    "name": "Unfinity",
+    "type": "funny",
+    "released": "2022",
+    "card_count": 639
+  },
+  {
+    "code": "SUNF",
+    "name": "Unfinity Sticker Sheets",
+    "type": "funny",
+    "released": "2022",
+    "card_count": 48
+  },
+  {
+    "code": "40K",
+    "name": "Warhammer 40,000 Commander",
+    "type": "commander",
+    "released": "2022",
+    "card_count": 617
+  },
+  {
+    "code": "T40K",
+    "name": "Warhammer 40,000 Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 31
+  },
+  {
+    "code": "YDMU",
+    "name": "Alchemy: Dominaria",
+    "type": "alchemy",
+    "released": "2022",
+    "card_count": 39
+  },
+  {
+    "code": "PRCQ",
+    "name": "Regional Championship Qualifiers 2022",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "P30H",
+    "name": "30th Anniversary History Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 10
+  },
+  {
+    "code": "PDMU",
+    "name": "Dominaria United Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 161
+  },
+  {
+    "code": "PTDMU",
+    "name": "Dominaria United Southeast Asia Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "WDMU",
+    "name": "DMU Japanese Promo Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 5
+  },
+  {
+    "code": "FDMU",
+    "name": "Dominaria United Jumpstart Front Cards",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 10
+  },
+  {
+    "code": "ADMU",
+    "name": "Dominaria United Art Series",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 81
+  },
+  {
+    "code": "DMU",
+    "name": "Dominaria United",
+    "type": "expansion",
+    "released": "2022",
+    "card_count": 436
+  },
+  {
+    "code": "TDMU",
+    "name": "Dominaria United Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 26
+  },
+  {
+    "code": "TDMC",
+    "name": "Dominaria United Commander Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 12
+  },
+  {
+    "code": "DMC",
+    "name": "Dominaria United Commander",
+    "type": "commander",
+    "released": "2022",
+    "card_count": 240
+  },
+  {
+    "code": "MDMU",
+    "name": "Dominaria United Minigames",
+    "type": "minigame",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "P30M",
+    "name": "30th Anniversary Misc Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 5
+  },
+  {
+    "code": "P30A",
+    "name": "30th Anniversary Play Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 30
+  },
+  {
+    "code": "PSVC",
+    "name": "Summer Vacation Promos 2022",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "PH21",
+    "name": "2021 Heroes of the Realm",
+    "type": "funny",
+    "released": "2022",
+    "card_count": 4
+  },
+  {
+    "code": "HA6",
+    "name": "Historic Anthology 6",
+    "type": "box",
+    "released": "2022",
+    "card_count": 20
+  },
+  {
+    "code": "EA1",
+    "name": "Explorer Anthology 1",
+    "type": "box",
+    "released": "2022",
+    "card_count": 20
+  },
+  {
+    "code": "SCH",
+    "name": "Store Championships",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 53
+  },
+  {
+    "code": "2X2",
+    "name": "Double Masters 2022",
+    "type": "masters",
+    "released": "2022",
+    "card_count": 579
+  },
+  {
+    "code": "T2X2",
+    "name": "Double Masters 2022 Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 24
+  },
+  {
+    "code": "HBG",
+    "name": "Alchemy Horizons: Baldur's Gate",
+    "type": "alchemy",
+    "released": "2022",
+    "card_count": 408
+  },
+  {
+    "code": "PLG22",
+    "name": "Love Your LGS 2022",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 2
+  },
+  {
+    "code": "PCLB",
+    "name": "Battle for Baldur's Gate Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 104
+  },
+  {
+    "code": "MCLB",
+    "name": "Commander Legends: Battle for Baldur's Gate Minigames",
+    "type": "minigame",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "OCLB",
+    "name": "Battle for Baldur's Gate Oversized Cards",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 1
+  },
+  {
+    "code": "CLB",
+    "name": "Commander Legends: Battle for Baldur's Gate",
+    "type": "draft_innovation",
+    "released": "2022",
+    "card_count": 936
+  },
+  {
+    "code": "ACLB",
+    "name": "Battle for Baldur's Gate Art Series",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 81
+  },
+  {
+    "code": "TCLB",
+    "name": "Battle for Baldur's Gate Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 51
+  },
+  {
+    "code": "YSNC",
+    "name": "Alchemy: New Capenna",
+    "type": "alchemy",
+    "released": "2022",
+    "card_count": 30
+  },
+  {
+    "code": "PTSNC",
+    "name": "Streets of New Capenna Southeast Asia Tokens",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 6
+  },
+  {
+    "code": "PNCC",
+    "name": "New Capenna Commander Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 75
+  },
+  {
+    "code": "TSNC",
+    "name": "Streets of New Capenna Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 19
+  },
+  {
+    "code": "SNC",
+    "name": "Streets of New Capenna",
+    "type": "expansion",
+    "released": "2022",
+    "card_count": 469
+  },
+  {
+    "code": "NCC",
+    "name": "New Capenna Commander",
+    "type": "commander",
+    "released": "2022",
+    "card_count": 447
+  },
+  {
+    "code": "TNCC",
+    "name": "New Capenna Commander Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 36
+  },
+  {
+    "code": "PSNC",
+    "name": "Streets of New Capenna Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 161
+  },
+  {
+    "code": "MSNC",
+    "name": "Streets of New Capenna Minigames",
+    "type": "minigame",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "ASNC",
+    "name": "New Capenna Art Series",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 81
+  },
+  {
+    "code": "GDY",
+    "name": "Game Day Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 9
+  },
+  {
+    "code": "Q07",
+    "name": "Challenger Decks 2022",
+    "type": "box",
+    "released": "2022",
+    "card_count": 1
+  },
+  {
+    "code": "YNEO",
+    "name": "Alchemy: Kamigawa",
+    "type": "alchemy",
+    "released": "2022",
+    "card_count": 30
+  },
+  {
+    "code": "PW22",
+    "name": "Wizards Play Network 2022",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 6
+  },
+  {
+    "code": "SLX",
+    "name": "Universes Within",
+    "type": "masters",
+    "released": "2022",
+    "card_count": 30
+  },
+  {
+    "code": "PL22",
+    "name": "Year of the Tiger 2022",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 5
+  },
+  {
+    "code": "PNEO",
+    "name": "Kamigawa: Neon Dynasty Promos",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 148
+  },
+  {
+    "code": "MNEO",
+    "name": "Kamigawa: Neon Dynasty Minigames",
+    "type": "minigame",
+    "released": "2022",
+    "card_count": 3
+  },
+  {
+    "code": "SNEO",
+    "name": "Kamigawa: Neon Dynasty Substitute Cards",
+    "type": "token",
+    "released": "2022",
+    "card_count": 9
+  },
+  {
+    "code": "TNEC",
+    "name": "Neon Dynasty Commander Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 12
+  },
+  {
+    "code": "NEO",
+    "name": "Kamigawa: Neon Dynasty",
+    "type": "expansion",
+    "released": "2022",
+    "card_count": 515
+  },
+  {
+    "code": "TNEO",
+    "name": "Kamigawa: Neon Dynasty Tokens",
+    "type": "token",
+    "released": "2022",
+    "card_count": 19
+  },
+  {
+    "code": "NEC",
+    "name": "Neon Dynasty Commander",
+    "type": "commander",
+    "released": "2022",
+    "card_count": 179
+  },
+  {
+    "code": "ANEO",
+    "name": "Neon Dynasty Art Series",
+    "type": "memorabilia",
+    "released": "2022",
+    "card_count": 81
+  },
+  {
+    "code": "CC2",
+    "name": "Commander Collection: Black",
+    "type": "arsenal",
+    "released": "2022",
+    "card_count": 9
+  },
+  {
+    "code": "DBL",
+    "name": "Innistrad: Double Feature",
+    "type": "draft_innovation",
+    "released": "2022",
+    "card_count": 535
+  },
+  {
+    "code": "P22",
+    "name": "Judge Gift Cards 2022",
+    "type": "promo",
+    "released": "2022",
+    "card_count": 10
+  },
+  {
+    "code": "YMID",
+    "name": "Alchemy: Innistrad",
+    "type": "alchemy",
+    "released": "2021",
+    "card_count": 63
+  },
+  {
+    "code": "PVOW",
+    "name": "Innistrad: Crimson Vow Promos",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 121
+  },
+  {
+    "code": "TVOW",
+    "name": "Innistrad: Crimson Vow Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 21
+  },
+  {
+    "code": "OVOC",
+    "name": "Crimson Vow Commander Display Commanders",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 2
+  },
+  {
+    "code": "TVOC",
+    "name": "Crimson Vow Commander Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 6
+  },
+  {
+    "code": "MVOW",
+    "name": "Innistrad: Crimson Vow Minigames",
+    "type": "minigame",
+    "released": "2021",
+    "card_count": 3
+  },
+  {
+    "code": "SVOW",
+    "name": "Innistrad: Crimson Vow Substitute Cards",
+    "type": "token",
+    "released": "2021",
+    "card_count": 9
+  },
+  {
+    "code": "VOC",
+    "name": "Crimson Vow Commander",
+    "type": "commander",
+    "released": "2021",
+    "card_count": 188
+  },
+  {
+    "code": "VOW",
+    "name": "Innistrad: Crimson Vow",
+    "type": "expansion",
+    "released": "2021",
+    "card_count": 412
+  },
+  {
+    "code": "AVOW",
+    "name": "Crimson Vow Art Series",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 81
+  },
+  {
+    "code": "Q06",
+    "name": "Pioneer Challenger Decks 2021",
+    "type": "box",
+    "released": "2021",
+    "card_count": 10
+  },
+  {
+    "code": "SMID",
+    "name": "Innistrad: Midnight Hunt Substitute Cards",
+    "type": "token",
+    "released": "2021",
+    "card_count": 9
+  },
+  {
+    "code": "MIC",
+    "name": "Midnight Hunt Commander",
+    "type": "commander",
+    "released": "2021",
+    "card_count": 187
+  },
+  {
+    "code": "OMIC",
+    "name": "Midnight Hunt Commander Display Commanders",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 2
+  },
+  {
+    "code": "PMID",
+    "name": "Innistrad: Midnight Hunt Promos",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 155
+  },
+  {
+    "code": "AMID",
+    "name": "Midnight Hunt Art Series",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 81
+  },
+  {
+    "code": "TMIC",
+    "name": "Midnight Hunt Commander Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 11
+  },
+  {
+    "code": "TMID",
+    "name": "Innistrad: Midnight Hunt Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 19
+  },
+  {
+    "code": "MMID",
+    "name": "Innistrad: Midnight Hunt Minigames",
+    "type": "minigame",
+    "released": "2021",
+    "card_count": 3
+  },
+  {
+    "code": "MID",
+    "name": "Innistrad: Midnight Hunt",
+    "type": "expansion",
+    "released": "2021",
+    "card_count": 392
+  },
+  {
+    "code": "J21",
+    "name": "Jumpstart: Historic Horizons",
+    "type": "draft_innovation",
+    "released": "2021",
+    "card_count": 389
+  },
+  {
+    "code": "CMB2",
+    "name": "Mystery Booster Playtest Cards 2021",
+    "type": "funny",
+    "released": "2021",
+    "card_count": 121
+  },
+  {
+    "code": "PH20",
+    "name": "2020 Heroes of the Realm",
+    "type": "funny",
+    "released": "2021",
+    "card_count": 3
+  },
+  {
+    "code": "PAFR",
+    "name": "Adventures in the Forgotten Realms Promos",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 241
+  },
+  {
+    "code": "OAFC",
+    "name": "Forgotten Realms Commander Display Commanders",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 4
+  },
+  {
+    "code": "OAFR",
+    "name": "Forgotten Realms Oversized Cards",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 3
+  },
+  {
+    "code": "AFC",
+    "name": "Forgotten Realms Commander",
+    "type": "commander",
+    "released": "2021",
+    "card_count": 331
+  },
+  {
+    "code": "AAFR",
+    "name": "Adventures in the Forgotten Realms Art Series",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 81
+  },
+  {
+    "code": "TAFR",
+    "name": "Adventures in the Forgotten Realms Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 22
+  },
+  {
+    "code": "TAFC",
+    "name": "Forgotten Realms Commander Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 13
+  },
+  {
+    "code": "MAFR",
+    "name": "Adventures in the Forgotten Realms Minigames",
+    "type": "minigame",
+    "released": "2021",
+    "card_count": 5
+  },
+  {
+    "code": "AFR",
+    "name": "Adventures in the Forgotten Realms",
+    "type": "expansion",
+    "released": "2021",
+    "card_count": 402
+  },
+  {
+    "code": "PLG21",
+    "name": "Love Your LGS 2021",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 11
+  },
+  {
+    "code": "TMH2",
+    "name": "Modern Horizons 2 Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 21
+  },
+  {
+    "code": "MMH2",
+    "name": "Modern Horizons 2 Minigames",
+    "type": "minigame",
+    "released": "2021",
+    "card_count": 5
+  },
+  {
+    "code": "PMH2",
+    "name": "Modern Horizons 2 Promos",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 86
+  },
+  {
+    "code": "AMH2",
+    "name": "Modern Horizons 2 Art Series",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 162
+  },
+  {
+    "code": "MH2",
+    "name": "Modern Horizons 2",
+    "type": "draft_innovation",
+    "released": "2021",
+    "card_count": 492
+  },
+  {
+    "code": "H1R",
+    "name": "Modern Horizons 1 Timeshifts",
+    "type": "draft_innovation",
+    "released": "2021",
+    "card_count": 40
+  },
+  {
+    "code": "PW21",
+    "name": "Wizards Play Network 2021",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 6
+  },
+  {
+    "code": "HA5",
+    "name": "Historic Anthology 5",
+    "type": "box",
+    "released": "2021",
+    "card_count": 25
+  },
+  {
+    "code": "PSTX",
+    "name": "Strixhaven: School of Mages Promos",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 164
+  },
+  {
+    "code": "TSTX",
+    "name": "Strixhaven: School of Mages Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 9
+  },
+  {
+    "code": "TC21",
+    "name": "Commander 2021 Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 30
+  },
+  {
+    "code": "SSTX",
+    "name": "Strixhaven: School of Mages Substitute Cards",
+    "type": "token",
+    "released": "2021",
+    "card_count": 9
+  },
+  {
+    "code": "MSTX",
+    "name": "Strixhaven: School of Mages Minigames",
+    "type": "minigame",
+    "released": "2021",
+    "card_count": 5
+  },
+  {
+    "code": "C21",
+    "name": "Commander 2021",
+    "type": "commander",
+    "released": "2021",
+    "card_count": 409
+  },
+  {
+    "code": "OC21",
+    "name": "Commander 2021 Display Commanders",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 5
+  },
+  {
+    "code": "STX",
+    "name": "Strixhaven: School of Mages",
+    "type": "expansion",
+    "released": "2021",
+    "card_count": 383
+  },
+  {
+    "code": "ASTX",
+    "name": "Strixhaven Art Series",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 162
+  },
+  {
+    "code": "STA",
+    "name": "Strixhaven Mystical Archive",
+    "type": "masterpiece",
+    "released": "2021",
+    "card_count": 126
+  },
+  {
+    "code": "TTSR",
+    "name": "Time Spiral Remastered Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 15
+  },
+  {
+    "code": "TSR",
+    "name": "Time Spiral Remastered",
+    "type": "masters",
+    "released": "2021",
+    "card_count": 411
+  },
+  {
+    "code": "HA4",
+    "name": "Historic Anthology 4",
+    "type": "box",
+    "released": "2021",
+    "card_count": 25
+  },
+  {
+    "code": "PKHM",
+    "name": "Kaldheim Promos",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 158
+  },
+  {
+    "code": "MKHM",
+    "name": "Kaldheim Minigames",
+    "type": "minigame",
+    "released": "2021",
+    "card_count": 5
+  },
+  {
+    "code": "SKHM",
+    "name": "Kaldheim Substitute Cards",
+    "type": "token",
+    "released": "2021",
+    "card_count": 9
+  },
+  {
+    "code": "TKHC",
+    "name": "Kaldheim Commander Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 8
+  },
+  {
+    "code": "TKHM",
+    "name": "Kaldheim Tokens",
+    "type": "token",
+    "released": "2021",
+    "card_count": 23
+  },
+  {
+    "code": "KHM",
+    "name": "Kaldheim",
+    "type": "expansion",
+    "released": "2021",
+    "card_count": 407
+  },
+  {
+    "code": "KHC",
+    "name": "Kaldheim Commander",
+    "type": "commander",
+    "released": "2021",
+    "card_count": 119
+  },
+  {
+    "code": "AKHM",
+    "name": "Kaldheim Art Series",
+    "type": "memorabilia",
+    "released": "2021",
+    "card_count": 81
+  },
+  {
+    "code": "PL21",
+    "name": "Year of the Ox 2021",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 6
+  },
+  {
+    "code": "PJ21",
+    "name": "Judge Gift Cards 2021",
+    "type": "promo",
+    "released": "2021",
+    "card_count": 10
+  },
+  {
+    "code": "CC1",
+    "name": "Commander Collection: Green",
+    "type": "arsenal",
+    "released": "2020",
+    "card_count": 8
+  },
+  {
+    "code": "CMR",
+    "name": "Commander Legends",
+    "type": "draft_innovation",
+    "released": "2020",
+    "card_count": 718
+  },
+  {
+    "code": "TCMR",
+    "name": "Commander Legends Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 23
+  },
+  {
+    "code": "PCMR",
+    "name": "Commander Legends Promos",
+    "type": "promo",
+    "released": "2020",
+    "card_count": 6
+  },
+  {
+    "code": "KLR",
+    "name": "Kaladesh Remastered",
+    "type": "masters",
+    "released": "2020",
+    "card_count": 302
+  },
+  {
+    "code": "PLST",
+    "name": "The List",
+    "type": "masters",
+    "released": "2020",
+    "card_count": 5663
+  },
+  {
+    "code": "PZNR",
+    "name": "Zendikar Rising Promos",
+    "type": "promo",
+    "released": "2020",
+    "card_count": 153
+  },
+  {
+    "code": "TZNC",
+    "name": "Zendikar Rising Commander Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 11
+  },
+  {
+    "code": "ZNC",
+    "name": "Zendikar Rising Commander",
+    "type": "commander",
+    "released": "2020",
+    "card_count": 142
+  },
+  {
+    "code": "ZNE",
+    "name": "Zendikar Rising Expeditions",
+    "type": "masterpiece",
+    "released": "2020",
+    "card_count": 30
+  },
+  {
+    "code": "ZNR",
+    "name": "Zendikar Rising",
+    "type": "expansion",
+    "released": "2020",
+    "card_count": 392
+  },
+  {
+    "code": "MZNR",
+    "name": "Zendikar Rising Minigames",
+    "type": "minigame",
+    "released": "2020",
+    "card_count": 5
+  },
+  {
+    "code": "TZNR",
+    "name": "Zendikar Rising Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 12
+  },
+  {
+    "code": "AZNR",
+    "name": "Zendikar Rising Art Series",
+    "type": "memorabilia",
+    "released": "2020",
+    "card_count": 81
+  },
+  {
+    "code": "SZNR",
+    "name": "Zendikar Rising Substitute Cards",
+    "type": "token",
+    "released": "2020",
+    "card_count": 9
+  },
+  {
+    "code": "AKR",
+    "name": "Amonkhet Remastered",
+    "type": "masters",
+    "released": "2020",
+    "card_count": 339
+  },
+  {
+    "code": "ANB",
+    "name": "Arena Beginner Set",
+    "type": "starter",
+    "released": "2020",
+    "card_count": 118
+  },
+  {
+    "code": "2XM",
+    "name": "Double Masters",
+    "type": "masters",
+    "released": "2020",
+    "card_count": 384
+  },
+  {
+    "code": "T2XM",
+    "name": "Double Masters Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 31
+  },
+  {
+    "code": "PH19",
+    "name": "2019 Heroes of the Realm",
+    "type": "funny",
+    "released": "2020",
+    "card_count": 7
+  },
+  {
+    "code": "AJMP",
+    "name": "Jumpstart Arena Exclusives",
+    "type": "starter",
+    "released": "2020",
+    "card_count": 18
+  },
+  {
+    "code": "JMP",
+    "name": "Jumpstart",
+    "type": "draft_innovation",
+    "released": "2020",
+    "card_count": 496
+  },
+  {
+    "code": "PM21",
+    "name": "Core Set 2021 Promos",
+    "type": "promo",
+    "released": "2020",
+    "card_count": 137
+  },
+  {
+    "code": "TM21",
+    "name": "Core Set 2021 Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 20
+  },
+  {
+    "code": "M21",
+    "name": "Core Set 2021",
+    "type": "core",
+    "released": "2020",
+    "card_count": 397
+  },
+  {
+    "code": "SS3",
+    "name": "Signature Spellbook: Chandra",
+    "type": "spellbook",
+    "released": "2020",
+    "card_count": 8
+  },
+  {
+    "code": "FJMP",
+    "name": "Jumpstart Front Cards",
+    "type": "memorabilia",
+    "released": "2020",
+    "card_count": 46
+  },
+  {
+    "code": "SLU",
+    "name": "Secret Lair: Ultimate Edition",
+    "type": "box",
+    "released": "2020",
+    "card_count": 16
+  },
+  {
+    "code": "HA3",
+    "name": "Historic Anthology 3",
+    "type": "box",
+    "released": "2020",
+    "card_count": 27
+  },
+  {
+    "code": "PLG20",
+    "name": "Love Your LGS 2020",
+    "type": "promo",
+    "released": "2020",
+    "card_count": 2
+  },
+  {
+    "code": "PIKO",
+    "name": "Ikoria: Lair of Behemoths Promos",
+    "type": "promo",
+    "released": "2020",
+    "card_count": 137
+  },
+  {
+    "code": "TIKO",
+    "name": "Ikoria: Lair of Behemoths Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 14
+  },
+  {
+    "code": "IKO",
+    "name": "Ikoria: Lair of Behemoths",
+    "type": "expansion",
+    "released": "2020",
+    "card_count": 389
+  },
+  {
+    "code": "OC20",
+    "name": "Commander 2020 Oversized",
+    "type": "memorabilia",
+    "released": "2020",
+    "card_count": 5
+  },
+  {
+    "code": "C20",
+    "name": "Commander 2020",
+    "type": "commander",
+    "released": "2020",
+    "card_count": 322
+  },
+  {
+    "code": "TC20",
+    "name": "Commander 2020 Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 20
+  },
+  {
+    "code": "HA2",
+    "name": "Historic Anthology 2",
+    "type": "box",
+    "released": "2020",
+    "card_count": 25
+  },
+  {
+    "code": "TUND",
+    "name": "Unsanctioned Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 6
+  },
+  {
+    "code": "UND",
+    "name": "Unsanctioned",
+    "type": "funny",
+    "released": "2020",
+    "card_count": 96
+  },
+  {
+    "code": "PTHB",
+    "name": "Theros Beyond Death Promos",
+    "type": "promo",
+    "released": "2020",
+    "card_count": 137
+  },
+  {
+    "code": "TTHB",
+    "name": "Theros Beyond Death Tokens",
+    "type": "token",
+    "released": "2020",
+    "card_count": 14
+  },
+  {
+    "code": "THB",
+    "name": "Theros Beyond Death",
+    "type": "expansion",
+    "released": "2020",
+    "card_count": 358
+  },
+  {
+    "code": "PF20",
+    "name": "MagicFest 2020",
+    "type": "promo",
+    "released": "2020",
+    "card_count": 6
+  },
+  {
+    "code": "J20",
+    "name": "Judge Gift Cards 2020",
+    "type": "promo",
+    "released": "2020",
+    "card_count": 10
+  },
+  {
+    "code": "SLD",
+    "name": "Secret Lair Drop",
+    "type": "box",
+    "released": "2019",
+    "card_count": 2834
+  },
+  {
+    "code": "HA1",
+    "name": "Historic Anthology 1",
+    "type": "box",
+    "released": "2019",
+    "card_count": 20
+  },
+  {
+    "code": "TGN2",
+    "name": "Game Night 2019 Tokens",
+    "type": "token",
+    "released": "2019",
+    "card_count": 3
+  },
+  {
+    "code": "GN2",
+    "name": "Game Night 2019",
+    "type": "box",
+    "released": "2019",
+    "card_count": 64
+  },
+  {
+    "code": "CMB1",
+    "name": "Mystery Booster Playtest Cards 2019",
+    "type": "funny",
+    "released": "2019",
+    "card_count": 121
+  },
+  {
+    "code": "PTG",
+    "name": "Ponies: The Galloping",
+    "type": "funny",
+    "released": "2019",
+    "card_count": 3
+  },
+  {
+    "code": "PELD",
+    "name": "Throne of Eldraine Promos",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 138
+  },
+  {
+    "code": "TELD",
+    "name": "Throne of Eldraine Tokens",
+    "type": "token",
+    "released": "2019",
+    "card_count": 20
+  },
+  {
+    "code": "ELD",
+    "name": "Throne of Eldraine",
+    "type": "expansion",
+    "released": "2019",
+    "card_count": 397
+  },
+  {
+    "code": "PWCS",
+    "name": "Planeswalker Championship Promos",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 46
+  },
+  {
+    "code": "OC19",
+    "name": "Commander 2019 Oversized",
+    "type": "memorabilia",
+    "released": "2019",
+    "card_count": 4
+  },
+  {
+    "code": "C19",
+    "name": "Commander 2019",
+    "type": "commander",
+    "released": "2019",
+    "card_count": 302
+  },
+  {
+    "code": "TC19",
+    "name": "Commander 2019 Tokens",
+    "type": "token",
+    "released": "2019",
+    "card_count": 29
+  },
+  {
+    "code": "PH18",
+    "name": "2018 Heroes of the Realm",
+    "type": "funny",
+    "released": "2019",
+    "card_count": 5
+  },
+  {
+    "code": "PS19",
+    "name": "San Diego Comic-Con 2019",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 5
+  },
+  {
+    "code": "PM20",
+    "name": "Core Set 2020 Promos",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 144
+  },
+  {
+    "code": "TM20",
+    "name": "Core Set 2020 Tokens",
+    "type": "token",
+    "released": "2019",
+    "card_count": 12
+  },
+  {
+    "code": "PPP1",
+    "name": "M20 Promo Packs",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 5
+  },
+  {
+    "code": "M20",
+    "name": "Core Set 2020",
+    "type": "core",
+    "released": "2019",
+    "card_count": 345
+  },
+  {
+    "code": "SS2",
+    "name": "Signature Spellbook: Gideon",
+    "type": "spellbook",
+    "released": "2019",
+    "card_count": 8
+  },
+  {
+    "code": "PMH1",
+    "name": "Modern Horizons Promos",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 2
+  },
+  {
+    "code": "MH1",
+    "name": "Modern Horizons",
+    "type": "draft_innovation",
+    "released": "2019",
+    "card_count": 255
+  },
+  {
+    "code": "AMH1",
+    "name": "Modern Horizons Art Series",
+    "type": "memorabilia",
+    "released": "2019",
+    "card_count": 54
+  },
+  {
+    "code": "TMH1",
+    "name": "Modern Horizons Tokens",
+    "type": "token",
+    "released": "2019",
+    "card_count": 21
+  },
+  {
+    "code": "PWAR",
+    "name": "War of the Spark Promos",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 176
+  },
+  {
+    "code": "TWAR",
+    "name": "War of the Spark Tokens",
+    "type": "token",
+    "released": "2019",
+    "card_count": 19
+  },
+  {
+    "code": "WAR",
+    "name": "War of the Spark",
+    "type": "expansion",
+    "released": "2019",
+    "card_count": 311
+  },
+  {
+    "code": "J19",
+    "name": "Judge Gift Cards 2019",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 8
+  },
+  {
+    "code": "PRW2",
+    "name": "RNA Ravnica Weekend",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 10
+  },
+  {
+    "code": "TGK2",
+    "name": "RNA Guild Kit Tokens",
+    "type": "token",
+    "released": "2019",
+    "card_count": 9
+  },
+  {
+    "code": "GK2",
+    "name": "RNA Guild Kit",
+    "type": "box",
+    "released": "2019",
+    "card_count": 133
+  },
+  {
+    "code": "PRNA",
+    "name": "Ravnica Allegiance Promos",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 81
+  },
+  {
+    "code": "TRNA",
+    "name": "Ravnica Allegiance Tokens",
+    "type": "token",
+    "released": "2019",
+    "card_count": 13
+  },
+  {
+    "code": "RNA",
+    "name": "Ravnica Allegiance",
+    "type": "expansion",
+    "released": "2019",
+    "card_count": 273
+  },
+  {
+    "code": "PF19",
+    "name": "MagicFest 2019",
+    "type": "promo",
+    "released": "2019",
+    "card_count": 7
+  },
+  {
+    "code": "PUMA",
+    "name": "Ultimate Box Topper",
+    "type": "masterpiece",
+    "released": "2018",
+    "card_count": 40
+  },
+  {
+    "code": "UMA",
+    "name": "Ultimate Masters",
+    "type": "masters",
+    "released": "2018",
+    "card_count": 254
+  },
+  {
+    "code": "TUMA",
+    "name": "Ultimate Masters Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 16
+  },
+  {
+    "code": "G18",
+    "name": "M19 Gift Pack",
+    "type": "box",
+    "released": "2018",
+    "card_count": 5
+  },
+  {
+    "code": "GNT",
+    "name": "Game Night",
+    "type": "box",
+    "released": "2018",
+    "card_count": 68
+  },
+  {
+    "code": "PRWK",
+    "name": "GRN Ravnica Weekend",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 10
+  },
+  {
+    "code": "TGK1",
+    "name": "GRN Guild Kit Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 10
+  },
+  {
+    "code": "GK1",
+    "name": "GRN Guild Kit",
+    "type": "box",
+    "released": "2018",
+    "card_count": 127
+  },
+  {
+    "code": "PGRN",
+    "name": "Guilds of Ravnica Promos",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 84
+  },
+  {
+    "code": "TGRN",
+    "name": "Guilds of Ravnica Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 8
+  },
+  {
+    "code": "GRN",
+    "name": "Guilds of Ravnica",
+    "type": "expansion",
+    "released": "2018",
+    "card_count": 273
+  },
+  {
+    "code": "TMED",
+    "name": "Mythic Edition Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 16
+  },
+  {
+    "code": "MED",
+    "name": "Mythic Edition",
+    "type": "masterpiece",
+    "released": "2018",
+    "card_count": 24
+  },
+  {
+    "code": "OC18",
+    "name": "Commander 2018 Oversized",
+    "type": "memorabilia",
+    "released": "2018",
+    "card_count": 4
+  },
+  {
+    "code": "C18",
+    "name": "Commander 2018",
+    "type": "commander",
+    "released": "2018",
+    "card_count": 307
+  },
+  {
+    "code": "TC18",
+    "name": "Commander 2018 Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 26
+  },
+  {
+    "code": "PH17",
+    "name": "2017 Heroes of the Realm",
+    "type": "funny",
+    "released": "2018",
+    "card_count": 3
+  },
+  {
+    "code": "PS18",
+    "name": "San Diego Comic-Con 2018",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 5
+  },
+  {
+    "code": "XANA",
+    "name": "Arena New Player Experience Extras",
+    "type": "memorabilia",
+    "released": "2018",
+    "card_count": 20
+  },
+  {
+    "code": "ANA",
+    "name": "Arena New Player Experience",
+    "type": "starter",
+    "released": "2018",
+    "card_count": 49
+  },
+  {
+    "code": "PANA",
+    "name": "MTG Arena Promos",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 83
+  },
+  {
+    "code": "OANA",
+    "name": "Arena New Player Experience Cards",
+    "type": "starter",
+    "released": "2018",
+    "card_count": 14
+  },
+  {
+    "code": "PM19",
+    "name": "Core Set 2019 Promos",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 95
+  },
+  {
+    "code": "PSS3",
+    "name": "M19 Standard Showdown",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 5
+  },
+  {
+    "code": "TM19",
+    "name": "Core Set 2019 Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 18
+  },
+  {
+    "code": "M19",
+    "name": "Core Set 2019",
+    "type": "core",
+    "released": "2018",
+    "card_count": 314
+  },
+  {
+    "code": "GS1",
+    "name": "Global Series Jiang Yanggu & Mu Yanling",
+    "type": "duel_deck",
+    "released": "2018",
+    "card_count": 41
+  },
+  {
+    "code": "SS1",
+    "name": "Signature Spellbook: Jace",
+    "type": "spellbook",
+    "released": "2018",
+    "card_count": 8
+  },
+  {
+    "code": "PBBD",
+    "name": "Battlebond Promos",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 22
+  },
+  {
+    "code": "TBBD",
+    "name": "Battlebond Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 8
+  },
+  {
+    "code": "BBD",
+    "name": "Battlebond",
+    "type": "draft_innovation",
+    "released": "2018",
+    "card_count": 256
+  },
+  {
+    "code": "CM2",
+    "name": "Commander Anthology Volume II",
+    "type": "commander",
+    "released": "2018",
+    "card_count": 312
+  },
+  {
+    "code": "TCM2",
+    "name": "Commander Anthology Volume II Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 19
+  },
+  {
+    "code": "PDOM",
+    "name": "Dominaria Promos",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 118
+  },
+  {
+    "code": "DOM",
+    "name": "Dominaria",
+    "type": "expansion",
+    "released": "2018",
+    "card_count": 280
+  },
+  {
+    "code": "TDOM",
+    "name": "Dominaria Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 16
+  },
+  {
+    "code": "DDU",
+    "name": "Duel Decks: Elves vs. Inventors",
+    "type": "duel_deck",
+    "released": "2018",
+    "card_count": 76
+  },
+  {
+    "code": "TDDU",
+    "name": "Duel Decks: Elves vs. Inventors Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 4
+  },
+  {
+    "code": "A25",
+    "name": "Masters 25",
+    "type": "masters",
+    "released": "2018",
+    "card_count": 249
+  },
+  {
+    "code": "TA25",
+    "name": "Masters 25 Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 16
+  },
+  {
+    "code": "PLNY",
+    "name": "Lunar New Year 2018",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 1
+  },
+  {
+    "code": "PNAT",
+    "name": "Nationals Promos",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 1
+  },
+  {
+    "code": "TRIX",
+    "name": "Rivals of Ixalan Tokens",
+    "type": "token",
+    "released": "2018",
+    "card_count": 7
+  },
+  {
+    "code": "PRIX",
+    "name": "Rivals of Ixalan Promos",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 98
+  },
+  {
+    "code": "RIX",
+    "name": "Rivals of Ixalan",
+    "type": "expansion",
+    "released": "2018",
+    "card_count": 205
+  },
+  {
+    "code": "J18",
+    "name": "Judge Gift Cards 2018",
+    "type": "promo",
+    "released": "2018",
+    "card_count": 8
+  },
+  {
+    "code": "F18",
+    "name": "Friday Night Magic 2018",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 3
+  },
+  {
+    "code": "PUST",
+    "name": "Unstable Promos",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 1
+  },
+  {
+    "code": "TUST",
+    "name": "Unstable Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 20
+  },
+  {
+    "code": "UST",
+    "name": "Unstable",
+    "type": "funny",
+    "released": "2017",
+    "card_count": 268
+  },
+  {
+    "code": "TIMA",
+    "name": "Iconic Masters Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 7
+  },
+  {
+    "code": "E02",
+    "name": "Explorers of Ixalan",
+    "type": "box",
+    "released": "2017",
+    "card_count": 48
+  },
+  {
+    "code": "V17",
+    "name": "From the Vault: Transform",
+    "type": "from_the_vault",
+    "released": "2017",
+    "card_count": 16
+  },
+  {
+    "code": "PXTC",
+    "name": "XLN Treasure Chest",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 10
+  },
+  {
+    "code": "IMA",
+    "name": "Iconic Masters",
+    "type": "masters",
+    "released": "2017",
+    "card_count": 249
+  },
+  {
+    "code": "DDT",
+    "name": "Duel Decks: Merfolk vs. Goblins",
+    "type": "duel_deck",
+    "released": "2017",
+    "card_count": 63
+  },
+  {
+    "code": "TDDT",
+    "name": "Duel Decks: Merfolk vs. Goblins Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 3
+  },
+  {
+    "code": "G17",
+    "name": "2017 Gift Pack",
+    "type": "box",
+    "released": "2017",
+    "card_count": 5
+  },
+  {
+    "code": "PXLN",
+    "name": "Ixalan Promos",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 120
+  },
+  {
+    "code": "XLN",
+    "name": "Ixalan",
+    "type": "expansion",
+    "released": "2017",
+    "card_count": 289
+  },
+  {
+    "code": "TXLN",
+    "name": "Ixalan Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 11
+  },
+  {
+    "code": "PSS2",
+    "name": "XLN Standard Showdown",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 5
+  },
+  {
+    "code": "H17",
+    "name": "HasCon 2017",
+    "type": "funny",
+    "released": "2017",
+    "card_count": 4
+  },
+  {
+    "code": "PHTR",
+    "name": "2016 Heroes of the Realm",
+    "type": "funny",
+    "released": "2017",
+    "card_count": 3
+  },
+  {
+    "code": "TE01",
+    "name": "Archenemy: Nicol Bolas Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 5
+  },
+  {
+    "code": "OC17",
+    "name": "Commander 2017 Oversized",
+    "type": "memorabilia",
+    "released": "2017",
+    "card_count": 4
+  },
+  {
+    "code": "TC17",
+    "name": "Commander 2017 Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 11
+  },
+  {
+    "code": "C17",
+    "name": "Commander 2017",
+    "type": "commander",
+    "released": "2017",
+    "card_count": 309
+  },
+  {
+    "code": "PS17",
+    "name": "San Diego Comic-Con 2017",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 6
+  },
+  {
+    "code": "PHOU",
+    "name": "Hour of Devastation Promos",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 62
+  },
+  {
+    "code": "HOU",
+    "name": "Hour of Devastation",
+    "type": "expansion",
+    "released": "2017",
+    "card_count": 209
+  },
+  {
+    "code": "THOU",
+    "name": "Hour of Devastation Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 13
+  },
+  {
+    "code": "OE01",
+    "name": "Archenemy: Nicol Bolas Schemes",
+    "type": "archenemy",
+    "released": "2017",
+    "card_count": 20
+  },
+  {
+    "code": "E01",
+    "name": "Archenemy: Nicol Bolas",
+    "type": "archenemy",
+    "released": "2017",
+    "card_count": 106
+  },
+  {
+    "code": "TCMA",
+    "name": "Commander Anthology Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 20
+  },
+  {
+    "code": "CMA",
+    "name": "Commander Anthology",
+    "type": "commander",
+    "released": "2017",
+    "card_count": 320
+  },
+  {
+    "code": "PAKH",
+    "name": "Amonkhet Promos",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 77
+  },
+  {
+    "code": "TAKH",
+    "name": "Amonkhet Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 26
+  },
+  {
+    "code": "MP2",
+    "name": "Amonkhet Invocations",
+    "type": "masterpiece",
+    "released": "2017",
+    "card_count": 54
+  },
+  {
+    "code": "AKH",
+    "name": "Amonkhet",
+    "type": "expansion",
+    "released": "2017",
+    "card_count": 287
+  },
+  {
+    "code": "W17",
+    "name": "Welcome Deck 2017",
+    "type": "starter",
+    "released": "2017",
+    "card_count": 30
+  },
+  {
+    "code": "DDS",
+    "name": "Duel Decks: Mind vs. Might",
+    "type": "duel_deck",
+    "released": "2017",
+    "card_count": 65
+  },
+  {
+    "code": "TDDS",
+    "name": "Duel Decks: Mind vs. Might Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 7
+  },
+  {
+    "code": "TMM3",
+    "name": "Modern Masters 2017 Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 21
+  },
+  {
+    "code": "MM3",
+    "name": "Modern Masters 2017",
+    "type": "masters",
+    "released": "2017",
+    "card_count": 249
+  },
+  {
+    "code": "PAER",
+    "name": "Aether Revolt Promos",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 65
+  },
+  {
+    "code": "TAER",
+    "name": "Aether Revolt Tokens",
+    "type": "token",
+    "released": "2017",
+    "card_count": 4
+  },
+  {
+    "code": "AER",
+    "name": "Aether Revolt",
+    "type": "expansion",
+    "released": "2017",
+    "card_count": 197
+  },
+  {
+    "code": "L17",
+    "name": "League Tokens 2017",
+    "type": "token",
+    "released": "2017",
+    "card_count": 1
+  },
+  {
+    "code": "J17",
+    "name": "Judge Gift Cards 2017",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 9
+  },
+  {
+    "code": "F17",
+    "name": "Friday Night Magic 2017",
+    "type": "promo",
+    "released": "2017",
+    "card_count": 12
+  },
+  {
+    "code": "OPCA",
+    "name": "Planechase Anthology Planes",
+    "type": "planechase",
+    "released": "2016",
+    "card_count": 86
+  },
+  {
+    "code": "TPCA",
+    "name": "Planechase Anthology Tokens",
+    "type": "token",
+    "released": "2016",
+    "card_count": 19
+  },
+  {
+    "code": "PCA",
+    "name": "Planechase Anthology",
+    "type": "planechase",
+    "released": "2016",
+    "card_count": 156
+  },
+  {
+    "code": "PZ2",
+    "name": "Treasure Chest",
+    "type": "treasure_chest",
+    "released": "2016",
+    "card_count": 270
+  },
+  {
+    "code": "OC16",
+    "name": "Commander 2016 Oversized",
+    "type": "memorabilia",
+    "released": "2016",
+    "card_count": 5
+  },
+  {
+    "code": "C16",
+    "name": "Commander 2016",
+    "type": "commander",
+    "released": "2016",
+    "card_count": 351
+  },
+  {
+    "code": "TC16",
+    "name": "Commander 2016 Tokens",
+    "type": "token",
+    "released": "2016",
+    "card_count": 21
+  },
+  {
+    "code": "PS16",
+    "name": "San Diego Comic-Con 2016",
+    "type": "promo",
+    "released": "2016",
+    "card_count": 5
+  },
+  {
+    "code": "PKLD",
+    "name": "Kaladesh Promos",
+    "type": "promo",
+    "released": "2016",
+    "card_count": 83
+  },
+  {
+    "code": "KLD",
+    "name": "Kaladesh",
+    "type": "expansion",
+    "released": "2016",
+    "card_count": 278
+  },
+  {
+    "code": "TKLD",
+    "name": "Kaladesh Tokens",
+    "type": "token",
+    "released": "2016",
+    "card_count": 13
+  },
+  {
+    "code": "MPS",
+    "name": "Kaladesh Inventions",
+    "type": "masterpiece",
+    "released": "2016",
+    "card_count": 54
+  },
+  {
+    "code": "DDR",
+    "name": "Duel Decks: Nissa vs. Ob Nixilis",
+    "type": "duel_deck",
+    "released": "2016",
+    "card_count": 76
+  },
+  {
+    "code": "CN2",
+    "name": "Conspiracy: Take the Crown",
+    "type": "draft_innovation",
+    "released": "2016",
+    "card_count": 222
+  },
+  {
+    "code": "TCN2",
+    "name": "Conspiracy: Take the Crown Tokens",
+    "type": "token",
+    "released": "2016",
+    "card_count": 12
+  },
+  {
+    "code": "V16",
+    "name": "From the Vault: Lore",
+    "type": "from_the_vault",
+    "released": "2016",
+    "card_count": 16
+  },
+  {
+    "code": "PEMN",
+    "name": "Eldritch Moon Promos",
+    "type": "promo",
+    "released": "2016",
+    "card_count": 77
+  },
+  {
+    "code": "TEMN",
+    "name": "Eldritch Moon Tokens",
+    "type": "token",
+    "released": "2016",
+    "card_count": 11
+  },
+  {
+    "code": "EMN",
+    "name": "Eldritch Moon",
+    "type": "expansion",
+    "released": "2016",
+    "card_count": 208
+  },
+  {
+    "code": "TEMA",
+    "name": "Eternal Masters Tokens",
+    "type": "token",
+    "released": "2016",
+    "card_count": 16
+  },
+  {
+    "code": "EMA",
+    "name": "Eternal Masters",
+    "type": "masters",
+    "released": "2016",
+    "card_count": 249
+  },
+  {
+    "code": "PSOI",
+    "name": "Shadows over Innistrad Promos",
+    "type": "promo",
+    "released": "2016",
+    "card_count": 90
+  },
+  {
+    "code": "TSOI",
+    "name": "Shadows over Innistrad Tokens",
+    "type": "token",
+    "released": "2016",
+    "card_count": 20
+  },
+  {
+    "code": "SOI",
+    "name": "Shadows over Innistrad",
+    "type": "expansion",
+    "released": "2016",
+    "card_count": 302
+  },
+  {
+    "code": "W16",
+    "name": "Welcome Deck 2016",
+    "type": "starter",
+    "released": "2016",
+    "card_count": 16
+  },
+  {
+    "code": "DDQ",
+    "name": "Duel Decks: Blessed vs. Cursed",
+    "type": "duel_deck",
+    "released": "2016",
+    "card_count": 80
+  },
+  {
+    "code": "TOGW",
+    "name": "Oath of the Gatewatch Tokens",
+    "type": "token",
+    "released": "2016",
+    "card_count": 11
+  },
+  {
+    "code": "POGW",
+    "name": "Oath of the Gatewatch Promos",
+    "type": "promo",
+    "released": "2016",
+    "card_count": 65
+  },
+  {
+    "code": "OGW",
+    "name": "Oath of the Gatewatch",
+    "type": "expansion",
+    "released": "2016",
+    "card_count": 187
+  },
+  {
+    "code": "L16",
+    "name": "League Tokens 2016",
+    "type": "token",
+    "released": "2016",
+    "card_count": 1
+  },
+  {
+    "code": "J16",
+    "name": "Judge Gift Cards 2016",
+    "type": "promo",
+    "released": "2016",
+    "card_count": 8
+  },
+  {
+    "code": "F16",
+    "name": "Friday Night Magic 2016",
+    "type": "promo",
+    "released": "2016",
+    "card_count": 12
+  },
+  {
+    "code": "PZ1",
+    "name": "Legendary Cube Prize Pack",
+    "type": "treasure_chest",
+    "released": "2015",
+    "card_count": 149
+  },
+  {
+    "code": "TC15",
+    "name": "Commander 2015 Tokens",
+    "type": "token",
+    "released": "2015",
+    "card_count": 25
+  },
+  {
+    "code": "OC15",
+    "name": "Commander 2015 Oversized",
+    "type": "memorabilia",
+    "released": "2015",
+    "card_count": 5
+  },
+  {
+    "code": "C15",
+    "name": "Commander 2015",
+    "type": "commander",
+    "released": "2015",
+    "card_count": 342
+  },
+  {
+    "code": "PBFZ",
+    "name": "Battle for Zendikar Promos",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 90
+  },
+  {
+    "code": "TBFZ",
+    "name": "Battle for Zendikar Tokens",
+    "type": "token",
+    "released": "2015",
+    "card_count": 14
+  },
+  {
+    "code": "PSS1",
+    "name": "BFZ Standard Series",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 5
+  },
+  {
+    "code": "BFZ",
+    "name": "Battle for Zendikar",
+    "type": "expansion",
+    "released": "2015",
+    "card_count": 299
+  },
+  {
+    "code": "EXP",
+    "name": "Zendikar Expeditions",
+    "type": "masterpiece",
+    "released": "2015",
+    "card_count": 45
+  },
+  {
+    "code": "DDP",
+    "name": "Duel Decks: Zendikar vs. Eldrazi",
+    "type": "duel_deck",
+    "released": "2015",
+    "card_count": 80
+  },
+  {
+    "code": "V15",
+    "name": "From the Vault: Angels",
+    "type": "from_the_vault",
+    "released": "2015",
+    "card_count": 15
+  },
+  {
+    "code": "CP3",
+    "name": "Magic Origins Clash Pack",
+    "type": "starter",
+    "released": "2015",
+    "card_count": 6
+  },
+  {
+    "code": "PORI",
+    "name": "Magic Origins Promos",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 54
+  },
+  {
+    "code": "ORI",
+    "name": "Magic Origins",
+    "type": "core",
+    "released": "2015",
+    "card_count": 288
+  },
+  {
+    "code": "TORI",
+    "name": "Magic Origins Tokens",
+    "type": "token",
+    "released": "2015",
+    "card_count": 15
+  },
+  {
+    "code": "PS15",
+    "name": "San Diego Comic-Con 2015",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 5
+  },
+  {
+    "code": "TMM2",
+    "name": "Modern Masters 2015 Tokens",
+    "type": "token",
+    "released": "2015",
+    "card_count": 16
+  },
+  {
+    "code": "MM2",
+    "name": "Modern Masters 2015",
+    "type": "masters",
+    "released": "2015",
+    "card_count": 249
+  },
+  {
+    "code": "TPR",
+    "name": "Tempest Remastered",
+    "type": "masters",
+    "released": "2015",
+    "card_count": 269
+  },
+  {
+    "code": "PTKDF",
+    "name": "Tarkir Dragonfury",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 4
+  },
+  {
+    "code": "PDTK",
+    "name": "Dragons of Tarkir Promos",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 51
+  },
+  {
+    "code": "DTK",
+    "name": "Dragons of Tarkir",
+    "type": "expansion",
+    "released": "2015",
+    "card_count": 264
+  },
+  {
+    "code": "TDTK",
+    "name": "Dragons of Tarkir Tokens",
+    "type": "token",
+    "released": "2015",
+    "card_count": 8
+  },
+  {
+    "code": "DDO",
+    "name": "Duel Decks: Elspeth vs. Kiora",
+    "type": "duel_deck",
+    "released": "2015",
+    "card_count": 67
+  },
+  {
+    "code": "PFRF",
+    "name": "Fate Reforged Promos",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 43
+  },
+  {
+    "code": "CP2",
+    "name": "Fate Reforged Clash Pack",
+    "type": "starter",
+    "released": "2015",
+    "card_count": 6
+  },
+  {
+    "code": "TFRF",
+    "name": "Fate Reforged Tokens",
+    "type": "token",
+    "released": "2015",
+    "card_count": 4
+  },
+  {
+    "code": "FRF",
+    "name": "Fate Reforged",
+    "type": "expansion",
+    "released": "2015",
+    "card_count": 191
+  },
+  {
+    "code": "UGIN",
+    "name": "Ugin's Fate",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 26
+  },
+  {
+    "code": "L15",
+    "name": "League Tokens 2015",
+    "type": "token",
+    "released": "2015",
+    "card_count": 1
+  },
+  {
+    "code": "F15",
+    "name": "Friday Night Magic 2015",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 12
+  },
+  {
+    "code": "J15",
+    "name": "Judge Gift Cards 2015",
+    "type": "promo",
+    "released": "2015",
+    "card_count": 8
+  },
+  {
+    "code": "TJVC",
+    "name": "Duel Decks Anthology: Jace vs. Chandra Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 1
+  },
+  {
+    "code": "TDVD",
+    "name": "Duel Decks Anthology: Divine vs. Demonic Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 3
+  },
+  {
+    "code": "TGVL",
+    "name": "Duel Decks Anthology: Garruk vs. Liliana Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 4
+  },
+  {
+    "code": "JVC",
+    "name": "Duel Decks Anthology: Jace vs. Chandra",
+    "type": "duel_deck",
+    "released": "2014",
+    "card_count": 62
+  },
+  {
+    "code": "DVD",
+    "name": "Duel Decks Anthology: Divine vs. Demonic",
+    "type": "duel_deck",
+    "released": "2014",
+    "card_count": 62
+  },
+  {
+    "code": "TEVG",
+    "name": "Duel Decks Anthology: Elves vs. Goblins Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 3
+  },
+  {
+    "code": "GVL",
+    "name": "Duel Decks Anthology: Garruk vs. Liliana",
+    "type": "duel_deck",
+    "released": "2014",
+    "card_count": 63
+  },
+  {
+    "code": "EVG",
+    "name": "Duel Decks Anthology: Elves vs. Goblins",
+    "type": "duel_deck",
+    "released": "2014",
+    "card_count": 62
+  },
+  {
+    "code": "OC14",
+    "name": "Commander 2014 Oversized",
+    "type": "memorabilia",
+    "released": "2014",
+    "card_count": 5
+  },
+  {
+    "code": "TC14",
+    "name": "Commander 2014 Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 36
+  },
+  {
+    "code": "C14",
+    "name": "Commander 2014",
+    "type": "commander",
+    "released": "2014",
+    "card_count": 337
+  },
+  {
+    "code": "PKTK",
+    "name": "Khans of Tarkir Promos",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 56
+  },
+  {
+    "code": "KTK",
+    "name": "Khans of Tarkir",
+    "type": "expansion",
+    "released": "2014",
+    "card_count": 293
+  },
+  {
+    "code": "TKTK",
+    "name": "Khans of Tarkir Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 13
+  },
+  {
+    "code": "DDN",
+    "name": "Duel Decks: Speed vs. Cunning",
+    "type": "duel_deck",
+    "released": "2014",
+    "card_count": 82
+  },
+  {
+    "code": "V14",
+    "name": "From the Vault: Annihilation",
+    "type": "from_the_vault",
+    "released": "2014",
+    "card_count": 15
+  },
+  {
+    "code": "M15",
+    "name": "Magic 2015",
+    "type": "core",
+    "released": "2014",
+    "card_count": 284
+  },
+  {
+    "code": "TM15",
+    "name": "Magic 2015 Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 14
+  },
+  {
+    "code": "CP1",
+    "name": "Magic 2015 Clash Pack",
+    "type": "starter",
+    "released": "2014",
+    "card_count": 6
+  },
+  {
+    "code": "PM15",
+    "name": "Magic 2015 Promos",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 14
+  },
+  {
+    "code": "PPC1",
+    "name": "M15 Prerelease Challenge",
+    "type": "memorabilia",
+    "released": "2014",
+    "card_count": 2
+  },
+  {
+    "code": "PDP15",
+    "name": "Duels of the Planeswalkers 2015 Promos",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 2
+  },
+  {
+    "code": "PS14",
+    "name": "San Diego Comic-Con 2014",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 6
+  },
+  {
+    "code": "VMA",
+    "name": "Vintage Masters",
+    "type": "masters",
+    "released": "2014",
+    "card_count": 325
+  },
+  {
+    "code": "PCNS",
+    "name": "Conspiracy Promos",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 1
+  },
+  {
+    "code": "TCNS",
+    "name": "Conspiracy Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 9
+  },
+  {
+    "code": "CNS",
+    "name": "Conspiracy",
+    "type": "draft_innovation",
+    "released": "2014",
+    "card_count": 210
+  },
+  {
+    "code": "TMD1",
+    "name": "Modern Event Deck 2014 Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 4
+  },
+  {
+    "code": "MD1",
+    "name": "Modern Event Deck 2014",
+    "type": "box",
+    "released": "2014",
+    "card_count": 26
+  },
+  {
+    "code": "TDAG",
+    "name": "Defeat a God",
+    "type": "memorabilia",
+    "released": "2014",
+    "card_count": 15
+  },
+  {
+    "code": "TJOU",
+    "name": "Journey into Nyx Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 6
+  },
+  {
+    "code": "THP3",
+    "name": "Journey into Nyx Hero's Path",
+    "type": "memorabilia",
+    "released": "2014",
+    "card_count": 8
+  },
+  {
+    "code": "JOU",
+    "name": "Journey into Nyx",
+    "type": "expansion",
+    "released": "2014",
+    "card_count": 165
+  },
+  {
+    "code": "PJOU",
+    "name": "Journey into Nyx Promos",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 10
+  },
+  {
+    "code": "DDM",
+    "name": "Duel Decks: Jace vs. Vraska",
+    "type": "duel_deck",
+    "released": "2014",
+    "card_count": 88
+  },
+  {
+    "code": "TDDM",
+    "name": "Duel Decks: Jace vs. Vraska Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 1
+  },
+  {
+    "code": "TBTH",
+    "name": "Battle the Horde",
+    "type": "memorabilia",
+    "released": "2014",
+    "card_count": 15
+  },
+  {
+    "code": "BNG",
+    "name": "Born of the Gods",
+    "type": "expansion",
+    "released": "2014",
+    "card_count": 165
+  },
+  {
+    "code": "TBNG",
+    "name": "Born of the Gods Tokens",
+    "type": "token",
+    "released": "2014",
+    "card_count": 11
+  },
+  {
+    "code": "THP2",
+    "name": "Born of the Gods Hero's Path",
+    "type": "memorabilia",
+    "released": "2014",
+    "card_count": 7
+  },
+  {
+    "code": "PBNG",
+    "name": "Born of the Gods Promos",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 9
+  },
+  {
+    "code": "L14",
+    "name": "League Tokens 2014",
+    "type": "token",
+    "released": "2014",
+    "card_count": 4
+  },
+  {
+    "code": "F14",
+    "name": "Friday Night Magic 2014",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 12
+  },
+  {
+    "code": "J14",
+    "name": "Judge Gift Cards 2014",
+    "type": "promo",
+    "released": "2014",
+    "card_count": 14
+  },
+  {
+    "code": "OC13",
+    "name": "Commander 2013 Oversized",
+    "type": "memorabilia",
+    "released": "2013",
+    "card_count": 15
+  },
+  {
+    "code": "C13",
+    "name": "Commander 2013",
+    "type": "commander",
+    "released": "2013",
+    "card_count": 356
+  },
+  {
+    "code": "TFTH",
+    "name": "Face the Hydra",
+    "type": "memorabilia",
+    "released": "2013",
+    "card_count": 15
+  },
+  {
+    "code": "THP1",
+    "name": "Theros Hero's Path",
+    "type": "memorabilia",
+    "released": "2013",
+    "card_count": 7
+  },
+  {
+    "code": "THS",
+    "name": "Theros",
+    "type": "expansion",
+    "released": "2013",
+    "card_count": 249
+  },
+  {
+    "code": "TTHS",
+    "name": "Theros Tokens",
+    "type": "token",
+    "released": "2013",
+    "card_count": 11
+  },
+  {
+    "code": "PTHS",
+    "name": "Theros Promos",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 10
+  },
+  {
+    "code": "DDL",
+    "name": "Duel Decks: Heroes vs. Monsters",
+    "type": "duel_deck",
+    "released": "2013",
+    "card_count": 81
+  },
+  {
+    "code": "TDDL",
+    "name": "Duel Decks: Heroes vs. Monsters Tokens",
+    "type": "token",
+    "released": "2013",
+    "card_count": 2
+  },
+  {
+    "code": "V13",
+    "name": "From the Vault: Twenty",
+    "type": "from_the_vault",
+    "released": "2013",
+    "card_count": 20
+  },
+  {
+    "code": "TM14",
+    "name": "Magic 2014 Tokens",
+    "type": "token",
+    "released": "2013",
+    "card_count": 13
+  },
+  {
+    "code": "M14",
+    "name": "Magic 2014",
+    "type": "core",
+    "released": "2013",
+    "card_count": 249
+  },
+  {
+    "code": "PM14",
+    "name": "Magic 2014 Promos",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 6
+  },
+  {
+    "code": "PSDC",
+    "name": "San Diego Comic-Con 2013",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 5
+  },
+  {
+    "code": "TMMA",
+    "name": "Modern Masters Tokens",
+    "type": "token",
+    "released": "2013",
+    "card_count": 16
+  },
+  {
+    "code": "MMA",
+    "name": "Modern Masters",
+    "type": "masters",
+    "released": "2013",
+    "card_count": 229
+  },
+  {
+    "code": "DGM",
+    "name": "Dragon's Maze",
+    "type": "expansion",
+    "released": "2013",
+    "card_count": 156
+  },
+  {
+    "code": "TDGM",
+    "name": "Dragon's Maze Tokens",
+    "type": "token",
+    "released": "2013",
+    "card_count": 1
+  },
+  {
+    "code": "PDGM",
+    "name": "Dragon's Maze Promos",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 6
+  },
+  {
+    "code": "WMC",
+    "name": "World Magic Cup Qualifiers",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 5
+  },
+  {
+    "code": "DDK",
+    "name": "Duel Decks: Sorin vs. Tibalt",
+    "type": "duel_deck",
+    "released": "2013",
+    "card_count": 80
+  },
+  {
+    "code": "TDDK",
+    "name": "Duel Decks: Sorin vs. Tibalt Tokens",
+    "type": "token",
+    "released": "2013",
+    "card_count": 1
+  },
+  {
+    "code": "GTC",
+    "name": "Gatecrash",
+    "type": "expansion",
+    "released": "2013",
+    "card_count": 249
+  },
+  {
+    "code": "TGTC",
+    "name": "Gatecrash Tokens",
+    "type": "token",
+    "released": "2013",
+    "card_count": 8
+  },
+  {
+    "code": "PGTC",
+    "name": "Gatecrash Promos",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 10
+  },
+  {
+    "code": "PDP14",
+    "name": "Duels of the Planeswalkers 2014 Promos",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 3
+  },
+  {
+    "code": "L13",
+    "name": "League Tokens 2013",
+    "type": "token",
+    "released": "2013",
+    "card_count": 4
+  },
+  {
+    "code": "J13",
+    "name": "Judge Gift Cards 2013",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 9
+  },
+  {
+    "code": "F13",
+    "name": "Friday Night Magic 2013",
+    "type": "promo",
+    "released": "2013",
+    "card_count": 12
+  },
+  {
+    "code": "OCM1",
+    "name": "Commander's Arsenal Oversized",
+    "type": "memorabilia",
+    "released": "2012",
+    "card_count": 10
+  },
+  {
+    "code": "CM1",
+    "name": "Commander's Arsenal",
+    "type": "arsenal",
+    "released": "2012",
+    "card_count": 18
+  },
+  {
+    "code": "RTR",
+    "name": "Return to Ravnica",
+    "type": "expansion",
+    "released": "2012",
+    "card_count": 274
+  },
+  {
+    "code": "PRTR",
+    "name": "Return to Ravnica Promos",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 10
+  },
+  {
+    "code": "TRTR",
+    "name": "Return to Ravnica Tokens",
+    "type": "token",
+    "released": "2012",
+    "card_count": 12
+  },
+  {
+    "code": "DDJ",
+    "name": "Duel Decks: Izzet vs. Golgari",
+    "type": "duel_deck",
+    "released": "2012",
+    "card_count": 90
+  },
+  {
+    "code": "TDDJ",
+    "name": "Duel Decks: Izzet vs. Golgari Tokens",
+    "type": "token",
+    "released": "2012",
+    "card_count": 1
+  },
+  {
+    "code": "V12",
+    "name": "From the Vault: Realms",
+    "type": "from_the_vault",
+    "released": "2012",
+    "card_count": 15
+  },
+  {
+    "code": "M13",
+    "name": "Magic 2013",
+    "type": "core",
+    "released": "2012",
+    "card_count": 249
+  },
+  {
+    "code": "TM13",
+    "name": "Magic 2013 Tokens",
+    "type": "token",
+    "released": "2012",
+    "card_count": 11
+  },
+  {
+    "code": "PM13",
+    "name": "Magic 2013 Promos",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 6
+  },
+  {
+    "code": "OPC2",
+    "name": "Planechase 2012 Planes",
+    "type": "planechase",
+    "released": "2012",
+    "card_count": 40
+  },
+  {
+    "code": "PC2",
+    "name": "Planechase 2012",
+    "type": "planechase",
+    "released": "2012",
+    "card_count": 156
+  },
+  {
+    "code": "TAVR",
+    "name": "Avacyn Restored Tokens",
+    "type": "token",
+    "released": "2012",
+    "card_count": 8
+  },
+  {
+    "code": "AVR",
+    "name": "Avacyn Restored",
+    "type": "expansion",
+    "released": "2012",
+    "card_count": 244
+  },
+  {
+    "code": "PHEL",
+    "name": "Open the Helvault",
+    "type": "memorabilia",
+    "released": "2012",
+    "card_count": 6
+  },
+  {
+    "code": "PAVR",
+    "name": "Avacyn Restored Promos",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 6
+  },
+  {
+    "code": "DDI",
+    "name": "Duel Decks: Venser vs. Koth",
+    "type": "duel_deck",
+    "released": "2012",
+    "card_count": 77
+  },
+  {
+    "code": "TDDI",
+    "name": "Duel Decks: Venser vs. Koth Tokens",
+    "type": "token",
+    "released": "2012",
+    "card_count": 2
+  },
+  {
+    "code": "TDKA",
+    "name": "Dark Ascension Tokens",
+    "type": "token",
+    "released": "2012",
+    "card_count": 4
+  },
+  {
+    "code": "DKA",
+    "name": "Dark Ascension",
+    "type": "expansion",
+    "released": "2012",
+    "card_count": 158
+  },
+  {
+    "code": "PDKA",
+    "name": "Dark Ascension Promos",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 5
+  },
+  {
+    "code": "PW12",
+    "name": "Wizards Play Network 2012",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 3
+  },
+  {
+    "code": "PDP13",
+    "name": "Duels of the Planeswalkers 2013 Promos",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 3
+  },
+  {
+    "code": "PIDW",
+    "name": "IDW Comics Inserts",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 17
+  },
+  {
+    "code": "L12",
+    "name": "League Tokens 2012",
+    "type": "token",
+    "released": "2012",
+    "card_count": 2
+  },
+  {
+    "code": "J12",
+    "name": "Judge Gift Cards 2012",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 9
+  },
+  {
+    "code": "F12",
+    "name": "Friday Night Magic 2012",
+    "type": "promo",
+    "released": "2012",
+    "card_count": 13
+  },
+  {
+    "code": "PD3",
+    "name": "Premium Deck Series: Graveborn",
+    "type": "premium_deck",
+    "released": "2011",
+    "card_count": 30
+  },
+  {
+    "code": "TISD",
+    "name": "Innistrad Tokens",
+    "type": "token",
+    "released": "2011",
+    "card_count": 13
+  },
+  {
+    "code": "ISD",
+    "name": "Innistrad",
+    "type": "expansion",
+    "released": "2011",
+    "card_count": 264
+  },
+  {
+    "code": "PISD",
+    "name": "Innistrad Promos",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 5
+  },
+  {
+    "code": "DDH",
+    "name": "Duel Decks: Ajani vs. Nicol Bolas",
+    "type": "duel_deck",
+    "released": "2011",
+    "card_count": 80
+  },
+  {
+    "code": "TDDH",
+    "name": "Duel Decks: Ajani vs. Nicol Bolas Tokens",
+    "type": "token",
+    "released": "2011",
+    "card_count": 2
+  },
+  {
+    "code": "V11",
+    "name": "From the Vault: Legends",
+    "type": "from_the_vault",
+    "released": "2011",
+    "card_count": 15
+  },
+  {
+    "code": "TM12",
+    "name": "Magic 2012 Tokens",
+    "type": "token",
+    "released": "2011",
+    "card_count": 7
+  },
+  {
+    "code": "M12",
+    "name": "Magic 2012",
+    "type": "core",
+    "released": "2011",
+    "card_count": 249
+  },
+  {
+    "code": "PM12",
+    "name": "Magic 2012 Promos",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 3
+  },
+  {
+    "code": "OCMD",
+    "name": "Commander 2011 Oversized",
+    "type": "memorabilia",
+    "released": "2011",
+    "card_count": 15
+  },
+  {
+    "code": "CMD",
+    "name": "Commander 2011",
+    "type": "commander",
+    "released": "2011",
+    "card_count": 318
+  },
+  {
+    "code": "PCMD",
+    "name": "Commander 2011 Launch Party",
+    "type": "memorabilia",
+    "released": "2011",
+    "card_count": 5
+  },
+  {
+    "code": "TD2",
+    "name": "Duel Decks: Mirrodin Pure vs. New Phyrexia",
+    "type": "duel_deck",
+    "released": "2011",
+    "card_count": 88
+  },
+  {
+    "code": "TNPH",
+    "name": "New Phyrexia Tokens",
+    "type": "token",
+    "released": "2011",
+    "card_count": 5
+  },
+  {
+    "code": "NPH",
+    "name": "New Phyrexia",
+    "type": "expansion",
+    "released": "2011",
+    "card_count": 175
+  },
+  {
+    "code": "PNPH",
+    "name": "New Phyrexia Promos",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 4
+  },
+  {
+    "code": "TDDG",
+    "name": "Duel Decks: Knights vs. Dragons Tokens",
+    "type": "token",
+    "released": "2011",
+    "card_count": 1
+  },
+  {
+    "code": "DDG",
+    "name": "Duel Decks: Knights vs. Dragons",
+    "type": "duel_deck",
+    "released": "2011",
+    "card_count": 81
+  },
+  {
+    "code": "MBS",
+    "name": "Mirrodin Besieged",
+    "type": "expansion",
+    "released": "2011",
+    "card_count": 155
+  },
+  {
+    "code": "TMBS",
+    "name": "Mirrodin Besieged Tokens",
+    "type": "token",
+    "released": "2011",
+    "card_count": 6
+  },
+  {
+    "code": "PMBS",
+    "name": "Mirrodin Besieged Promos",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 4
+  },
+  {
+    "code": "ME4",
+    "name": "Masters Edition IV",
+    "type": "masters",
+    "released": "2011",
+    "card_count": 269
+  },
+  {
+    "code": "PMPS11",
+    "name": "Magic Premiere Shop 2011",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 5
+  },
+  {
+    "code": "PW11",
+    "name": "Wizards Play Network 2011",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 3
+  },
+  {
+    "code": "PDP12",
+    "name": "Duels of the Planeswalkers 2012 Promos",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 3
+  },
+  {
+    "code": "G11",
+    "name": "Judge Gift Cards 2011",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 8
+  },
+  {
+    "code": "PS11",
+    "name": "Salvat 2011",
+    "type": "box",
+    "released": "2011",
+    "card_count": 224
+  },
+  {
+    "code": "OLGC",
+    "name": "Legacy Championship",
+    "type": "memorabilia",
+    "released": "2011",
+    "card_count": 27
+  },
+  {
+    "code": "P11",
+    "name": "Magic Player Rewards 2011",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 7
+  },
+  {
+    "code": "F11",
+    "name": "Friday Night Magic 2011",
+    "type": "promo",
+    "released": "2011",
+    "card_count": 12
+  },
+  {
+    "code": "PD2",
+    "name": "Premium Deck Series: Fire and Lightning",
+    "type": "premium_deck",
+    "released": "2010",
+    "card_count": 34
+  },
+  {
+    "code": "TD0",
+    "name": "Magic Online Theme Decks",
+    "type": "box",
+    "released": "2010",
+    "card_count": 197
+  },
+  {
+    "code": "TSOM",
+    "name": "Scars of Mirrodin Tokens",
+    "type": "token",
+    "released": "2010",
+    "card_count": 10
+  },
+  {
+    "code": "SOM",
+    "name": "Scars of Mirrodin",
+    "type": "expansion",
+    "released": "2010",
+    "card_count": 249
+  },
+  {
+    "code": "PSOM",
+    "name": "Scars of Mirrodin Promos",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 4
+  },
+  {
+    "code": "DDF",
+    "name": "Duel Decks: Elspeth vs. Tezzeret",
+    "type": "duel_deck",
+    "released": "2010",
+    "card_count": 79
+  },
+  {
+    "code": "TDDF",
+    "name": "Duel Decks: Elspeth vs. Tezzeret Tokens",
+    "type": "token",
+    "released": "2010",
+    "card_count": 1
+  },
+  {
+    "code": "V10",
+    "name": "From the Vault: Relics",
+    "type": "from_the_vault",
+    "released": "2010",
+    "card_count": 15
+  },
+  {
+    "code": "TM11",
+    "name": "Magic 2011 Tokens",
+    "type": "token",
+    "released": "2010",
+    "card_count": 6
+  },
+  {
+    "code": "M11",
+    "name": "Magic 2011",
+    "type": "core",
+    "released": "2010",
+    "card_count": 249
+  },
+  {
+    "code": "PM11",
+    "name": "Magic 2011 Promos",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 6
+  },
+  {
+    "code": "OARC",
+    "name": "Archenemy Schemes",
+    "type": "archenemy",
+    "released": "2010",
+    "card_count": 45
+  },
+  {
+    "code": "ARC",
+    "name": "Archenemy",
+    "type": "archenemy",
+    "released": "2010",
+    "card_count": 150
+  },
+  {
+    "code": "DPA",
+    "name": "Duels of the Planeswalkers",
+    "type": "box",
+    "released": "2010",
+    "card_count": 113
+  },
+  {
+    "code": "PROE",
+    "name": "Rise of the Eldrazi Promos",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 4
+  },
+  {
+    "code": "ROE",
+    "name": "Rise of the Eldrazi",
+    "type": "expansion",
+    "released": "2010",
+    "card_count": 248
+  },
+  {
+    "code": "TROE",
+    "name": "Rise of the Eldrazi Tokens",
+    "type": "token",
+    "released": "2010",
+    "card_count": 7
+  },
+  {
+    "code": "TDDE",
+    "name": "Duel Decks: Phyrexia vs. the Coalition Tokens",
+    "type": "token",
+    "released": "2010",
+    "card_count": 3
+  },
+  {
+    "code": "DDE",
+    "name": "Duel Decks: Phyrexia vs. the Coalition",
+    "type": "duel_deck",
+    "released": "2010",
+    "card_count": 71
+  },
+  {
+    "code": "PWWK",
+    "name": "Worldwake Promos",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 6
+  },
+  {
+    "code": "TWWK",
+    "name": "Worldwake Tokens",
+    "type": "token",
+    "released": "2010",
+    "card_count": 6
+  },
+  {
+    "code": "WWK",
+    "name": "Worldwake",
+    "type": "expansion",
+    "released": "2010",
+    "card_count": 145
+  },
+  {
+    "code": "PDP10",
+    "name": "Duels of the Planeswalkers 2010 Promos",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 2
+  },
+  {
+    "code": "PMPS10",
+    "name": "Magic Premiere Shop 2010",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 5
+  },
+  {
+    "code": "P10",
+    "name": "Magic Player Rewards 2010",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 13
+  },
+  {
+    "code": "F10",
+    "name": "Friday Night Magic 2010",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 12
+  },
+  {
+    "code": "G10",
+    "name": "Judge Gift Cards 2010",
+    "type": "promo",
+    "released": "2010",
+    "card_count": 8
+  },
+  {
+    "code": "H09",
+    "name": "Premium Deck Series: Slivers",
+    "type": "premium_deck",
+    "released": "2009",
+    "card_count": 41
+  },
+  {
+    "code": "DDD",
+    "name": "Duel Decks: Garruk vs. Liliana",
+    "type": "duel_deck",
+    "released": "2009",
+    "card_count": 63
+  },
+  {
+    "code": "TDDD",
+    "name": "Duel Decks: Garruk vs. Liliana Tokens",
+    "type": "token",
+    "released": "2009",
+    "card_count": 3
+  },
+  {
+    "code": "PZEN",
+    "name": "Zendikar Promos",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 5
+  },
+  {
+    "code": "ZEN",
+    "name": "Zendikar",
+    "type": "expansion",
+    "released": "2009",
+    "card_count": 269
+  },
+  {
+    "code": "TZEN",
+    "name": "Zendikar Tokens",
+    "type": "token",
+    "released": "2009",
+    "card_count": 11
+  },
+  {
+    "code": "ME3",
+    "name": "Masters Edition III",
+    "type": "masters",
+    "released": "2009",
+    "card_count": 230
+  },
+  {
+    "code": "OHOP",
+    "name": "Planechase Planes",
+    "type": "planechase",
+    "released": "2009",
+    "card_count": 40
+  },
+  {
+    "code": "HOP",
+    "name": "Planechase",
+    "type": "planechase",
+    "released": "2009",
+    "card_count": 169
+  },
+  {
+    "code": "PHOP",
+    "name": "Planechase Promos",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 1
+  },
+  {
+    "code": "V09",
+    "name": "From the Vault: Exiled",
+    "type": "from_the_vault",
+    "released": "2009",
+    "card_count": 15
+  },
+  {
+    "code": "TM10",
+    "name": "Magic 2010 Tokens",
+    "type": "token",
+    "released": "2009",
+    "card_count": 8
+  },
+  {
+    "code": "M10",
+    "name": "Magic 2010",
+    "type": "core",
+    "released": "2009",
+    "card_count": 249
+  },
+  {
+    "code": "PM10",
+    "name": "Magic 2010 Promos",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 3
+  },
+  {
+    "code": "PARB",
+    "name": "Alara Reborn Promos",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 3
+  },
+  {
+    "code": "ARB",
+    "name": "Alara Reborn",
+    "type": "expansion",
+    "released": "2009",
+    "card_count": 145
+  },
+  {
+    "code": "TARB",
+    "name": "Alara Reborn Tokens",
+    "type": "token",
+    "released": "2009",
+    "card_count": 4
+  },
+  {
+    "code": "DDC",
+    "name": "Duel Decks: Divine vs. Demonic",
+    "type": "duel_deck",
+    "released": "2009",
+    "card_count": 62
+  },
+  {
+    "code": "TDDC",
+    "name": "Duel Decks: Divine vs. Demonic Tokens",
+    "type": "token",
+    "released": "2009",
+    "card_count": 3
+  },
+  {
+    "code": "PURL",
+    "name": "URL/Convention Promos",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 18
+  },
+  {
+    "code": "PCON",
+    "name": "Conflux Promos",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 2
+  },
+  {
+    "code": "CON",
+    "name": "Conflux",
+    "type": "expansion",
+    "released": "2009",
+    "card_count": 145
+  },
+  {
+    "code": "TCON",
+    "name": "Conflux Tokens",
+    "type": "token",
+    "released": "2009",
+    "card_count": 2
+  },
+  {
+    "code": "PDTP",
+    "name": "Duels of the Planeswalkers 2009 Promos",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 1
+  },
+  {
+    "code": "PMPS09",
+    "name": "Magic Premiere Shop 2009",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 5
+  },
+  {
+    "code": "G09",
+    "name": "Judge Gift Cards 2009",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 10
+  },
+  {
+    "code": "F09",
+    "name": "Friday Night Magic 2009",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 12
+  },
+  {
+    "code": "P09",
+    "name": "Magic Player Rewards 2009",
+    "type": "promo",
+    "released": "2009",
+    "card_count": 13
+  },
+  {
+    "code": "DD2",
+    "name": "Duel Decks: Jace vs. Chandra",
+    "type": "duel_deck",
+    "released": "2008",
+    "card_count": 64
+  },
+  {
+    "code": "TDD2",
+    "name": "Duel Decks: Jace vs. Chandra Tokens",
+    "type": "token",
+    "released": "2008",
+    "card_count": 1
+  },
+  {
+    "code": "PALA",
+    "name": "Shards of Alara Promos",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 2
+  },
+  {
+    "code": "TALA",
+    "name": "Shards of Alara Tokens",
+    "type": "token",
+    "released": "2008",
+    "card_count": 10
+  },
+  {
+    "code": "ALA",
+    "name": "Shards of Alara",
+    "type": "expansion",
+    "released": "2008",
+    "card_count": 250
+  },
+  {
+    "code": "ME2",
+    "name": "Masters Edition II",
+    "type": "masters",
+    "released": "2008",
+    "card_count": 245
+  },
+  {
+    "code": "DRB",
+    "name": "From the Vault: Dragons",
+    "type": "from_the_vault",
+    "released": "2008",
+    "card_count": 15
+  },
+  {
+    "code": "PEVE",
+    "name": "Eventide Promos",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 2
+  },
+  {
+    "code": "TEVE",
+    "name": "Eventide Tokens",
+    "type": "token",
+    "released": "2008",
+    "card_count": 7
+  },
+  {
+    "code": "EVE",
+    "name": "Eventide",
+    "type": "expansion",
+    "released": "2008",
+    "card_count": 180
+  },
+  {
+    "code": "PSHM",
+    "name": "Shadowmoor Promos",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 2
+  },
+  {
+    "code": "SHM",
+    "name": "Shadowmoor",
+    "type": "expansion",
+    "released": "2008",
+    "card_count": 302
+  },
+  {
+    "code": "TSHM",
+    "name": "Shadowmoor Tokens",
+    "type": "token",
+    "released": "2008",
+    "card_count": 12
+  },
+  {
+    "code": "P15A",
+    "name": "15th Anniversary Cards",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 2
+  },
+  {
+    "code": "PMOR",
+    "name": "Morningtide Promos",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 2
+  },
+  {
+    "code": "TMOR",
+    "name": "Morningtide Tokens",
+    "type": "token",
+    "released": "2008",
+    "card_count": 3
+  },
+  {
+    "code": "MOR",
+    "name": "Morningtide",
+    "type": "expansion",
+    "released": "2008",
+    "card_count": 150
+  },
+  {
+    "code": "PMPS08",
+    "name": "Magic Premiere Shop 2008",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 6
+  },
+  {
+    "code": "G08",
+    "name": "Judge Gift Cards 2008",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 5
+  },
+  {
+    "code": "P08",
+    "name": "Magic Player Rewards 2008",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 7
+  },
+  {
+    "code": "F08",
+    "name": "Friday Night Magic 2008",
+    "type": "promo",
+    "released": "2008",
+    "card_count": 12
+  },
+  {
+    "code": "DD1",
+    "name": "Duel Decks: Elves vs. Goblins",
+    "type": "duel_deck",
+    "released": "2007",
+    "card_count": 62
+  },
+  {
+    "code": "TDD1",
+    "name": "Duel Decks: Elves vs. Goblins Tokens",
+    "type": "token",
+    "released": "2007",
+    "card_count": 3
+  },
+  {
+    "code": "PLRW",
+    "name": "Lorwyn Promos",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 3
+  },
+  {
+    "code": "LRW",
+    "name": "Lorwyn",
+    "type": "expansion",
+    "released": "2007",
+    "card_count": 301
+  },
+  {
+    "code": "TLRW",
+    "name": "Lorwyn Tokens",
+    "type": "token",
+    "released": "2007",
+    "card_count": 11
+  },
+  {
+    "code": "ME1",
+    "name": "Masters Edition",
+    "type": "masters",
+    "released": "2007",
+    "card_count": 195
+  },
+  {
+    "code": "10E",
+    "name": "Tenth Edition",
+    "type": "core",
+    "released": "2007",
+    "card_count": 510
+  },
+  {
+    "code": "P10E",
+    "name": "Tenth Edition Promos",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 3
+  },
+  {
+    "code": "T10E",
+    "name": "Tenth Edition Tokens",
+    "type": "token",
+    "released": "2007",
+    "card_count": 6
+  },
+  {
+    "code": "PFUT",
+    "name": "Future Sight Promos",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 2
+  },
+  {
+    "code": "FUT",
+    "name": "Future Sight",
+    "type": "expansion",
+    "released": "2007",
+    "card_count": 180
+  },
+  {
+    "code": "PGPX",
+    "name": "Grand Prix Promos",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 20
+  },
+  {
+    "code": "PPRO",
+    "name": "Pro Tour Promos",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 18
+  },
+  {
+    "code": "PPLC",
+    "name": "Planar Chaos Promos",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 2
+  },
+  {
+    "code": "PLC",
+    "name": "Planar Chaos",
+    "type": "expansion",
+    "released": "2007",
+    "card_count": 165
+  },
+  {
+    "code": "G07",
+    "name": "Judge Gift Cards 2007",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 5
+  },
+  {
+    "code": "P07",
+    "name": "Magic Player Rewards 2007",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 7
+  },
+  {
+    "code": "F07",
+    "name": "Friday Night Magic 2007",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 12
+  },
+  {
+    "code": "PMPS07",
+    "name": "Magic Premiere Shop 2007",
+    "type": "promo",
+    "released": "2007",
+    "card_count": 5
+  },
+  {
+    "code": "HHO",
+    "name": "Happy Holidays",
+    "type": "funny",
+    "released": "2006",
+    "card_count": 23
+  },
+  {
+    "code": "PTSP",
+    "name": "Time Spiral Promos",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 3
+  },
+  {
+    "code": "TSB",
+    "name": "Time Spiral Timeshifted",
+    "type": "expansion",
+    "released": "2006",
+    "card_count": 121
+  },
+  {
+    "code": "TSP",
+    "name": "Time Spiral",
+    "type": "expansion",
+    "released": "2006",
+    "card_count": 301
+  },
+  {
+    "code": "PCSP",
+    "name": "Coldsnap Promos",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 2
+  },
+  {
+    "code": "CST",
+    "name": "Coldsnap Theme Decks",
+    "type": "box",
+    "released": "2006",
+    "card_count": 62
+  },
+  {
+    "code": "CSP",
+    "name": "Coldsnap",
+    "type": "expansion",
+    "released": "2006",
+    "card_count": 155
+  },
+  {
+    "code": "PDIS",
+    "name": "Dissension Promos",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 2
+  },
+  {
+    "code": "DIS",
+    "name": "Dissension",
+    "type": "expansion",
+    "released": "2006",
+    "card_count": 180
+  },
+  {
+    "code": "PCMP",
+    "name": "Champs and States",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 12
+  },
+  {
+    "code": "PGPT",
+    "name": "Guildpact Promos",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 2
+  },
+  {
+    "code": "GPT",
+    "name": "Guildpact",
+    "type": "expansion",
+    "released": "2006",
+    "card_count": 167
+  },
+  {
+    "code": "PMPS06",
+    "name": "Magic Premiere Shop 2006",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 5
+  },
+  {
+    "code": "PAL06",
+    "name": "Arena League 2006",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 9
+  },
+  {
+    "code": "PJAS",
+    "name": "Junior APAC Series",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 6
+  },
+  {
+    "code": "G06",
+    "name": "Judge Gift Cards 2006",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 4
+  },
+  {
+    "code": "P06",
+    "name": "Magic Player Rewards 2006",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 7
+  },
+  {
+    "code": "DCI",
+    "name": "DCI Promos",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 80
+  },
+  {
+    "code": "PHUK",
+    "name": "Hachette UK",
+    "type": "box",
+    "released": "2006",
+    "card_count": 60
+  },
+  {
+    "code": "F06",
+    "name": "Friday Night Magic 2006",
+    "type": "promo",
+    "released": "2006",
+    "card_count": 12
+  },
+  {
+    "code": "P2HG",
+    "name": "Two-Headed Giant Tournament",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 1
+  },
+  {
+    "code": "PRAV",
+    "name": "Ravnica: City of Guilds Promos",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 2
+  },
+  {
+    "code": "PMPS",
+    "name": "Magic Premiere Shop 2005",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 20
+  },
+  {
+    "code": "RAV",
+    "name": "Ravnica: City of Guilds",
+    "type": "expansion",
+    "released": "2005",
+    "card_count": 306
+  },
+  {
+    "code": "PSAL",
+    "name": "Salvat 2005",
+    "type": "box",
+    "released": "2005",
+    "card_count": 720
+  },
+  {
+    "code": "P9ED",
+    "name": "Ninth Edition Promos",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 2
+  },
+  {
+    "code": "9ED",
+    "name": "Ninth Edition",
+    "type": "core",
+    "released": "2005",
+    "card_count": 710
+  },
+  {
+    "code": "PSOK",
+    "name": "Saviors of Kamigawa Promos",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 2
+  },
+  {
+    "code": "SOK",
+    "name": "Saviors of Kamigawa",
+    "type": "expansion",
+    "released": "2005",
+    "card_count": 165
+  },
+  {
+    "code": "PBOK",
+    "name": "Betrayers of Kamigawa Promos",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 2
+  },
+  {
+    "code": "BOK",
+    "name": "Betrayers of Kamigawa",
+    "type": "expansion",
+    "released": "2005",
+    "card_count": 165
+  },
+  {
+    "code": "PAL05",
+    "name": "Arena League 2005",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 8
+  },
+  {
+    "code": "PJSE",
+    "name": "Junior Series Europe",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 8
+  },
+  {
+    "code": "F05",
+    "name": "Friday Night Magic 2005",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 12
+  },
+  {
+    "code": "P05",
+    "name": "Magic Player Rewards 2005",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 6
+  },
+  {
+    "code": "G05",
+    "name": "Judge Gift Cards 2005",
+    "type": "promo",
+    "released": "2005",
+    "card_count": 4
+  },
+  {
+    "code": "PUNH",
+    "name": "Unhinged Promos",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 1
+  },
+  {
+    "code": "UNH",
+    "name": "Unhinged",
+    "type": "funny",
+    "released": "2004",
+    "card_count": 168
+  },
+  {
+    "code": "PCHK",
+    "name": "Champions of Kamigawa Promos",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 1
+  },
+  {
+    "code": "CHK",
+    "name": "Champions of Kamigawa",
+    "type": "expansion",
+    "released": "2004",
+    "card_count": 307
+  },
+  {
+    "code": "WC04",
+    "name": "World Championship Decks 2004",
+    "type": "memorabilia",
+    "released": "2004",
+    "card_count": 103
+  },
+  {
+    "code": "PMRD",
+    "name": "Mirrodin Promos",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 1
+  },
+  {
+    "code": "P5DN",
+    "name": "Fifth Dawn Promos",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 1
+  },
+  {
+    "code": "5DN",
+    "name": "Fifth Dawn",
+    "type": "expansion",
+    "released": "2004",
+    "card_count": 165
+  },
+  {
+    "code": "PDST",
+    "name": "Darksteel Promos",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 1
+  },
+  {
+    "code": "DST",
+    "name": "Darksteel",
+    "type": "expansion",
+    "released": "2004",
+    "card_count": 165
+  },
+  {
+    "code": "PAL04",
+    "name": "Arena League 2004",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 14
+  },
+  {
+    "code": "G04",
+    "name": "Judge Gift Cards 2004",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 6
+  },
+  {
+    "code": "F04",
+    "name": "Friday Night Magic 2004",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 12
+  },
+  {
+    "code": "P04",
+    "name": "Magic Player Rewards 2004",
+    "type": "promo",
+    "released": "2004",
+    "card_count": 6
+  },
+  {
+    "code": "MRD",
+    "name": "Mirrodin",
+    "type": "expansion",
+    "released": "2003",
+    "card_count": 306
+  },
+  {
+    "code": "WC03",
+    "name": "World Championship Decks 2003",
+    "type": "memorabilia",
+    "released": "2003",
+    "card_count": 142
+  },
+  {
+    "code": "P8ED",
+    "name": "Eighth Edition Promos",
+    "type": "promo",
+    "released": "2003",
+    "card_count": 1
+  },
+  {
+    "code": "8ED",
+    "name": "Eighth Edition",
+    "type": "core",
+    "released": "2003",
+    "card_count": 711
+  },
+  {
+    "code": "PSCG",
+    "name": "Scourge Promos",
+    "type": "promo",
+    "released": "2003",
+    "card_count": 1
+  },
+  {
+    "code": "SCG",
+    "name": "Scourge",
+    "type": "expansion",
+    "released": "2003",
+    "card_count": 143
+  },
+  {
+    "code": "PLGN",
+    "name": "Legions Promos",
+    "type": "promo",
+    "released": "2003",
+    "card_count": 1
+  },
+  {
+    "code": "LGN",
+    "name": "Legions",
+    "type": "expansion",
+    "released": "2003",
+    "card_count": 145
+  },
+  {
+    "code": "PMOA",
+    "name": "Magic Online Avatars",
+    "type": "vanguard",
+    "released": "2003",
+    "card_count": 85
+  },
+  {
+    "code": "PJJT",
+    "name": "Japan Junior Tournament",
+    "type": "promo",
+    "released": "2003",
+    "card_count": 12
+  },
+  {
+    "code": "PAL03",
+    "name": "Arena League 2003",
+    "type": "promo",
+    "released": "2003",
+    "card_count": 8
+  },
+  {
+    "code": "OVNT",
+    "name": "Vintage Championship",
+    "type": "memorabilia",
+    "released": "2003",
+    "card_count": 35
+  },
+  {
+    "code": "F03",
+    "name": "Friday Night Magic 2003",
+    "type": "promo",
+    "released": "2003",
+    "card_count": 13
+  },
+  {
+    "code": "G03",
+    "name": "Judge Gift Cards 2003",
+    "type": "promo",
+    "released": "2003",
+    "card_count": 3
+  },
+  {
+    "code": "P03",
+    "name": "Magic Player Rewards 2003",
+    "type": "promo",
+    "released": "2003",
+    "card_count": 7
+  },
+  {
+    "code": "WC02",
+    "name": "World Championship Decks 2002",
+    "type": "memorabilia",
+    "released": "2002",
+    "card_count": 153
+  },
+  {
+    "code": "ONS",
+    "name": "Onslaught",
+    "type": "expansion",
+    "released": "2002",
+    "card_count": 351
+  },
+  {
+    "code": "PONS",
+    "name": "Onslaught Promos",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 1
+  },
+  {
+    "code": "JP1",
+    "name": "Hobby Japan Promos",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 5
+  },
+  {
+    "code": "PRM",
+    "name": "Magic Online Promos",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 3095
+  },
+  {
+    "code": "PJUD",
+    "name": "Judgment Promos",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 1
+  },
+  {
+    "code": "JUD",
+    "name": "Judgment",
+    "type": "expansion",
+    "released": "2002",
+    "card_count": 143
+  },
+  {
+    "code": "PTOR",
+    "name": "Torment Promos",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 3
+  },
+  {
+    "code": "TOR",
+    "name": "Torment",
+    "type": "expansion",
+    "released": "2002",
+    "card_count": 143
+  },
+  {
+    "code": "PAL02",
+    "name": "Arena League 2002",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 5
+  },
+  {
+    "code": "F02",
+    "name": "Friday Night Magic 2002",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 12
+  },
+  {
+    "code": "G02",
+    "name": "Judge Gift Cards 2002",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 2
+  },
+  {
+    "code": "PR2",
+    "name": "Magic Player Rewards 2002",
+    "type": "promo",
+    "released": "2002",
+    "card_count": 6
+  },
+  {
+    "code": "DKM",
+    "name": "Deckmasters",
+    "type": "box",
+    "released": "2001",
+    "card_count": 58
+  },
+  {
+    "code": "PODY",
+    "name": "Odyssey Promos",
+    "type": "promo",
+    "released": "2001",
+    "card_count": 1
+  },
+  {
+    "code": "ODY",
+    "name": "Odyssey",
+    "type": "expansion",
+    "released": "2001",
+    "card_count": 353
+  },
+  {
+    "code": "WC01",
+    "name": "World Championship Decks 2001",
+    "type": "memorabilia",
+    "released": "2001",
+    "card_count": 138
+  },
+  {
+    "code": "PSDG",
+    "name": "Sega Dreamcast Cards",
+    "type": "box",
+    "released": "2001",
+    "card_count": 10
+  },
+  {
+    "code": "PAPC",
+    "name": "Apocalypse Promos",
+    "type": "promo",
+    "released": "2001",
+    "card_count": 1
+  },
+  {
+    "code": "APC",
+    "name": "Apocalypse",
+    "type": "expansion",
+    "released": "2001",
+    "card_count": 143
+  },
+  {
+    "code": "7ED",
+    "name": "Seventh Edition",
+    "type": "core",
+    "released": "2001",
+    "card_count": 708
+  },
+  {
+    "code": "PPLS",
+    "name": "Planeshift Promos",
+    "type": "promo",
+    "released": "2001",
+    "card_count": 1
+  },
+  {
+    "code": "PLS",
+    "name": "Planeshift",
+    "type": "expansion",
+    "released": "2001",
+    "card_count": 146
+  },
+  {
+    "code": "PAL01",
+    "name": "Arena League 2001",
+    "type": "promo",
+    "released": "2001",
+    "card_count": 12
+  },
+  {
+    "code": "G01",
+    "name": "Judge Gift Cards 2001",
+    "type": "promo",
+    "released": "2001",
+    "card_count": 2
+  },
+  {
+    "code": "F01",
+    "name": "Friday Night Magic 2001",
+    "type": "promo",
+    "released": "2001",
+    "card_count": 7
+  },
+  {
+    "code": "MPR",
+    "name": "Magic Player Rewards 2001",
+    "type": "promo",
+    "released": "2001",
+    "card_count": 8
+  },
+  {
+    "code": "PINV",
+    "name": "Invasion Promos",
+    "type": "promo",
+    "released": "2000",
+    "card_count": 1
+  },
+  {
+    "code": "INV",
+    "name": "Invasion",
+    "type": "expansion",
+    "released": "2000",
+    "card_count": 354
+  },
+  {
+    "code": "BTD",
+    "name": "Beatdown Box Set",
+    "type": "box",
+    "released": "2000",
+    "card_count": 90
+  },
+  {
+    "code": "WC00",
+    "name": "World Championship Decks 2000",
+    "type": "memorabilia",
+    "released": "2000",
+    "card_count": 117
+  },
+  {
+    "code": "PPCY",
+    "name": "Prophecy Promos",
+    "type": "promo",
+    "released": "2000",
+    "card_count": 1
+  },
+  {
+    "code": "PCY",
+    "name": "Prophecy",
+    "type": "expansion",
+    "released": "2000",
+    "card_count": 144
+  },
+  {
+    "code": "S00",
+    "name": "Starter 2000",
+    "type": "starter",
+    "released": "2000",
+    "card_count": 20
+  },
+  {
+    "code": "PNEM",
+    "name": "Nemesis Promos",
+    "type": "promo",
+    "released": "2000",
+    "card_count": 1
+  },
+  {
+    "code": "NEM",
+    "name": "Nemesis",
+    "type": "expansion",
+    "released": "2000",
+    "card_count": 143
+  },
+  {
+    "code": "PELP",
+    "name": "European Land Program",
+    "type": "promo",
+    "released": "2000",
+    "card_count": 15
+  },
+  {
+    "code": "PAL00",
+    "name": "Arena League 2000",
+    "type": "promo",
+    "released": "2000",
+    "card_count": 11
+  },
+  {
+    "code": "FNM",
+    "name": "Friday Night Magic 2000",
+    "type": "promo",
+    "released": "2000",
+    "card_count": 11
+  },
+  {
+    "code": "G00",
+    "name": "Judge Gift Cards 2000",
+    "type": "promo",
+    "released": "2000",
+    "card_count": 2
+  },
+  {
+    "code": "PSUS",
+    "name": "Junior Super Series",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 18
+  },
+  {
+    "code": "BRB",
+    "name": "Battle Royale Box Set",
+    "type": "box",
+    "released": "1999",
+    "card_count": 136
+  },
+  {
+    "code": "PMMQ",
+    "name": "Mercadian Masques Promos",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 1
+  },
+  {
+    "code": "MMQ",
+    "name": "Mercadian Masques",
+    "type": "expansion",
+    "released": "1999",
+    "card_count": 350
+  },
+  {
+    "code": "PWOS",
+    "name": "Wizards of the Coast Online Store",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 1
+  },
+  {
+    "code": "WC99",
+    "name": "World Championship Decks 1999",
+    "type": "memorabilia",
+    "released": "1999",
+    "card_count": 111
+  },
+  {
+    "code": "PWOR",
+    "name": "World Championship Promos",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 2
+  },
+  {
+    "code": "PGRU",
+    "name": "Guru",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 5
+  },
+  {
+    "code": "S99",
+    "name": "Starter 1999",
+    "type": "starter",
+    "released": "1999",
+    "card_count": 173
+  },
+  {
+    "code": "PUDS",
+    "name": "Urza's Destiny Promos",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 1
+  },
+  {
+    "code": "UDS",
+    "name": "Urza's Destiny",
+    "type": "expansion",
+    "released": "1999",
+    "card_count": 143
+  },
+  {
+    "code": "PPTK",
+    "name": "Portal Three Kingdoms Promos",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 2
+  },
+  {
+    "code": "PTK",
+    "name": "Portal Three Kingdoms",
+    "type": "starter",
+    "released": "1999",
+    "card_count": 180
+  },
+  {
+    "code": "6ED",
+    "name": "Classic Sixth Edition",
+    "type": "core",
+    "released": "1999",
+    "card_count": 351
+  },
+  {
+    "code": "PULG",
+    "name": "Urza's Legacy Promos",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 2
+  },
+  {
+    "code": "ULG",
+    "name": "Urza's Legacy",
+    "type": "expansion",
+    "released": "1999",
+    "card_count": 143
+  },
+  {
+    "code": "PAL99",
+    "name": "Arena League 1999",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 10
+  },
+  {
+    "code": "G99",
+    "name": "Judge Gift Cards 1999",
+    "type": "promo",
+    "released": "1999",
+    "card_count": 1
+  },
+  {
+    "code": "ATH",
+    "name": "Anthologies",
+    "type": "box",
+    "released": "1998",
+    "card_count": 85
+  },
+  {
+    "code": "PUSG",
+    "name": "Urza's Saga Promos",
+    "type": "promo",
+    "released": "1998",
+    "card_count": 1
+  },
+  {
+    "code": "USG",
+    "name": "Urza's Saga",
+    "type": "expansion",
+    "released": "1998",
+    "card_count": 357
+  },
+  {
+    "code": "PALP",
+    "name": "Asia Pacific Land Program",
+    "type": "promo",
+    "released": "1998",
+    "card_count": 15
+  },
+  {
+    "code": "WC98",
+    "name": "World Championship Decks 1998",
+    "type": "memorabilia",
+    "released": "1998",
+    "card_count": 117
+  },
+  {
+    "code": "TUGL",
+    "name": "Unglued Tokens",
+    "type": "token",
+    "released": "1998",
+    "card_count": 6
+  },
+  {
+    "code": "UGL",
+    "name": "Unglued",
+    "type": "funny",
+    "released": "1998",
+    "card_count": 88
+  },
+  {
+    "code": "P02",
+    "name": "Portal Second Age",
+    "type": "starter",
+    "released": "1998",
+    "card_count": 165
+  },
+  {
+    "code": "PEXO",
+    "name": "Exodus Promos",
+    "type": "promo",
+    "released": "1998",
+    "card_count": 1
+  },
+  {
+    "code": "EXO",
+    "name": "Exodus",
+    "type": "expansion",
+    "released": "1998",
+    "card_count": 143
+  },
+  {
+    "code": "PSTH",
+    "name": "Stronghold Promos",
+    "type": "promo",
+    "released": "1998",
+    "card_count": 1
+  },
+  {
+    "code": "STH",
+    "name": "Stronghold",
+    "type": "expansion",
+    "released": "1998",
+    "card_count": 143
+  },
+  {
+    "code": "JGP",
+    "name": "Judge Gift Cards 1998",
+    "type": "promo",
+    "released": "1998",
+    "card_count": 3
+  },
+  {
+    "code": "PTMP",
+    "name": "Tempest Promos",
+    "type": "promo",
+    "released": "1997",
+    "card_count": 1
+  },
+  {
+    "code": "TMP",
+    "name": "Tempest",
+    "type": "expansion",
+    "released": "1997",
+    "card_count": 350
+  },
+  {
+    "code": "WC97",
+    "name": "World Championship Decks 1997",
+    "type": "memorabilia",
+    "released": "1997",
+    "card_count": 131
+  },
+  {
+    "code": "WTH",
+    "name": "Weatherlight",
+    "type": "expansion",
+    "released": "1997",
+    "card_count": 167
+  },
+  {
+    "code": "OLEP",
+    "name": "Oversized League Prizes",
+    "type": "memorabilia",
+    "released": "1997",
+    "card_count": 83
+  },
+  {
+    "code": "PVAN",
+    "name": "Vanguard Series",
+    "type": "vanguard",
+    "released": "1997",
+    "card_count": 32
+  },
+  {
+    "code": "POR",
+    "name": "Portal",
+    "type": "starter",
+    "released": "1997",
+    "card_count": 257
+  },
+  {
+    "code": "PMIC",
+    "name": "MicroProse Promos",
+    "type": "memorabilia",
+    "released": "1997",
+    "card_count": 1
+  },
+  {
+    "code": "PAST",
+    "name": "Astral Cards",
+    "type": "box",
+    "released": "1997",
+    "card_count": 12
+  },
+  {
+    "code": "5ED",
+    "name": "Fifth Edition",
+    "type": "core",
+    "released": "1997",
+    "card_count": 460
+  },
+  {
+    "code": "VIS",
+    "name": "Visions",
+    "type": "expansion",
+    "released": "1997",
+    "card_count": 167
+  },
+  {
+    "code": "ITP",
+    "name": "Introductory Two-Player Set",
+    "type": "starter",
+    "released": "1996",
+    "card_count": 67
+  },
+  {
+    "code": "MGB",
+    "name": "Multiverse Gift Box",
+    "type": "box",
+    "released": "1996",
+    "card_count": 10
+  },
+  {
+    "code": "MIR",
+    "name": "Mirage",
+    "type": "expansion",
+    "released": "1996",
+    "card_count": 353
+  },
+  {
+    "code": "PRED",
+    "name": "Redemption Program",
+    "type": "promo",
+    "released": "1996",
+    "card_count": 1
+  },
+  {
+    "code": "PCEL",
+    "name": "Celebration Cards",
+    "type": "memorabilia",
+    "released": "1996",
+    "card_count": 9
+  },
+  {
+    "code": "PARL",
+    "name": "Arena League 1996",
+    "type": "promo",
+    "released": "1996",
+    "card_count": 7
+  },
+  {
+    "code": "PLGM",
+    "name": "DCI Legend Membership",
+    "type": "promo",
+    "released": "1996",
+    "card_count": 2
+  },
+  {
+    "code": "RQS",
+    "name": "Rivals Quick Start Set",
+    "type": "box",
+    "released": "1996",
+    "card_count": 65
+  },
+  {
+    "code": "ALL",
+    "name": "Alliances",
+    "type": "expansion",
+    "released": "1996",
+    "card_count": 199
+  },
+  {
+    "code": "PTC",
+    "name": "Pro Tour Collector Set",
+    "type": "memorabilia",
+    "released": "1996",
+    "card_count": 308
+  },
+  {
+    "code": "O90P",
+    "name": "Oversized 90's Promos",
+    "type": "memorabilia",
+    "released": "1996",
+    "card_count": 10
+  },
+  {
+    "code": "HML",
+    "name": "Homelands",
+    "type": "expansion",
+    "released": "1995",
+    "card_count": 140
+  },
+  {
+    "code": "RIN",
+    "name": "Rinascimento",
+    "type": "masters",
+    "released": "1995",
+    "card_count": 69
+  },
+  {
+    "code": "REN",
+    "name": "Renaissance",
+    "type": "masters",
+    "released": "1995",
+    "card_count": 122
+  },
+  {
+    "code": "BCHR",
+    "name": "Chronicles Foreign Black Border",
+    "type": "masters",
+    "released": "1995",
+    "card_count": 125
+  },
+  {
+    "code": "CHR",
+    "name": "Chronicles",
+    "type": "masters",
+    "released": "1995",
+    "card_count": 125
+  },
+  {
+    "code": "ICE",
+    "name": "Ice Age",
+    "type": "expansion",
+    "released": "1995",
+    "card_count": 383
+  },
+  {
+    "code": "4BB",
+    "name": "Fourth Edition Foreign Black Border",
+    "type": "core",
+    "released": "1995",
+    "card_count": 378
+  },
+  {
+    "code": "4ED",
+    "name": "Fourth Edition",
+    "type": "core",
+    "released": "1995",
+    "card_count": 380
+  },
+  {
+    "code": "PMEI",
+    "name": "Media and Collaboration Promos",
+    "type": "promo",
+    "released": "1995",
+    "card_count": 113
+  },
+  {
+    "code": "FEM",
+    "name": "Fallen Empires",
+    "type": "expansion",
+    "released": "1994",
+    "card_count": 187
+  },
+  {
+    "code": "PHPR",
+    "name": "HarperPrism Book Promos",
+    "type": "promo",
+    "released": "1994",
+    "card_count": 5
+  },
+  {
+    "code": "DRK",
+    "name": "The Dark",
+    "type": "expansion",
+    "released": "1994",
+    "card_count": 122
+  },
+  {
+    "code": "PDRC",
+    "name": "Dragon Con",
+    "type": "promo",
+    "released": "1994",
+    "card_count": 1
+  },
+  {
+    "code": "SUM",
+    "name": "Summer Magic / Edgar",
+    "type": "core",
+    "released": "1994",
+    "card_count": 306
+  },
+  {
+    "code": "LEG",
+    "name": "Legends",
+    "type": "expansion",
+    "released": "1994",
+    "card_count": 310
+  },
+  {
+    "code": "FBB",
+    "name": "Foreign Black Border",
+    "type": "core",
+    "released": "1994",
+    "card_count": 307
+  },
+  {
+    "code": "3ED",
+    "name": "Revised Edition",
+    "type": "core",
+    "released": "1994",
+    "card_count": 306
+  },
+  {
+    "code": "ATQ",
+    "name": "Antiquities",
+    "type": "expansion",
+    "released": "1994",
+    "card_count": 102
+  },
+  {
+    "code": "ARN",
+    "name": "Arabian Nights",
+    "type": "expansion",
+    "released": "1993",
+    "card_count": 92
+  },
+  {
+    "code": "CEI",
+    "name": "Intl. Collectors' Edition",
+    "type": "memorabilia",
+    "released": "1993",
+    "card_count": 302
+  },
+  {
+    "code": "CED",
+    "name": "Collectors' Edition",
+    "type": "memorabilia",
+    "released": "1993",
+    "card_count": 302
+  },
+  {
+    "code": "2ED",
+    "name": "Unlimited Edition",
+    "type": "core",
+    "released": "1993",
+    "card_count": 302
+  },
+  {
+    "code": "LEB",
+    "name": "Limited Edition Beta",
+    "type": "core",
+    "released": "1993",
+    "card_count": 302
+  },
+  {
+    "code": "LEA",
+    "name": "Limited Edition Alpha",
+    "type": "core",
+    "released": "1993",
+    "card_count": 295
+  }
+]

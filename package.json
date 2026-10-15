@@ -4,7 +4,7 @@
   "description": "Silhouette Card Maker UI",
   "author": "SCMUI",
   "private": true,
-  "version": "3.0.4",
+  "version": "3.0.5",
   "type": "module",
   "main": "electron-main.cjs",
   "scripts": {
@@ -36,6 +36,7 @@
     },
     "files": [
       "dist/**/*",
+      "data/**/*",
       "electron-main.cjs",
       "package.json",
       "src/Library/**/*",

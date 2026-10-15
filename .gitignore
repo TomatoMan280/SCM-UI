@@ -7,3 +7,5 @@ coverage/
 .env*
 !.env.example
 cache/
+* (*).*
+src/silhouette-card-maker/

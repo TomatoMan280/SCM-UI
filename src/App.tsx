@@ -53,6 +53,7 @@ import { cn } from './lib/utils';
 import { Theme, setTheme, getTheme } from './lib/theme';
 import PresetManager from './components/PresetManager';
 import ProjectManager from './components/ProjectManager';
+import MtgSetCodeTooltip from './components/MtgSetCodeTooltip';
 
 export interface GpuVramInfo {
   detected: boolean;
@@ -707,7 +708,7 @@ const PLUGIN_CARD_PROVIDERS: Record<string, PluginCardProviderInfo> = {
   keyforge: {
     id: 'keyforge',
     providerName: 'Archon Arcana',
-    defaultQuery: 'Bimawithpencil',
+    defaultQuery: 'Bad Penny',
     tabLabel: 'Archon Arcana'
   },
   grand_archive: {
@@ -718,15 +719,15 @@ const PLUGIN_CARD_PROVIDERS: Record<string, PluginCardProviderInfo> = {
   },
   flesh_and_blood: {
     id: 'flesh_and_blood',
-    providerName: 'CardVault',
+    providerName: 'FAB Cube (LSS)',
     defaultQuery: 'Command and Conquer',
-    tabLabel: 'CardVault'
+    tabLabel: 'FAB Cube'
   },
   gundam: {
     id: 'gundam',
-    providerName: 'Limitless Gundam',
-    defaultQuery: 'Gundam',
-    tabLabel: 'Limitless Gundam'
+    providerName: 'Bandai Official',
+    defaultQuery: 'ST01-001',
+    tabLabel: 'Bandai Official'
   },
   sorcery_contested_realm: {
     id: 'sorcery_contested_realm',
@@ -792,11 +793,13 @@ interface AppStatus {
 const LightboxGallery = ({
   initialImage,
   onClose,
-  onUpscaleSingle
+  onUpscaleSingle,
+  disableUpscale = false
 }: {
   initialImage: string;
   onClose: () => void;
   onUpscaleSingle?: (src: string) => Promise<void>;
+  disableUpscale?: boolean;
 }) => {
   const [currentImage, setCurrentImage] = useState(initialImage);
   const [allImages, setAllImages] = useState<string[]>([]);
@@ -1005,7 +1008,7 @@ const LightboxGallery = ({
 
   // Check if original backup exists for active image
   const checkOriginal = useCallback(async (targetSrc: string, forceFresh = false) => {
-    if (!targetSrc || targetSrc.startsWith('data:') || targetSrc.startsWith('blob:')) {
+    if (disableUpscale || !targetSrc || targetSrc.startsWith('http') || targetSrc.startsWith('data:') || targetSrc.startsWith('blob:')) {
       setHasOriginal(false);
       setOriginalSrc(null);
       setImageStats(null);
@@ -1046,7 +1049,7 @@ const LightboxGallery = ({
       setOriginalSrc(null);
       setImageStats(null);
     }
-  }, []);
+  }, [disableUpscale]);
 
   useEffect(() => {
     checkOriginal(displaySrc);
@@ -1184,7 +1187,7 @@ const LightboxGallery = ({
 
   const handleUpscaleCurrent = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isUpscalingSingle) return;
+    if (disableUpscale || isUpscalingSingle || displaySrc.startsWith('http') || displaySrc.startsWith('data:') || displaySrc.startsWith('blob:')) return;
     setIsUpscalingSingle(true);
     try {
       if (onUpscaleSingle) {
@@ -1202,6 +1205,7 @@ const LightboxGallery = ({
 
   const handleRestoreCurrent = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (disableUpscale || displaySrc.startsWith('http') || displaySrc.startsWith('data:') || displaySrc.startsWith('blob:')) return;
     if (!confirm('Revert this card to its original un-upscaled baseline?')) return;
     try {
       const res = await fetch('/api/asset/restore-original', {
@@ -1282,7 +1286,7 @@ const LightboxGallery = ({
           </button>
         </div>
 
-        {hasOriginal && (
+        {!disableUpscale && hasOriginal && (
           <button
             type="button"
             className={cn(
@@ -1302,7 +1306,7 @@ const LightboxGallery = ({
           </button>
         )}
 
-        {hasOriginal && (
+        {!disableUpscale && hasOriginal && (
           <button
             type="button"
             className="px-3 py-2 bg-white/10 hover:bg-white/15 text-white/70 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-white/10 active:scale-95 cursor-pointer"
@@ -1314,7 +1318,7 @@ const LightboxGallery = ({
           </button>
         )}
 
-        {!hasOriginal && onUpscaleSingle && (
+        {!disableUpscale && !hasOriginal && onUpscaleSingle && !displaySrc.startsWith('http') && !displaySrc.startsWith('data:') && !displaySrc.startsWith('blob:') && (
           <button
             type="button"
             className="px-3.5 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-primary-600/30 active:scale-95 cursor-pointer disabled:opacity-50"
@@ -1384,7 +1388,7 @@ const LightboxGallery = ({
             transformOrigin: 'center center'
           }}
         >
-          {hasOriginal && isComparing && originalSrc ? (
+          {!disableUpscale && hasOriginal && isComparing && originalSrc ? (
             /* INTERACTIVE REAL-TIME BEFORE / AFTER COMPARISON SLIDER */
             <div
               ref={containerRef}
@@ -1514,15 +1518,15 @@ const LightboxGallery = ({
         </div>
 
         {/* Resolution & File Size Stats Badge - Outside card frame so it NEVER blocks card image */}
-        {Boolean(dimensions || (imageStats?.origSize && imageStats?.currentSize)) && (
+        {Boolean(dimensions || (!disableUpscale && imageStats?.origSize && imageStats?.currentSize)) && (
           <div className="mt-3.5 px-4 py-1.5 rounded-full bg-[#121318]/90 backdrop-blur-md border border-white/15 text-white/90 text-xs font-mono pointer-events-none flex items-center gap-2.5 shadow-2xl z-30 select-none">
             {dimensions && (
               <span className="text-white font-semibold">{dimensions.width} × {dimensions.height} px</span>
             )}
-            {dimensions && Boolean(imageStats?.origSize && imageStats?.currentSize && imageStats.origSize > 0) && (
+            {dimensions && Boolean(!disableUpscale && imageStats?.origSize && imageStats?.currentSize && imageStats.origSize > 0) && (
               <span className="text-white/20">•</span>
             )}
-            {Boolean(imageStats?.origSize && imageStats?.currentSize && imageStats.origSize > 0) && (
+            {Boolean(!disableUpscale && imageStats?.origSize && imageStats?.currentSize && imageStats.origSize > 0) && (
               <>
                 <span className="text-white/60">Orig: <strong className="text-white font-semibold">{((imageStats?.origSize || 0) / 1024).toFixed(0)} KB</strong></span>
                 <span className="text-white/20">•</span>
@@ -1698,6 +1702,7 @@ export default function App() {
   const [pluginSearch, setPluginSearch] = useState("");
   const [verifyResult, setVerifyResult] = useState<{ missing: number, restored: number, check: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, name: string, type?: string } | null>(null);
+  const [isCardArtSubmenuOpen, setIsCardArtSubmenuOpen] = useState(false);
   const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
   const [isDragSelecting, setIsDragSelecting] = useState(false);
 
@@ -2673,16 +2678,41 @@ export default function App() {
     localStorage.setItem('scm_art_card_size', artCardSize.toString());
   }, [artCardSize]);
 
-  const [mtgSets, setMtgSets] = useState<{ code: string, name: string }[]>([]);
+  const [mtgSets, setMtgSets] = useState<{ code: string; name: string; type?: string; released?: string; card_count?: number }[]>(() => {
+    try {
+      const saved = localStorage.getItem('scm_mtg_sets');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
   useEffect(() => {
-    fetch('https://api.scryfall.com/sets')
-      .then(res => res.json())
-      .then(data => {
-        if (data.data) {
-          setMtgSets(data.data.map((s: any) => ({ code: s.code, name: s.name })));
+    const loadSets = async () => {
+      try {
+        const res = await fetch('/api/mtg/sets');
+        const data = await res.json();
+        if (data.data && data.data.length > 0) {
+          setMtgSets(data.data);
+          localStorage.setItem('scm_mtg_sets', JSON.stringify(data.data));
+          return;
         }
-      })
-      .catch(err => console.error("Failed to load MTG sets", err));
+      } catch (e) {}
+      fetch('https://api.scryfall.com/sets')
+        .then(res => res.json())
+        .then(data => {
+          if (data.data) {
+            const mapped = data.data.map((s: any) => ({
+              code: s.code.toUpperCase(),
+              name: s.name,
+              type: s.set_type,
+              released: s.released_at ? s.released_at.substring(0, 4) : ''
+            }));
+            setMtgSets(mapped);
+            localStorage.setItem('scm_mtg_sets', JSON.stringify(mapped));
+          }
+        })
+        .catch(err => console.error("Failed to load MTG sets", err));
+    };
+    loadSets();
   }, []);
   const [isBacksOnlyModal, setIsBacksOnlyModal] = useState(false);
   const [setBackSearchCategory, setSetBackSearchCategory] = useState<'cards' | 'backs'>('cards');
@@ -3890,6 +3920,34 @@ export default function App() {
     }
   };
 
+  const handleFetchCuriosaDeckPrompt = async () => {
+    const url = window.prompt("Enter Curiosa / Sorcery Deck URL or ID (e.g. https://curiosa.io/decks/cme5x329q00k9jo04ouuycsek):");
+    if (!url || !url.trim()) return;
+
+    try {
+      setTaskProgress({ current: 0, total: 1, message: "Importing deck from Curiosa..." });
+      addLog(`[Curiosa] Ingesting decklist from: ${url.trim()}...`);
+      const res = await fetch(`/api/curiosa/deck?url=${encodeURIComponent(url.trim())}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to fetch Curiosa deck");
+      }
+
+      setPluginState(prev => ({
+        ...prev,
+        decklist: data.decklist
+      }));
+
+      addLog(`[Curiosa] Successfully imported "${data.title}" (${data.cardCount} cards) into decklist.`);
+      setTaskProgress({ current: 1, total: 1, message: `Imported ${data.title}!` });
+    } catch (err: any) {
+      addLog(`[Error] Curiosa deck ingestion failed: ${err.message || err}`);
+      setTaskProgress({ current: 0, total: 1, message: "Deck import failed." });
+    } finally {
+      setTimeout(() => setTaskProgress(null), 2000);
+    }
+  };
+
   const performMoveOrCopy = async (items: string[], destination: 'project' | 'library', source: 'library' | 'project' | 'plugins', conflictResolution: 'check' | 'keep' | 'replace' | 'keep_both' = 'check', backResolution: 'check' | 'keep' | 'replace' = 'check') => {
     let finalItems = [...items];
     const targetObj = destination === 'project' ? status?.assets : (destination === 'library' ? status?.library : undefined);
@@ -4524,7 +4582,7 @@ export default function App() {
                       "font-mono text-[10px] transition-colors",
                       updateInfo?.hasUpdate ? "text-primary-400 font-bold" : "text-white/80 group-hover/ver:text-white"
                     )}>
-                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.4'}
+                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.5'}
                     </span>
                   </div>
                 </div>
@@ -5733,8 +5791,31 @@ export default function App() {
                                               }))}
                                             />
                                           ) : opt.type === 'text' ? (
-                                            <div className="space-y-1.5">
-                                              <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 block">{opt.label}</span>
+                                            <div className="space-y-1.5 relative">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 block">{opt.label}</span>
+                                                {(opt.flag === '-s' || opt.flag === '--ignore_set') && (
+                                                  <MtgSetCodeTooltip
+                                                    mtgSets={mtgSets}
+                                                    mode="append"
+                                                    label="Browse Sets"
+                                                    onSelectSet={(code) => {
+                                                      setPluginState(prev => {
+                                                        const current = (prev.options[opt.flag] as string) || '';
+                                                        const parts = current.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+                                                        if (!parts.includes(code.toUpperCase())) {
+                                                          parts.push(code.toUpperCase());
+                                                        }
+                                                        return {
+                                                          ...prev,
+                                                          options: { ...prev.options, [opt.flag]: parts.join(', ') }
+                                                        };
+                                                      });
+                                                    }}
+                                                    align="right"
+                                                  />
+                                                )}
+                                              </div>
                                               <input
                                                 type="text"
                                                 value={(pluginState.options[opt.flag] as string) || ''}
@@ -5743,6 +5824,7 @@ export default function App() {
                                                   options: { ...prev.options, [opt.flag]: e.target.value }
                                                 }))}
                                                 placeholder="e.g. eld, woe"
+                                                title={opt.flag === '-s' || opt.flag === '--ignore_set' ? "Enter comma-separated MTG set codes (e.g. MH3, ELD). Hover 'Browse Sets' above to view all sets." : undefined}
                                                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/80 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono transition-colors"
                                               />
                                             </div>
@@ -5784,6 +5866,17 @@ export default function App() {
                                     >
                                       <Download size={13} />
                                       <span>Import Limitless Deck</span>
+                                    </button>
+                                  )}
+                                  {pluginState.selectedPlugin?.id === 'sorcery_contested_realm' && (
+                                    <button
+                                      type="button"
+                                      onClick={handleFetchCuriosaDeckPrompt}
+                                      className="px-3 py-1.5 bg-primary-600/20 border border-primary-500/30 rounded-lg hover:bg-primary-600/30 text-primary-300 transition-colors text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                      title="Import decklist directly from a Curiosa / Sorcery deck URL"
+                                    >
+                                      <Download size={13} />
+                                      <span>Import Curiosa Deck</span>
                                     </button>
                                   )}
                                   <button onClick={(e) => { e.stopPropagation(); setIsPluginPresetsOpen(true); }} className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors text-xs font-bold flex items-center gap-2 shrink-0 text-white/70">
@@ -7276,7 +7369,7 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold uppercase tracking-wider text-white/50">Current Version</span>
                           <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-white font-bold">
-                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.4'}
+                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.5'}
                           </span>
                         </div>
                         {updateInfo?.hasUpdate ? (
@@ -7829,6 +7922,7 @@ export default function App() {
             const modelLabel = getModelShortName(upscaleConfig.model);
             const multiplier = upscaleConfig.scaleFactor;
             const itemBaseCls = "w-full h-8.5 px-2.5 rounded-lg flex items-center gap-2.5 transition-all active:scale-[0.98] text-xs font-medium cursor-pointer";
+            const submenuOpensLeft = typeof window !== 'undefined' && (contextMenu.x + 275 + 245 > window.innerWidth);
 
             return (
               <motion.div
@@ -7854,188 +7948,167 @@ export default function App() {
 
                 {/* 1. Artwork & Face Management */}
                 <div className="space-y-0.5">
-                  {contextMenu.type !== 'back' ? (
-                    <>
-                      {pluginState.selectedPlugin?.id && pluginState.selectedPlugin.id !== 'custom_script_upload' ? (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
-                              setContextMenu(null);
-                            }}
-                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title={`Change the front face artwork of this card via ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName}`}
-                          >
-                            <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Select Front Art ({getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel})</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openAddCardPicker();
-                              setContextMenu(null);
-                            }}
-                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title={`Search ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName} and add a new front card to your workspace`}
-                          >
-                            <PlusCircle size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Add Front ({getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel})</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleManualFrontUploadTrigger(contextMenu.name, (contextMenu.type as any) || 'front');
-                              setContextMenu(null);
-                            }}
-                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title="Upload an image file from your computer for this card's front artwork"
-                          >
-                            <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Upload Front Art</span>
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleManualFrontUploadTrigger(contextMenu.name, (contextMenu.type as any) || 'front');
-                            setContextMenu(null);
-                          }}
-                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                          title="Upload an image file from your computer for this card's front artwork"
-                        >
-                          <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                          <span className="truncate">Upload Front Art</span>
-                        </button>
+                  {/* CARD ART Hover Submenu */}
+                  <div
+                    className="relative group/art"
+                    onMouseEnter={() => setIsCardArtSubmenuOpen(true)}
+                    onMouseLeave={() => setIsCardArtSubmenuOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsCardArtSubmenuOpen(prev => !prev);
+                      }}
+                      className={cn(
+                        itemBaseCls,
+                        "justify-between text-white/90 hover:text-white group-hover/art:bg-white/10 group-hover/art:text-white group",
+                        isCardArtSubmenuOpen && "bg-white/10 text-white"
                       )}
-                      {pluginState.selectedPlugin?.id === 'mtg' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
+                      title="Card Art options"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ImageIcon size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                        <span className="truncate font-semibold tracking-wide">Card Art</span>
+                      </div>
+                      <ChevronRight size={13} className="text-white/40 group-hover:text-white group-hover/art:text-white shrink-0 transition-transform group-hover/art:translate-x-0.5" />
+                    </button>
+
+                    {/* Flyout Submenu */}
+                    <div
+                      className={cn(
+                        "absolute top-0 w-60 p-1.5 bg-[#14151b]/98 backdrop-blur-2xl border border-white/15 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] z-[120] flex-col gap-0.5 text-white select-none",
+                        submenuOpensLeft 
+                          ? "right-full mr-1.5 before:content-[''] before:absolute before:inset-y-0 before:-right-2 before:w-3" 
+                          : "left-full ml-1.5 before:content-[''] before:absolute before:inset-y-0 before:-left-2 before:w-3",
+                        isCardArtSubmenuOpen ? "flex" : "hidden group-hover/art:flex"
+                      )}
+                    >
+                      {/* Set Art (card ingestion) */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'front');
+                          setContextMenu(null);
+                          setIsCardArtSubmenuOpen(false);
+                        }}
+                        className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
+                        title="Search and set front card artwork via card ingestion"
+                      >
+                        <ImageIcon size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                        <span className="truncate font-medium">Set Art (card ingestion)</span>
+                      </button>
+
+                      {/* Set art (manual upload) */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleManualFrontUploadTrigger(contextMenu.name, (contextMenu.type as any) || 'front');
+                          setContextMenu(null);
+                          setIsCardArtSubmenuOpen(false);
+                        }}
+                        className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
+                        title="Upload front artwork file from your computer"
+                      >
+                        <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate font-medium">Set art (manual upload)</span>
+                      </button>
+
+                      {/* Set Back (Card Ingestion) */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (contextMenu.type === 'back') {
+                            openArtPickerForCard(contextMenu.name, 'back', 'back');
+                          } else {
                             openArtPickerForCard(contextMenu.name, (contextMenu.type as any) || 'front', 'double_sided');
-                            setContextMenu(null);
-                          }}
-                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                          title="Set back for this card (search any card or back pattern)"
-                        >
-                          <Layers size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                          <span className="truncate">Set Back (Double-Sided)</span>
-                        </button>
-                      )}
-                      {assetViewMode !== 'plugins' && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            setContextMenu(null);
-                            setTaskProgress({ current: 0, total: targets.length, message: `Moving to backs section...` });
-                            try {
-                              const res = await fetch('/api/card/move-section', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ identities: targets, targetSection: 'back', assetViewMode })
-                              });
-                              const data = await res.json();
-                              if (data.success) {
-                                addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to back section.`);
-                                setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to backs!` });
-                                await fetchStatus();
-                                setSelectedAssets(new Set());
-                              }
-                            } catch (err: any) {
-                              addLog(`[Error] Failed to move card(s): ${err}`);
-                              setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
-                            }
-                            setTimeout(() => setTaskProgress(null), 1500);
-                          }}
-                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                          title="Move this card into the Back Patterns section"
-                        >
-                          <FolderInput size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                          <span className="truncate">
-                            {isMultiSelected ? `Move ${targets.length} to Backs` : 'Move to Backs'}
-                          </span>
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {pluginState.selectedPlugin?.id === 'mtg' ? (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openArtPickerForCard(contextMenu.name, 'back', 'back');
-                              setContextMenu(null);
-                            }}
-                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title="Change this back pattern via MPC/MTG search"
-                          >
-                            <ImageIcon size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Select Backing Art</span>
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleManualCardUploadTrigger(contextMenu.name, 'back');
-                              setContextMenu(null);
-                            }}
-                            className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                            title="Upload an image file from your computer for this card's back pattern"
-                          >
-                            <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                            <span className="truncate">Upload Back Art</span>
-                          </button>
-                        </>
+                          }
+                          setContextMenu(null);
+                          setIsCardArtSubmenuOpen(false);
+                        }}
+                        className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
+                        title="Search and set card back pattern via card ingestion"
+                      >
+                        <Layers size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                        <span className="truncate font-medium">Set Back (Card Ingestion)</span>
+                      </button>
+
+                      {/* Set Back (Manual Upload) */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleManualCardUploadTrigger(contextMenu.name, 'back');
+                          setContextMenu(null);
+                          setIsCardArtSubmenuOpen(false);
+                        }}
+                        className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
+                        title="Upload card back pattern from your computer"
+                      >
+                        <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                        <span className="truncate font-medium">Set Back (Manual Upload)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Add Front to Workspace */}
+                  {contextMenu.type !== 'back' && pluginState.selectedPlugin?.id && pluginState.selectedPlugin.id !== 'custom_script_upload' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openAddCardPicker();
+                        setContextMenu(null);
+                        setIsCardArtSubmenuOpen(false);
+                      }}
+                      className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                      title={`Search ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName} and add a new front card to your workspace`}
+                    >
+                      <PlusCircle size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                      <span className="truncate">Add Front ({getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel})</span>
+                    </button>
+                  )}
+
+                  {/* Move Section */}
+                  {assetViewMode !== 'plugins' && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setContextMenu(null);
+                        setIsCardArtSubmenuOpen(false);
+                        const targetSection = contextMenu.type === 'back' ? 'front' : 'back';
+                        setTaskProgress({ current: 0, total: targets.length, message: `Moving to ${targetSection}s section...` });
+                        try {
+                          const res = await fetch('/api/card/move-section', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ identities: targets, targetSection, assetViewMode })
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to ${targetSection} section.`);
+                            setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to ${targetSection}s!` });
+                            await fetchStatus();
+                            setSelectedAssets(new Set());
+                          }
+                        } catch (err: any) {
+                          addLog(`[Error] Failed to move card(s): ${err}`);
+                          setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
+                        }
+                        setTimeout(() => setTaskProgress(null), 1500);
+                      }}
+                      className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
+                      title={contextMenu.type === 'back' ? "Move this back pattern into the Front Face cards section" : "Move this card into the Back Patterns section"}
+                    >
+                      {contextMenu.type === 'back' ? (
+                        <FolderOutput size={14} className="text-white/40 group-hover:text-white shrink-0" />
                       ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleManualCardUploadTrigger(contextMenu.name, 'back');
-                            setContextMenu(null);
-                          }}
-                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                          title="Upload an image file from your computer for this card's back pattern"
-                        >
-                          <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                          <span className="truncate">Upload Back Art</span>
-                        </button>
+                        <FolderInput size={14} className="text-white/40 group-hover:text-white shrink-0" />
                       )}
-                      {assetViewMode !== 'plugins' && (
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            setContextMenu(null);
-                            setTaskProgress({ current: 0, total: targets.length, message: `Moving to fronts section...` });
-                            try {
-                              const res = await fetch('/api/card/move-section', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ identities: targets, targetSection: 'front', assetViewMode })
-                              });
-                              const data = await res.json();
-                              if (data.success) {
-                                addLog(`[Action: Move] Moved ${data.moved?.length || targets.length} card(s) to front section.`);
-                                setTaskProgress({ current: targets.length, total: targets.length, message: `Moved to fronts!` });
-                                await fetchStatus();
-                                setSelectedAssets(new Set());
-                              }
-                            } catch (err: any) {
-                              addLog(`[Error] Failed to move card(s): ${err}`);
-                              setTaskProgress({ current: 0, total: 1, message: 'Move failed.' });
-                            }
-                            setTimeout(() => setTaskProgress(null), 1500);
-                          }}
-                          className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                          title="Move this back pattern into the Front Face cards section"
-                        >
-                          <FolderOutput size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                          <span className="truncate">
-                            {isMultiSelected ? `Move ${targets.length} to Fronts` : 'Move to Fronts'}
-                          </span>
-                        </button>
-                      )}
-                    </>
+                      <span className="truncate">
+                        {isMultiSelected 
+                          ? `Move ${targets.length} to ${contextMenu.type === 'back' ? 'Fronts' : 'Backs'}` 
+                          : `Move to ${contextMenu.type === 'back' ? 'Fronts' : 'Backs'}`}
+                      </span>
+                    </button>
                   )}
                 </div>
 
@@ -8381,7 +8454,8 @@ export default function App() {
             <LightboxGallery
               initialImage={enlargedImage}
               onClose={() => setEnlargedImage(null)}
-              onUpscaleSingle={async (src: string) => {
+              disableUpscale={isArtPickerOpen || Boolean(enlargedImage?.startsWith('http') || enlargedImage?.startsWith('data:') || enlargedImage?.startsWith('blob:'))}
+              onUpscaleSingle={(!isArtPickerOpen && !enlargedImage?.startsWith('http') && !enlargedImage?.startsWith('data:') && !enlargedImage?.startsWith('blob:')) ? async (src: string) => {
                 try {
                   const cleanUrl = src.split('?')[0].split('#')[0];
                   const decoded = decodeURIComponent(cleanUrl);
@@ -8395,7 +8469,7 @@ export default function App() {
                 } catch (e) {
                   console.error('Failed single card upscale:', e);
                 }
-              }}
+              } : undefined}
             />
           </ErrorBoundary>
         )}
@@ -8804,11 +8878,23 @@ export default function App() {
                         </select>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Code</label>
+                      <div className="space-y-1 relative">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Code</label>
+                          <MtgSetCodeTooltip
+                            mtgSets={mtgSets}
+                            onSelectSet={(code) => {
+                              const updated = { ...scryfallFilters, set: code };
+                              setScryfallFilters(updated);
+                              handleSearchArt(artQuery, updated, 'scryfall');
+                            }}
+                            align="right"
+                          />
+                        </div>
                         <input
                           type="text"
                           placeholder="e.g. MH3, UNH"
+                          title="Enter MTG set code (e.g. MH3, UNH). Hover 'Set Codes' above to view all MTG sets."
                           value={scryfallFilters.set}
                           onChange={(e) => {
                             const updated = { ...scryfallFilters, set: e.target.value.toUpperCase() };
@@ -8863,11 +8949,25 @@ export default function App() {
                         </select>
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Filter</label>
+                      <div className="space-y-1 relative">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Filter</label>
+                          {pluginState.selectedPlugin?.id === 'mtg' && (
+                            <MtgSetCodeTooltip
+                              mtgSets={mtgSets}
+                              onSelectSet={(code) => {
+                                const updated = { ...mpcFilters, set: code };
+                                setMpcFilters(updated);
+                                handleSearchArt(artQuery, updated, 'mpcfill');
+                              }}
+                              align="right"
+                            />
+                          )}
+                        </div>
                         <input
                           type="text"
                           placeholder="e.g. MH3, LTR"
+                          title="Enter MTG set code (e.g. MH3, LTR). Hover 'Set Codes' above to view all MTG sets."
                           value={mpcFilters.set}
                           onChange={(e) => {
                             const updated = { ...mpcFilters, set: e.target.value.toUpperCase() };
@@ -8925,7 +9025,7 @@ export default function App() {
                 {isSearchingArt ? (
                   <div className="h-72 flex flex-col items-center justify-center gap-3 text-white/40">
                     <Loader2 size={36} className="animate-spin text-primary-400" />
-                    <span className="text-xs">Fetching cards & printings from {artSourceTab === 'limitless' ? 'Limitless TCG' : artSourceTab === 'scryfall' ? 'Scryfall API' : 'MPCFill'}...</span>
+                    <span className="text-xs">Fetching cards & printings from {artSourceTab === 'limitless' ? 'Limitless TCG' : artSourceTab === 'scryfall' ? 'Scryfall API' : artSourceTab === 'mpcfill' ? 'MPCFill' : getPluginCardProvider(artSourceTab in PLUGIN_CARD_PROVIDERS ? artSourceTab : pluginState.selectedPlugin?.id).providerName}...</span>
                   </div>
                 ) : artResults.length > 0 ? (
                   <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${artCardSize}px, 1fr))` }}>
@@ -8957,7 +9057,7 @@ export default function App() {
                                   <div className="w-full h-full flex items-center justify-center text-xs text-white/30">No Image</div>
                                 )}
                                 <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none">
-                                  {card.set?.toUpperCase()} #{card.collector_number}
+                                  {String(card.set || '').toUpperCase()} #{card.collector_number}
                                 </span>
                                 <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-primary-600/80 backdrop-blur-md text-[8px] font-mono font-bold text-white border border-white/10 pointer-events-none">
                                   {cardDpi} DPI
