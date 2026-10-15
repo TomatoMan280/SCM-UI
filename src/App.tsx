@@ -2897,22 +2897,6 @@ export default function App() {
     }
   };
 
-  const openAddCardPicker = (source?: string, type: 'front' | 'back' = 'front') => {
-    const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
-    if (!pluginSupportsCardIngestion(currentPluginId)) return;
-    const provider = getPluginCardProvider(currentPluginId);
-    const defaultSource = source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
-    setIsBacksOnlyModal(type === 'back');
-    setArtSourceTab(defaultSource);
-    setArtTargetCard(null);
-    const initialQuery = provider.defaultQuery;
-    setArtQuery(initialQuery);
-    setArtResults([]);
-    setArtDownloadMsg(null);
-    setIsArtPickerOpen(true);
-    handleSearchArt(initialQuery, undefined, defaultSource);
-  };
-
   const [pluginState, setPluginState] = useState(() => {
     const saved = localStorage.getItem('scm_plugin_state');
     if (saved) {
@@ -5963,30 +5947,6 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Direct Card Ingestion for Supported Plugins */}
-                              {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
-                                <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
-                                  <div className="space-y-0.5 flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <PlusCircle size={16} className="text-primary-400" />
-                                      <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
-                                    </div>
-                                    <p className="text-[11px] text-white/50">
-                                      Search any {pluginState.selectedPlugin.name} card on {getPluginCardProvider(pluginState.selectedPlugin.id).providerName} and add directly into your project workspace without needing a decklist.
-                                    </p>
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                                    <button
-                                      type="button"
-                                      onClick={() => openAddCardPicker()}
-                                      className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
-                                    >
-                                      <PlusCircle size={15} /> Add Cards from {getPluginCardProvider(pluginState.selectedPlugin.id).providerName}
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-
                               {/* UPSCAYL AI Super-Resolution Engine Subsection */}
                               <div className="mb-4 bg-white/[0.03] border border-white/10 hover:border-primary-500/30 rounded-2xl overflow-hidden transition-all shadow-lg">
                                 {/* Subsection Header */}
@@ -6541,20 +6501,6 @@ export default function App() {
                               </h3>
                             </div>
                               <div className="flex items-center gap-2">
-                                {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      openAddCardPicker();
-                                    }}
-                                    className="px-2.5 py-1 bg-primary-600/20 hover:bg-primary-600/30 text-primary-300 border border-primary-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                                    title={`Search ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName} and add front cards to your workspace`}
-                                  >
-                                    <PlusCircle size={13} />
-                                    <span>Add Front ({getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel})</span>
-                                  </button>
-                                )}
                                 <button onClick={() => setCollapsedSections(s => ({ ...s, fronts: !s.fronts }))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
                                   <ChevronDown size={18} className={cn("transition-transform", collapsedSections.fronts && "-rotate-90")} />
                                 </button>
