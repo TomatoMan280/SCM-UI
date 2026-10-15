@@ -46,7 +46,8 @@ import {
   FolderInput,
   FolderOutput,
   Cpu,
-  AlertTriangle
+  AlertTriangle,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -2338,7 +2339,10 @@ export default function App() {
       .then(res => res.json())
       .then(data => setUpscaylStatus(data))
       .catch(() => { });
-    const handleGlobalClick = () => setContextMenu(null);
+    const handleGlobalClick = () => {
+      setContextMenu(null);
+      setIsCardArtSubmenuOpen(false);
+    };
     window.addEventListener('click', handleGlobalClick);
     return () => window.removeEventListener('click', handleGlobalClick);
   }, []);
@@ -7896,7 +7900,53 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* 1. Artwork & Face Management */}
+                {/* 1. Upscayl AI Section (At Top) */}
+                <div className="space-y-0.5">
+                  <div className="px-2.5 pt-1 pb-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-primary-400">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles size={11} className="text-primary-400" />
+                      <span>Upscayl AI</span>
+                    </span>
+                    <span className="font-mono text-[9px] text-primary-400/75 lowercase bg-primary-500/10 px-1.5 py-0.5 rounded border border-primary-500/20">
+                      {modelLabel} • {multiplier}x
+                    </span>
+                  </div>
+
+                  {/* Single Upscale */}
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setContextMenu(null);
+                      setIsCardArtSubmenuOpen(false);
+                      await handleUpscale([identity], false);
+                    }}
+                    className={cn(itemBaseCls, "text-primary-300 hover:text-white hover:bg-primary-500/20 group")}
+                    title={`Upscayl ${contextMenu.name} using ${modelLabel} at ${multiplier}x HD`}
+                  >
+                    <Maximize2 size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                    <span className="truncate">Upscayl Card ({modelLabel}, {multiplier}x)</span>
+                  </button>
+
+                  {/* Batch Upscale Selected */}
+                  {isMultiSelected && (
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setContextMenu(null);
+                        setIsCardArtSubmenuOpen(false);
+                        await handleUpscale(targets, false);
+                      }}
+                      className={cn(itemBaseCls, "text-primary-300 hover:text-white hover:bg-primary-500/20 group")}
+                      title={`Batch upscayl all ${targets.length} selected cards using ${modelLabel} at ${multiplier}x HD`}
+                    >
+                      <Layers size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
+                      <span className="truncate">Batch Upscayl ({targets.length} Cards) ({modelLabel}, {multiplier}x)</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* 2. Card Art Section */}
+                <div className="h-[1px] w-full bg-white/5 my-1" />
                 <div className="space-y-0.5">
                   {/* CARD ART Hover Submenu */}
                   <div
@@ -7934,7 +7984,7 @@ export default function App() {
                         isCardArtSubmenuOpen ? "flex" : "hidden group-hover/art:flex"
                       )}
                     >
-                      {/* Set Art (card ingestion) */}
+                      {/* Set Art (Card Ingestion) */}
                       {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
                         <button
                           onClick={(e) => {
@@ -7947,11 +7997,11 @@ export default function App() {
                           title="Search and set front card artwork via card ingestion"
                         >
                           <ImageIcon size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                          <span className="truncate font-medium">Set Art (card ingestion)</span>
+                          <span className="truncate font-medium">Set Art (Card Ingestion)</span>
                         </button>
                       )}
 
-                      {/* Set art (manual upload) */}
+                      {/* Set Art (Manual Upload) */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -7963,7 +8013,7 @@ export default function App() {
                         title="Upload front artwork file from your computer"
                       >
                         <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate font-medium">Set art (manual upload)</span>
+                        <span className="truncate font-medium">Set Art (Manual Upload)</span>
                       </button>
 
                       {/* Set Back (Card Ingestion) */}
@@ -8003,7 +8053,11 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                </div>
 
+                {/* 3. Actions Section */}
+                <div className="h-[1px] w-full bg-white/5 my-1" />
+                <div className="space-y-0.5">
                   {/* Move Section */}
                   {assetViewMode !== 'plugins' && (
                     <button
@@ -8047,51 +8101,6 @@ export default function App() {
                       </span>
                     </button>
                   )}
-                </div>
-
-                {/* 2. Upscayl AI Section */}
-                <div className="h-[1px] w-full bg-white/5 my-1" />
-                <div className="px-2.5 pt-1 pb-0.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-primary-400">
-                  <span>Upscayl AI</span>
-                  <span className="font-mono text-[9px] text-primary-400/60 lowercase">
-                    {modelLabel} • {multiplier}x
-                  </span>
-                </div>
-                <div className="space-y-0.5">
-                  {/* Single Upscale */}
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      setContextMenu(null);
-                      await handleUpscale([identity], false);
-                    }}
-                    className={cn(itemBaseCls, "text-primary-300 hover:text-white hover:bg-primary-500/20 group")}
-                    title={`Upscayl ${contextMenu.name} using ${modelLabel} at ${multiplier}x HD`}
-                  >
-                    <Maximize2 size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                    <span className="truncate">Upscayl Card ({modelLabel}, {multiplier}x)</span>
-                  </button>
-
-                  {/* Batch Upscale Selected */}
-                  {isMultiSelected && (
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        setContextMenu(null);
-                        await handleUpscale(targets, false);
-                      }}
-                      className={cn(itemBaseCls, "text-primary-300 hover:text-white hover:bg-primary-500/20 group")}
-                      title={`Batch upscayl all ${targets.length} selected cards using ${modelLabel} at ${multiplier}x HD`}
-                    >
-                      <Layers size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                      <span className="truncate">Batch Upscayl ({targets.length} Cards) ({modelLabel}, {multiplier}x)</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* 3. Actions Section */}
-                <div className="h-[1px] w-full bg-white/5 my-1" />
-                <div className="space-y-0.5">
                   {/* Download Image or ZIP */}
                   <button
                     onClick={async (e) => {
