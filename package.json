@@ -43,14 +43,12 @@
       "src/silhouette-card-maker-3.0.0/**/*",
       "src/projects/**/*",
       "icon.png",
-      "remove_sample.py",
       "build/icon.png",
       "Build/icon.png"
     ],
     "asarUnpack": [
       "src/silhouette-card-maker-3.0.0/**/*",
-      "node_modules/cloudflared/**/*",
-      "remove_sample.py"
+      "node_modules/cloudflared/**/*"
     ],
     "mac": {
       "target": "dmg",
