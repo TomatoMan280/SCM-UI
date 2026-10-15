@@ -798,13 +798,13 @@ const LightboxGallery = ({
   initialImage,
   onClose,
   onUpscaleSingle,
-  onRemoveSampleSingle,
+  onCleanupSingle,
   disableUpscale = false
 }: {
   initialImage: string;
   onClose: () => void;
   onUpscaleSingle?: (src: string) => Promise<void>;
-  onRemoveSampleSingle?: (src: string) => Promise<void>;
+  onCleanupSingle?: (src: string) => Promise<void>;
   disableUpscale?: boolean;
 }) => {
   const [currentImage, setCurrentImage] = useState(initialImage);
@@ -829,7 +829,7 @@ const LightboxGallery = ({
   const [isDragging, setIsDragging] = useState(false);
   const [imageStats, setImageStats] = useState<{ origSize?: number; currentSize?: number } | null>(null);
   const [isUpscalingSingle, setIsUpscalingSingle] = useState(false);
-  const [isRemovingSampleSingle, setIsRemovingSampleSingle] = useState(false);
+  const [isCleaningUpSingle, setIsCleaningUpSingle] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Clamp pan boundaries to ensure card never detaches or flies off-screen
@@ -1210,13 +1210,13 @@ const LightboxGallery = ({
     }
   };
 
-  const handleRemoveSampleCurrent = async (e: React.MouseEvent) => {
+  const handleCleanupCurrent = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (disableUpscale || isRemovingSampleSingle || displaySrc.startsWith('http') || displaySrc.startsWith('data:') || displaySrc.startsWith('blob:')) return;
-    setIsRemovingSampleSingle(true);
+    if (disableUpscale || isCleaningUpSingle || displaySrc.startsWith('http') || displaySrc.startsWith('data:') || displaySrc.startsWith('blob:')) return;
+    setIsCleaningUpSingle(true);
     try {
-      if (onRemoveSampleSingle) {
-        await onRemoveSampleSingle(displaySrc);
+      if (onCleanupSingle) {
+        await onCleanupSingle(displaySrc);
         const cleanBase = displaySrc.split('?')[0];
         const newSrc = `${cleanBase}?t=${Date.now()}`;
         if (isFlipped && backSrc) setBackSrc(newSrc);
@@ -1224,7 +1224,7 @@ const LightboxGallery = ({
         await checkOriginal(newSrc, true);
       }
     } finally {
-      setIsRemovingSampleSingle(false);
+      setIsCleaningUpSingle(false);
     }
   };
 
@@ -1356,16 +1356,16 @@ const LightboxGallery = ({
           </button>
         )}
 
-        {!disableUpscale && !hasOriginal && onRemoveSampleSingle && !displaySrc.startsWith('http') && !displaySrc.startsWith('data:') && !displaySrc.startsWith('blob:') && (
+        {!disableUpscale && !hasOriginal && onCleanupSingle && !displaySrc.startsWith('http') && !displaySrc.startsWith('data:') && !displaySrc.startsWith('blob:') && (
           <button
             type="button"
             className="px-3.5 py-2 bg-amber-600/90 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-amber-600/30 active:scale-95 cursor-pointer disabled:opacity-50"
-            disabled={isRemovingSampleSingle}
-            onClick={handleRemoveSampleCurrent}
-            title="Automatically detect and remove 'SAMPLE' watermark using AI inpainting"
+            disabled={isCleaningUpSingle}
+            onClick={handleCleanupCurrent}
+            title="Automatically clean card image using AI inpainting"
           >
-            {isRemovingSampleSingle ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
-            <span>{isRemovingSampleSingle ? 'Removing SAMPLE...' : 'Remove "SAMPLE"'}</span>
+            {isCleaningUpSingle ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
+            <span>{isCleaningUpSingle ? 'Cleaning...' : 'Cleanup'}</span>
           </button>
         )}
 
@@ -2368,17 +2368,17 @@ export default function App() {
     }
   };
 
-  const handleRemoveSample = async (identities: string[], force = false) => {
+  const handleCleanup = async (identities: string[], force = true) => {
     if (!identities || identities.length === 0) return;
     const abortController = new AbortController();
     setActiveTaskController(abortController);
 
     try {
       const label = `${identities.length} card${identities.length === 1 ? '' : 's'}`;
-      setTaskProgress({ current: 0, total: identities.length, message: `Starting SAMPLE watermark remover for ${label}...` });
-      addLog(`[Action: Sample Remover] Analyzing and removing "SAMPLE" watermark from ${label}...`);
+      setTaskProgress({ current: 0, total: identities.length, message: `Starting card cleanup for ${label}...` });
+      addLog(`[Action: Cleanup] Analyzing and cleaning card art from ${label}...`);
 
-      const res = await fetch('/api/card/remove-sample', {
+      const res = await fetch('/api/card/cleanup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2436,14 +2436,14 @@ export default function App() {
                 message: eventData.message || `Processing ${eventData.cardName || ''}...`
               });
               if (eventData.cleaned) {
-                addLog(`[Action: Sample Remover] Cleaned ${eventData.cardName} (${eventData.current}/${eventData.total})`);
+                addLog(`[Action: Cleanup] Cleaned ${eventData.cardName} (${eventData.current}/${eventData.total})`);
               } else {
-                addLog(`[Notice: Sample Remover] ${eventData.cardName}: ${eventData.message || 'No watermark found'}`);
+                addLog(`[Notice: Cleanup] ${eventData.cardName}: ${eventData.message || 'Already clean'}`);
               }
             } else if (eventType === 'complete' && eventData) {
               data = eventData;
             } else if (eventType === 'error' && eventData) {
-              throw new Error(eventData.message || eventData.error || 'Sample removal failed');
+              throw new Error(eventData.message || eventData.error || 'Cleanup failed');
             }
           }
         }
@@ -2452,11 +2452,11 @@ export default function App() {
       }
 
       if (data && data.success !== false) {
-        addLog(`[Action: Sample Remover] Successfully finished: ${data.count ?? data.cleaned ?? 0} card(s) cleaned.`);
+        addLog(`[Action: Cleanup] Successfully finished: ${data.count ?? data.cleaned ?? 0} card(s) cleaned.`);
         setTaskProgress({
           current: data.total || identities.length,
           total: data.total || identities.length,
-          message: `Finished! ${data.count ?? 0} watermark(s) removed.`
+          message: `Finished! ${data.count ?? 0} card(s) cleaned.`
         });
 
         // Invalidate image caches
@@ -2482,15 +2482,15 @@ export default function App() {
           setEnlargedImage(`${clean}?t=${now}`);
         }
       } else if (data) {
-        addLog(`[Error: Sample Remover] ${data.message || data.error || 'Failed to remove watermarks.'}`);
-        setTaskProgress({ current: 0, total: 1, message: `Removal failed.` });
+        addLog(`[Error: Cleanup] ${data.message || data.error || 'Failed to clean cards.'}`);
+        setTaskProgress({ current: 0, total: 1, message: `Cleanup failed.` });
       }
     } catch (err: any) {
       if (err?.name === 'AbortError') {
-        addLog(`[Action: Sample Remover] Operation canceled by user.`);
+        addLog(`[Action: Cleanup] Operation canceled by user.`);
         setTaskProgress({ current: 0, total: 1, message: 'Canceled.' });
       } else {
-        addLog(`[Error: Sample Remover] ${err?.message || err}`);
+        addLog(`[Error: Cleanup] ${err?.message || err}`);
         setTaskProgress({ current: 0, total: 1, message: `Error: ${err?.message || err}` });
       }
     } finally {
@@ -8234,20 +8234,20 @@ export default function App() {
                         <span className="truncate font-medium">Set Back (Manual Upload)</span>
                       </button>
 
-                      {/* Automated SAMPLE Watermark Remover */}
+                      {/* Automated Card Art Cleanup */}
                       <div className="h-[1px] w-full bg-white/10 my-1" />
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
                           setContextMenu(null);
                           setIsCardArtSubmenuOpen(false);
-                          await handleRemoveSample([identity]);
+                          await handleCleanup([identity]);
                         }}
                         className={cn(itemBaseCls, "text-amber-300 hover:text-white hover:bg-amber-500/20 group")}
-                        title="Automatically detect and remove 'SAMPLE' watermark using AI inpainting"
+                        title="Automatically clean card image using AI inpainting"
                       >
                         <Eraser size={14} className="text-amber-400 group-hover:text-amber-300 shrink-0" />
-                        <span className="truncate font-medium">Remove "SAMPLE"</span>
+                        <span className="truncate font-medium">Cleanup</span>
                       </button>
 
                       {isMultiSelected && (
@@ -8256,13 +8256,13 @@ export default function App() {
                             e.stopPropagation();
                             setContextMenu(null);
                             setIsCardArtSubmenuOpen(false);
-                            await handleRemoveSample(targets);
+                            await handleCleanup(targets);
                           }}
                           className={cn(itemBaseCls, "text-amber-300 hover:text-white hover:bg-amber-500/20 group")}
-                          title={`Automatically remove 'SAMPLE' watermarks from all ${targets.length} selected cards`}
+                          title={`Automatically clean all ${targets.length} selected cards using AI inpainting`}
                         >
                           <Eraser size={14} className="text-amber-400 group-hover:text-amber-300 shrink-0" />
-                          <span className="truncate font-medium">Batch Remove "SAMPLE" ({targets.length})</span>
+                          <span className="truncate font-medium">Batch Cleanup ({targets.length} Cards)</span>
                         </button>
                       )}
                     </div>
@@ -8630,7 +8630,7 @@ export default function App() {
                   console.error('Failed single card upscale:', e);
                 }
               } : undefined}
-              onRemoveSampleSingle={(!isArtPickerOpen && !enlargedImage?.startsWith('http') && !enlargedImage?.startsWith('data:') && !enlargedImage?.startsWith('blob:')) ? async (src: string) => {
+              onCleanupSingle={(!isArtPickerOpen && !enlargedImage?.startsWith('http') && !enlargedImage?.startsWith('data:') && !enlargedImage?.startsWith('blob:')) ? async (src: string) => {
                 try {
                   const cleanUrl = src.split('?')[0].split('#')[0];
                   const decoded = decodeURIComponent(cleanUrl);
@@ -8639,10 +8639,10 @@ export default function App() {
                   else if (decoded.includes('/double_sided/')) type = 'double_sided';
                   const filename = decoded.split('/').pop() || '';
                   if (filename) {
-                    await handleRemoveSample([`${type}:${filename}`]);
+                    await handleCleanup([`${type}:${filename}`]);
                   }
                 } catch (e) {
-                  console.error('Failed single card sample removal:', e);
+                  console.error('Failed single card cleanup:', e);
                 }
               } : undefined}
             />

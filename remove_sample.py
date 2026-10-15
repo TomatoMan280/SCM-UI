@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Automated "SAMPLE" Watermark Remover for Trading Cards.
+Automated Card Art Cleanup Tool for Trading Cards.
 Uses LaMa (Large Mask Inpainting via ONNX Runtime / OpenCV DNN) with automated watermark detection.
+Detects both solid and translucent watermarks (e.g. Bandai "SAMPLE" stamps) and restores card art cleanly.
 """
 
 import sys
@@ -21,7 +22,7 @@ DEFAULT_MODEL_PATHS = [
     os.path.join(SCRIPT_DIR, '..', 'data', 'models', 'inpainting_lama_2025jan.onnx')
 ]
 
-class SampleRemover:
+class CardCleanup:
     def __init__(self, model_path=None):
         self.session = None
         self.net = None
@@ -42,14 +43,14 @@ class SampleRemover:
             try:
                 import urllib.request
                 os.makedirs(os.path.dirname(target_dest), exist_ok=True)
-                sys.stderr.write("[SampleRemover] Downloading LaMa ONNX model (~88MB) for first run...\n")
+                sys.stderr.write("[Cleanup] Downloading LaMa ONNX model (~88MB) for first run...\n")
                 url = "https://huggingface.co/opencv/inpainting_lama/resolve/main/inpainting_lama_2025jan.onnx"
                 urllib.request.urlretrieve(url, target_dest)
                 if os.path.exists(target_dest):
                     resolved_model = target_dest
-                    sys.stderr.write("[SampleRemover] Model downloaded successfully!\n")
+                    sys.stderr.write("[Cleanup] Model downloaded successfully!\n")
             except Exception as e:
-                sys.stderr.write(f"[SampleRemover] Auto-download failed ({e}), using OpenCV fallback.\n")
+                sys.stderr.write(f"[Cleanup] Auto-download failed ({e}), using OpenCV fallback.\n")
 
         if resolved_model:
             try:
@@ -73,38 +74,65 @@ class SampleRemover:
 
     def detect_watermark_mask(self, img_bgr):
         """
-        Detect horizontal bold 'SAMPLE' or 'PROMO' letters across the middle band of a card.
+        Detects horizontal watermarks ('SAMPLE', 'PROMO', etc.), both translucent (~50% opacity)
+        and solid bright/red, across card art.
         Returns a binary mask (uint8, same (h, w), 255 at watermark pixels) or None if not found.
         """
         h, w = img_bgr.shape[:2]
-        
-        # Central card zone where watermarks typically reside
-        y1, y2 = int(h * 0.25), int(h * 0.78)
-        x1, x2 = int(w * 0.05), int(w * 0.95)
+
+        # 1. Bandai Character/Leader central watermark zone (Y: ~0.40 to ~0.615, X: ~0.08 to ~0.92)
+        y1, y2 = int(h * 0.405), int(h * 0.612)
+        x1, x2 = int(w * 0.080), int(w * 0.920)
         roi = img_bgr[y1:y2, x1:x2]
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
 
-        # 1. First attempt: Standard solid white / bright watermark (Bandai, etc.)
-        _, bright_mask = cv2.threshold(gray_roi, 225, 255, cv2.THRESH_BINARY)
-        mask = self._extract_word_letters(bright_mask, h, w, y1, x1)
+        adapt = cv2.adaptiveThreshold(gray_roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, -4)
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(adapt, connectivity=8)
+
+        roi_h = y2 - y1
+        roi_w = x2 - x1
+
+        candidates = []
+        for i in range(1, num_labels):
+            ch = stats[i, cv2.CC_STAT_HEIGHT]
+            cw = stats[i, cv2.CC_STAT_WIDTH]
+            area = stats[i, cv2.CC_STAT_AREA]
+            cx, cy = centroids[i]
+
+            if ch > roi_h * 0.30 and cw > 6 and area > 80:
+                candidates.append((i, cx, cy, ch, cw, area))
+
+        # If letter-like components span across the band, watermark is detected
+        if len(candidates) >= 3:
+            xs = [c[1] for c in candidates]
+            span = max(xs) - min(xs)
+            if span > roi_w * 0.40:
+                mask = np.zeros((h, w), dtype=np.uint8)
+                mask[y1:y2, x1:x2] = 255
+                dilation_size = max(5, int(h * 0.008))
+                kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (dilation_size, dilation_size))
+                return cv2.dilate(mask, kernel)
+
+        # 2. Solid White / Bright Watermark Detection (Threshold > 215)
+        y1_b, y2_b = int(h * 0.25), int(h * 0.78)
+        x1_b, x2_b = int(w * 0.05), int(w * 0.95)
+        roi_b = img_bgr[y1_b:y2_b, x1_b:x2_b]
+        gray_roi_b = cv2.cvtColor(roi_b, cv2.COLOR_BGR2GRAY)
+
+        _, bright_mask = cv2.threshold(gray_roi_b, 215, 255, cv2.THRESH_BINARY)
+        mask = self._extract_word_letters(bright_mask, h, w, y1_b, x1_b)
         if mask is not None:
             return mask
 
-        # 2. Second attempt: Slightly lower threshold (in case card has slight JPEG compression)
-        _, bright_mask2 = cv2.threshold(gray_roi, 210, 255, cv2.THRESH_BINARY)
-        mask2 = self._extract_word_letters(bright_mask2, h, w, y1, x1)
-        if mask2 is not None:
-            return mask2
-
-        # 3. Third attempt: Red watermark (e.g. bold red SAMPLE)
-        r = roi[:, :, 2].astype(np.int16)
-        g = roi[:, :, 1].astype(np.int16)
-        b = roi[:, :, 0].astype(np.int16)
+        # 3. Solid Red Watermark Detection
+        r = roi_b[:, :, 2].astype(np.int16)
+        g = roi_b[:, :, 1].astype(np.int16)
+        b = roi_b[:, :, 0].astype(np.int16)
         red_diff = r - np.maximum(g, b)
         red_mask = np.where((r > 160) & (red_diff > 60), 255, 0).astype(np.uint8)
-        mask3 = self._extract_word_letters(red_mask, h, w, y1, x1)
-        if mask3 is not None:
-            return mask3
+        mask_red = self._extract_word_letters(red_mask, h, w, y1_b, x1_b)
+        if mask_red is not None:
+            return mask_red
 
         return None
 
@@ -124,14 +152,12 @@ class SampleRemover:
             aspect = comp_w / float(max(1, comp_h))
             cx, cy = centroids[i]
 
-            # Letter candidate geometry
             if (h * 0.055 < comp_h < h * 0.22) and (0.12 < aspect < 1.05) and area > 80:
                 candidates.append((i, cx, cy, comp_h, comp_w, area))
 
         if len(candidates) < 3:
             return None
 
-        # Letter grouping: find median Y and height
         median_y = np.median([c[2] for c in candidates])
         median_h = np.median([c[3] for c in candidates])
 
@@ -140,21 +166,21 @@ class SampleRemover:
             if abs(c[2] - median_y) < h * 0.05 and abs(c[3] - median_h) < h * 0.04
         ]
 
-        # Require at least 3 horizontally aligned letters
         if len(letters) < 3:
             return None
 
-        # Build letter mask inside ROI
         mask_roi = np.zeros_like(binary_roi)
         for l in letters:
-            mask_roi[labels == l[0]] = 255
+            comp_mask = (labels == l[0]).astype(np.uint8)
+            cnts, _ = cv2.findContours(comp_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in cnts:
+                hull = cv2.convexHull(cnt)
+                cv2.fillPoly(mask_roi, [hull], 255)
 
-        # Dilate mask to engulf drop shadows, outlines, and edge anti-aliasing
-        dilation_size = max(5, int(h * 0.007))
+        dilation_size = max(7, int(h * 0.012))
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation_size, dilation_size))
-        mask_roi = cv2.dilate(mask_roi, kernel, iterations=2)
+        mask_roi = cv2.dilate(mask_roi, kernel, iterations=1)
 
-        # Map back to full card coordinates
         full_mask = np.zeros((h, w), dtype=np.uint8)
         full_mask[y_offset:y_offset + binary_roi.shape[0], x_offset:x_offset + binary_roi.shape[1]] = mask_roi
         return full_mask
@@ -229,12 +255,12 @@ class SampleRemover:
                     "success": True,
                     "cleaned": False,
                     "path": input_path,
-                    "message": "No 'SAMPLE' watermark detected."
+                    "message": "No watermark detected (already clean)."
                 }
-            # If forced, default to central watermark region
+            # If forced, default to standard central watermark band
             mask = np.zeros((h, w), dtype=np.uint8)
-            y1, y2 = int(h * 0.45), int(h * 0.65)
-            x1, x2 = int(w * 0.15), int(w * 0.85)
+            y1, y2 = int(h * 0.405), int(h * 0.612)
+            x1, x2 = int(w * 0.080), int(w * 0.920)
             mask[y1:y2, x1:x2] = 255
 
         cleaned_bgr = self.inpaint(bgr, mask)
@@ -258,21 +284,24 @@ class SampleRemover:
             "success": True,
             "cleaned": True,
             "path": out_path,
-            "message": "Watermark successfully removed."
+            "message": "Card art successfully cleaned."
         }
 
 
+# Maintain backward compatibility alias
+SampleRemover = CardCleanup
+
 def main():
-    parser = argparse.ArgumentParser(description="Automated SAMPLE watermark remover for card art")
+    parser = argparse.ArgumentParser(description="Automated Card Art Cleanup Tool for Trading Cards")
     parser.add_argument("--input", "-i", help="Path to single image")
     parser.add_argument("--output", "-o", help="Optional output path")
     parser.add_argument("--batch", "-b", nargs="+", help="Batch list of file paths")
     parser.add_argument("--file-list", help="Path to JSON or TXT file containing list of image paths")
     parser.add_argument("--model", "-m", help="Path to inpainting ONNX model")
-    parser.add_argument("--force", action="store_true", help="Force inpaint center even if detection confidence is low")
+    parser.add_argument("--force", action="store_true", help="Force cleanup even if detection confidence is low")
     args = parser.parse_args()
 
-    remover = SampleRemover(model_path=args.model)
+    cleaner = CardCleanup(model_path=args.model)
 
     files_to_process = []
     if args.input:
@@ -306,7 +335,7 @@ def main():
     results = []
 
     for idx, (inp, out) in enumerate(files_to_process, 1):
-        res = remover.process_file(inp, out, force=args.force)
+        res = cleaner.process_file(inp, out, force=args.force)
         if res.get("cleaned"):
             cleaned_count += 1
         results.append(res)

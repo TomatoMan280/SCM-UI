@@ -5346,7 +5346,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
   });
 
-  app.post("/api/card/remove-sample", async (req, res) => {
+  const handleCleanupRoute = async (req: any, res: any) => {
     const isStream = Boolean(req.headers.accept?.includes('text/event-stream') || req.body?.stream);
 
     if (isStream) {
@@ -5386,7 +5386,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     });
 
     try {
-      const { identities, assetViewMode, force = false } = req.body;
+      const { identities, assetViewMode, force = true } = req.body;
       let targetPaths: string[] = [];
 
       let basePath = scmPath;
@@ -5487,10 +5487,10 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       }
       if (!pythonExecutable) pythonExecutable = 'python';
 
-      const tmpListPath = path.join(os.tmpdir(), `sample_remove_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
+      const tmpListPath = path.join(os.tmpdir(), `card_cleanup_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
       fs.writeFileSync(tmpListPath, JSON.stringify(targetPaths), 'utf-8');
 
-      sendEvent('start', { total: targetPaths.length, message: `Starting automated SAMPLE watermark remover for ${targetPaths.length} card(s)...` });
+      sendEvent('start', { total: targetPaths.length, message: `Starting automated card cleanup for ${targetPaths.length} card(s)...` });
 
       const args = [actualScriptPath, '--file-list', tmpListPath];
       if (modelPath) args.push('--model', modelPath);
@@ -5535,7 +5535,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         proc.on('close', (code) => {
           try { fs.unlinkSync(tmpListPath); } catch (_) {}
           if (code === 0) resolve();
-          else reject(new Error(`Sample remover exited with code ${code}: ${stderrData}`));
+          else reject(new Error(`Card cleanup exited with code ${code}: ${stderrData}`));
         });
         proc.on('error', (err) => {
           try { fs.unlinkSync(tmpListPath); } catch (_) {}
@@ -5559,14 +5559,17 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         message: `Finished: ${cleanedCount} card(s) cleaned.`
       });
     } catch (e: any) {
-      console.error("[Sample Remover Error]", e);
+      console.error("[Cleanup Error]", e);
       if (isStream) {
-        sendEvent('error', { error: e?.message || 'Watermark removal failed' });
+        sendEvent('error', { error: e?.message || 'Card cleanup failed' });
         return res.end();
       }
-      return res.status(500).json({ success: false, error: e?.message || 'Watermark removal failed' });
+      return res.status(500).json({ success: false, error: e?.message || 'Card cleanup failed' });
     }
-  });
+  };
+
+  app.post("/api/card/cleanup", handleCleanupRoute);
+  app.post("/api/card/remove-sample", handleCleanupRoute);
 
   app.post("/api/plugin/fetch-commit", (req, res) => {
     const { tempDirId, resolutions, abort } = req.body;
