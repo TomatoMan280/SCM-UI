@@ -8050,23 +8050,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Add Front to Workspace */}
-                  {contextMenu.type !== 'back' && pluginState.selectedPlugin?.id && pluginState.selectedPlugin.id !== 'custom_script_upload' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openAddCardPicker();
-                        setContextMenu(null);
-                        setIsCardArtSubmenuOpen(false);
-                      }}
-                      className={cn(itemBaseCls, "text-white/80 hover:text-white hover:bg-white/10 group")}
-                      title={`Search ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName} and add a new front card to your workspace`}
-                    >
-                      <PlusCircle size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                      <span className="truncate">Add Front ({getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel})</span>
-                    </button>
-                  )}
-
                   {/* Move Section */}
                   {assetViewMode !== 'plugins' && (
                     <button
