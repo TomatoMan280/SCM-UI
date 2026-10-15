@@ -9,3 +9,4 @@ coverage/
 cache/
 * (*).*
 src/silhouette-card-maker/
+*.onnx

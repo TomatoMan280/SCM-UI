@@ -5,7 +5,7 @@ import multer from "multer";
 import fs from "fs";
 import os from "os";
 import { ZipArchive } from "archiver";
-import { execSync, exec, spawnSync } from "child_process";
+import { execSync, exec, spawnSync, spawn } from "child_process";
 import crypto from "crypto";
 import { Jimp } from "jimp";
 
@@ -5339,6 +5339,174 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         return res.end();
       }
       return res.status(500).json({ success: false, error: e?.message || 'Upscaling failed' });
+    }
+  });
+
+  app.post("/api/card/remove-sample", async (req, res) => {
+    const isStream = Boolean(req.headers.accept?.includes('text/event-stream') || req.body?.stream);
+
+    if (isStream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      if (typeof (res as any).flushHeaders === 'function') {
+        (res as any).flushHeaders();
+      }
+    }
+
+    const sendEvent = (type: string, data: any) => {
+      if (isStream) {
+        res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+        if (typeof (res as any).flush === 'function') {
+          (res as any).flush();
+        }
+      }
+    };
+
+    let clientDisconnected = false;
+    let pingInterval: NodeJS.Timeout | null = null;
+    if (isStream) {
+      pingInterval = setInterval(() => {
+        if (!clientDisconnected) {
+          res.write(': ping\n\n');
+          if (typeof (res as any).flush === 'function') (res as any).flush();
+        }
+      }, 5000);
+    }
+
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        clientDisconnected = true;
+        if (pingInterval) clearInterval(pingInterval);
+      }
+    });
+
+    try {
+      const { identities, assetViewMode, force = false } = req.body;
+      let targetPaths: string[] = [];
+
+      let basePath = scmPath;
+      if (assetViewMode === 'library') basePath = libraryPath;
+      else if (assetViewMode === 'plugins') basePath = pluginsPath;
+
+      if (Array.isArray(identities) && identities.length > 0) {
+        for (const identity of identities) {
+          let type = 'front';
+          let filename = identity;
+          if (identity.includes(':')) {
+            const parts = identity.split(':');
+            type = parts[0];
+            filename = parts.slice(1).join(':');
+          }
+          const p1 = path.join(basePath, type, filename);
+          const p2 = path.join(basePath, 'game', type, filename);
+          if (fs.existsSync(p1)) targetPaths.push(p1);
+          else if (fs.existsSync(p2)) targetPaths.push(p2);
+        }
+      }
+
+      targetPaths = Array.from(new Set(targetPaths));
+
+      if (targetPaths.length === 0) {
+        if (isStream) {
+          sendEvent('error', { message: 'No valid card images found to clean.' });
+          return res.end();
+        }
+        return res.json({ success: false, message: 'No valid card images found to clean.' });
+      }
+
+      // Back up original files to .originals for undo/compare before modifying
+      for (const targetPath of targetPaths) {
+        try {
+          const origPath = getOriginalPath(targetPath);
+          if (!fs.existsSync(origPath)) {
+            fs.mkdirSync(path.dirname(origPath), { recursive: true });
+            fs.copyFileSync(targetPath, origPath);
+          }
+        } catch (_) {}
+      }
+
+      const scriptPath = path.join(baseAppPath, 'remove_sample.py');
+      const fallbackScriptPath = path.join(__dirname, 'remove_sample.py');
+      const actualScriptPath = fs.existsSync(scriptPath) ? scriptPath : fallbackScriptPath;
+
+      const tmpListPath = path.join(os.tmpdir(), `sample_remove_${Date.now()}_${Math.random().toString(36).slice(2)}.json`);
+      fs.writeFileSync(tmpListPath, JSON.stringify(targetPaths), 'utf-8');
+
+      sendEvent('start', { total: targetPaths.length, message: `Starting automated SAMPLE watermark remover for ${targetPaths.length} card(s)...` });
+
+      const args = [actualScriptPath, '--file-list', tmpListPath];
+      if (force) args.push('--force');
+
+      const proc = spawn('python', args);
+
+      let stderrData = '';
+      let cleanedCount = 0;
+      let lineBuffer = '';
+
+      proc.stdout.on('data', (chunk) => {
+        lineBuffer += chunk.toString('utf-8');
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const evt = JSON.parse(line.trim());
+            if (evt.event === 'progress') {
+              if (evt.cleaned) cleanedCount++;
+              sendEvent('progress', {
+                current: evt.current,
+                total: evt.total,
+                cardName: evt.card,
+                cleaned: evt.cleaned,
+                message: evt.message
+              });
+            } else if (evt.event === 'done') {
+              cleanedCount = evt.cleaned;
+            }
+          } catch (_) {}
+        }
+      });
+
+      proc.stderr.on('data', (chunk) => {
+        stderrData += chunk.toString();
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        proc.on('close', (code) => {
+          try { fs.unlinkSync(tmpListPath); } catch (_) {}
+          if (code === 0) resolve();
+          else reject(new Error(`Sample remover exited with code ${code}: ${stderrData}`));
+        });
+        proc.on('error', (err) => {
+          try { fs.unlinkSync(tmpListPath); } catch (_) {}
+          reject(err);
+        });
+      });
+
+      if (isStream) {
+        sendEvent('complete', {
+          count: cleanedCount,
+          total: targetPaths.length,
+          message: `Finished: ${cleanedCount} card(s) cleaned.`
+        });
+        return res.end();
+      }
+
+      return res.json({
+        success: true,
+        count: cleanedCount,
+        total: targetPaths.length,
+        message: `Finished: ${cleanedCount} card(s) cleaned.`
+      });
+    } catch (e: any) {
+      console.error("[Sample Remover Error]", e);
+      if (isStream) {
+        sendEvent('error', { error: e?.message || 'Watermark removal failed' });
+        return res.end();
+      }
+      return res.status(500).json({ success: false, error: e?.message || 'Watermark removal failed' });
     }
   });
 

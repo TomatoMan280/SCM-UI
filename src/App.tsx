@@ -47,7 +47,8 @@ import {
   FolderOutput,
   Cpu,
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  Eraser
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -797,11 +798,13 @@ const LightboxGallery = ({
   initialImage,
   onClose,
   onUpscaleSingle,
+  onRemoveSampleSingle,
   disableUpscale = false
 }: {
   initialImage: string;
   onClose: () => void;
   onUpscaleSingle?: (src: string) => Promise<void>;
+  onRemoveSampleSingle?: (src: string) => Promise<void>;
   disableUpscale?: boolean;
 }) => {
   const [currentImage, setCurrentImage] = useState(initialImage);
@@ -826,6 +829,7 @@ const LightboxGallery = ({
   const [isDragging, setIsDragging] = useState(false);
   const [imageStats, setImageStats] = useState<{ origSize?: number; currentSize?: number } | null>(null);
   const [isUpscalingSingle, setIsUpscalingSingle] = useState(false);
+  const [isRemovingSampleSingle, setIsRemovingSampleSingle] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Clamp pan boundaries to ensure card never detaches or flies off-screen
@@ -1206,6 +1210,24 @@ const LightboxGallery = ({
     }
   };
 
+  const handleRemoveSampleCurrent = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (disableUpscale || isRemovingSampleSingle || displaySrc.startsWith('http') || displaySrc.startsWith('data:') || displaySrc.startsWith('blob:')) return;
+    setIsRemovingSampleSingle(true);
+    try {
+      if (onRemoveSampleSingle) {
+        await onRemoveSampleSingle(displaySrc);
+        const cleanBase = displaySrc.split('?')[0];
+        const newSrc = `${cleanBase}?t=${Date.now()}`;
+        if (isFlipped && backSrc) setBackSrc(newSrc);
+        else setCurrentImage(newSrc);
+        await checkOriginal(newSrc, true);
+      }
+    } finally {
+      setIsRemovingSampleSingle(false);
+    }
+  };
+
   const handleRestoreCurrent = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (disableUpscale || displaySrc.startsWith('http') || displaySrc.startsWith('data:') || displaySrc.startsWith('blob:')) return;
@@ -1331,6 +1353,19 @@ const LightboxGallery = ({
           >
             {isUpscalingSingle ? <Loader2 size={14} className="animate-spin" /> : <Maximize2 size={14} />}
             <span>{isUpscalingSingle ? 'Upscaling Card...' : 'Upscale Card (HD)'}</span>
+          </button>
+        )}
+
+        {!disableUpscale && !hasOriginal && onRemoveSampleSingle && !displaySrc.startsWith('http') && !displaySrc.startsWith('data:') && !displaySrc.startsWith('blob:') && (
+          <button
+            type="button"
+            className="px-3.5 py-2 bg-amber-600/90 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg shadow-amber-600/30 active:scale-95 cursor-pointer disabled:opacity-50"
+            disabled={isRemovingSampleSingle}
+            onClick={handleRemoveSampleCurrent}
+            title="Automatically detect and remove 'SAMPLE' watermark using AI inpainting"
+          >
+            {isRemovingSampleSingle ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
+            <span>{isRemovingSampleSingle ? 'Removing SAMPLE...' : 'Remove "SAMPLE"'}</span>
           </button>
         )}
 
@@ -2326,6 +2361,137 @@ export default function App() {
       } else {
         addLog(`[Error: Upscayl AI] ${err?.message || err}`);
         setTaskProgress({ current: 0, total: 1, message: `Upscale error: ${err?.message || err}` });
+      }
+    } finally {
+      setActiveTaskController(null);
+      setTimeout(() => setTaskProgress(null), 2500);
+    }
+  };
+
+  const handleRemoveSample = async (identities: string[], force = false) => {
+    if (!identities || identities.length === 0) return;
+    const abortController = new AbortController();
+    setActiveTaskController(abortController);
+
+    try {
+      const label = `${identities.length} card${identities.length === 1 ? '' : 's'}`;
+      setTaskProgress({ current: 0, total: identities.length, message: `Starting SAMPLE watermark remover for ${label}...` });
+      addLog(`[Action: Sample Remover] Analyzing and removing "SAMPLE" watermark from ${label}...`);
+
+      const res = await fetch('/api/card/remove-sample', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'
+        },
+        body: JSON.stringify({
+          stream: true,
+          identities,
+          assetViewMode,
+          force
+        }),
+        signal: abortController.signal
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
+      let data: any = null;
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let pending = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          pending += decoder.decode(value, { stream: true });
+          const parts = pending.split('\n\n');
+          pending = parts.pop() || '';
+
+          for (const part of parts) {
+            const lines = part.split('\n');
+            let eventType = '';
+            let eventData: any = null;
+            for (const line of lines) {
+              if (line.startsWith('event: ')) {
+                eventType = line.substring(7).trim();
+              } else if (line.startsWith('data: ')) {
+                try { eventData = JSON.parse(line.substring(6)); } catch (_) { }
+              }
+            }
+
+            if (eventType === 'start' && eventData) {
+              setTaskProgress({
+                current: 0,
+                total: eventData.total || 1,
+                message: `Cleaning ${eventData.total} card image(s)...`
+              });
+            } else if (eventType === 'progress' && eventData) {
+              setTaskProgress({
+                current: eventData.current,
+                total: eventData.total,
+                message: eventData.message || `Processing ${eventData.cardName || ''}...`
+              });
+              if (eventData.cleaned) {
+                addLog(`[Action: Sample Remover] Cleaned ${eventData.cardName} (${eventData.current}/${eventData.total})`);
+              } else {
+                addLog(`[Notice: Sample Remover] ${eventData.cardName}: ${eventData.message || 'No watermark found'}`);
+              }
+            } else if (eventType === 'complete' && eventData) {
+              data = eventData;
+            } else if (eventType === 'error' && eventData) {
+              throw new Error(eventData.message || eventData.error || 'Sample removal failed');
+            }
+          }
+        }
+      } else {
+        data = await res.json();
+      }
+
+      if (data && data.success !== false) {
+        addLog(`[Action: Sample Remover] Successfully finished: ${data.count ?? data.cleaned ?? 0} card(s) cleaned.`);
+        setTaskProgress({
+          current: data.total || identities.length,
+          total: data.total || identities.length,
+          message: `Finished! ${data.count ?? 0} watermark(s) removed.`
+        });
+
+        // Invalidate image caches
+        const now = Date.now();
+        setUploadedImages({});
+        setGlobalCacheBust(now);
+
+        const newBusts: Record<string, number> = {};
+        const cur = getCurrentAssets();
+        cur?.fronts?.forEach(f => { newBusts[f] = now; });
+        cur?.backs?.forEach(b => { newBusts[b] = now; });
+        cur?.double_sided?.forEach(d => { newBusts[d] = now; });
+        identities.forEach(item => {
+          const name = item.includes(':') ? item.split(':')[1] : item;
+          newBusts[name] = now;
+        });
+        setCacheBusts(newBusts);
+
+        await fetchStatus();
+
+        if (enlargedImage) {
+          const clean = enlargedImage.split('?')[0];
+          setEnlargedImage(`${clean}?t=${now}`);
+        }
+      } else if (data) {
+        addLog(`[Error: Sample Remover] ${data.message || data.error || 'Failed to remove watermarks.'}`);
+        setTaskProgress({ current: 0, total: 1, message: `Removal failed.` });
+      }
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        addLog(`[Action: Sample Remover] Operation canceled by user.`);
+        setTaskProgress({ current: 0, total: 1, message: 'Canceled.' });
+      } else {
+        addLog(`[Error: Sample Remover] ${err?.message || err}`);
+        setTaskProgress({ current: 0, total: 1, message: `Error: ${err?.message || err}` });
       }
     } finally {
       setActiveTaskController(null);
@@ -8067,6 +8233,38 @@ export default function App() {
                         <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
                         <span className="truncate font-medium">Set Back (Manual Upload)</span>
                       </button>
+
+                      {/* Automated SAMPLE Watermark Remover */}
+                      <div className="h-[1px] w-full bg-white/10 my-1" />
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setContextMenu(null);
+                          setIsCardArtSubmenuOpen(false);
+                          await handleRemoveSample([identity]);
+                        }}
+                        className={cn(itemBaseCls, "text-amber-300 hover:text-white hover:bg-amber-500/20 group")}
+                        title="Automatically detect and remove 'SAMPLE' watermark using AI inpainting"
+                      >
+                        <Eraser size={14} className="text-amber-400 group-hover:text-amber-300 shrink-0" />
+                        <span className="truncate font-medium">Remove "SAMPLE"</span>
+                      </button>
+
+                      {isMultiSelected && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setContextMenu(null);
+                            setIsCardArtSubmenuOpen(false);
+                            await handleRemoveSample(targets);
+                          }}
+                          className={cn(itemBaseCls, "text-amber-300 hover:text-white hover:bg-amber-500/20 group")}
+                          title={`Automatically remove 'SAMPLE' watermarks from all ${targets.length} selected cards`}
+                        >
+                          <Eraser size={14} className="text-amber-400 group-hover:text-amber-300 shrink-0" />
+                          <span className="truncate font-medium">Batch Remove "SAMPLE" ({targets.length})</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -8430,6 +8628,21 @@ export default function App() {
                   }
                 } catch (e) {
                   console.error('Failed single card upscale:', e);
+                }
+              } : undefined}
+              onRemoveSampleSingle={(!isArtPickerOpen && !enlargedImage?.startsWith('http') && !enlargedImage?.startsWith('data:') && !enlargedImage?.startsWith('blob:')) ? async (src: string) => {
+                try {
+                  const cleanUrl = src.split('?')[0].split('#')[0];
+                  const decoded = decodeURIComponent(cleanUrl);
+                  let type = 'front';
+                  if (decoded.includes('/back/')) type = 'back';
+                  else if (decoded.includes('/double_sided/')) type = 'double_sided';
+                  const filename = decoded.split('/').pop() || '';
+                  if (filename) {
+                    await handleRemoveSample([`${type}:${filename}`]);
+                  }
+                } catch (e) {
+                  console.error('Failed single card sample removal:', e);
                 }
               } : undefined}
             />
