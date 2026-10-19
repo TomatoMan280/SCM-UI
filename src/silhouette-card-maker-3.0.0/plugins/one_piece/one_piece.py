@@ -71,33 +71,7 @@ def resolve_card_art(card_number: str) -> bytes:
                 with open(cached_file, 'rb') as f:
                     return f.read()
 
-    # 2. Query OneProxy resolver with polite rate limiting
-    try:
-        url = f"https://oneproxy.torforge.dev/api/card-image?v=2&id={urllib.parse.quote(card_number)}"
-        res = session.get(url, headers=HEADERS, timeout=20)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get('hasImage') and data.get('imageUrl'):
-                img_path = data['imageUrl']
-                full_url = f"https://oneproxy.torforge.dev{img_path}" if img_path.startswith('/') else img_path
-                separator = '&' if '?' in full_url else '?'
-                full_url = f"{full_url}{separator}size=full"
-
-                sleep(0.15)
-                img_res = session.get(full_url, headers=HEADERS, timeout=30)
-                if img_res.status_code == 200 and len(img_res.content) > 0:
-                    content = img_res.content
-                    try:
-                        with open(CACHE_DIR / f"{card_clean}.png", 'wb') as cf:
-                            cf.write(content)
-                    except Exception:
-                        pass
-                    sleep(0.3)  # Anti-spam polite throttle
-                    return content
-    except Exception as e:
-        print(f"[OnePiece] OneProxy fetch failed for {card_number}: {e}")
-
-    # 3. Fallback to official Bandai
+    # 2. Fallback to official Bandai (zero individual remote fetches to OneProxy per site owner instructions)
     try:
         bandai_url = CARD_ART_URL_TEMPLATE.format(card_number=card_number)
         resp = request_bandai(bandai_url)

@@ -692,6 +692,12 @@ const PLUGIN_CARD_PROVIDERS: Record<string, PluginCardProviderInfo> = {
     defaultQuery: 'Monkey.D.Luffy',
     tabLabel: 'Limitless OPTCG'
   },
+  oneproxy: {
+    id: 'oneproxy',
+    providerName: 'OneProxy (Local Assets)',
+    defaultQuery: '',
+    tabLabel: 'OneProxy (Local)'
+  },
   star_wars_unlimited: {
     id: 'star_wars_unlimited',
     providerName: 'SWUDB',
@@ -772,7 +778,10 @@ const PLUGIN_CARD_PROVIDERS: Record<string, PluginCardProviderInfo> = {
   }
 };
 
-const getPluginCardProvider = (pluginId?: string): PluginCardProviderInfo => {
+const getPluginCardProvider = (pluginId?: string, format?: string): PluginCardProviderInfo => {
+  if (pluginId === 'one_piece' && format === 'oneproxy') {
+    return PLUGIN_CARD_PROVIDERS.oneproxy;
+  }
   if (pluginId && PLUGIN_CARD_PROVIDERS[pluginId]) {
     return PLUGIN_CARD_PROVIDERS[pluginId];
   }
@@ -3028,7 +3037,15 @@ export default function App() {
         if (data.data && Array.isArray(data.data)) {
           setArtResults(data.data);
           if (data.data.length === 0) {
-            setArtDownloadMsg(`No matching cards found for "${queryTerm}" on ${prov.providerName}.`);
+            if (targetPlugin === 'oneproxy') {
+              setArtDownloadMsg(
+                oneProxyStatus?.cachedImagesCount === 0
+                  ? "No local OneProxy cards found. Card selection is local only — please download or link your OneProxy assets in Game Plugins."
+                  : (queryTerm ? `No local cards matching "${queryTerm}" found in your OneProxy directory.` : "No cards found in your OneProxy directory.")
+              );
+            } else {
+              setArtDownloadMsg(`No matching cards found for "${queryTerm}" on ${prov.providerName}.`);
+            }
           }
         } else {
           setArtResults([]);
@@ -3124,7 +3141,8 @@ export default function App() {
       setIsArtPickerOpen(true);
     } else if (targetMode === 'double_sided') {
       const cleaned = cleanCardName(cardFilename);
-      const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
+      const isOneProxy = currentPluginId === 'one_piece' && pluginState.format === 'oneproxy';
+      const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId)));
       setArtSourceTab(defaultSource);
       setArtTargetCard({ name: cardFilename, type: 'double_sided', targetMode: 'double_sided', targets });
       setArtQuery(cleaned);
@@ -3134,7 +3152,8 @@ export default function App() {
       }
     } else {
       const cleaned = cleanCardName(cardFilename);
-      const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
+      const isOneProxy = currentPluginId === 'one_piece' && pluginState.format === 'oneproxy';
+      const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId)));
       setArtSourceTab(defaultSource);
       setArtTargetCard({ name: cardFilename, type, targetMode: 'front', targets });
       setArtQuery(cleaned);
@@ -3148,8 +3167,9 @@ export default function App() {
   const openAddCardPicker = (source?: string, type: 'front' | 'back' = 'front') => {
     const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
     if (!pluginSupportsCardIngestion(currentPluginId)) return;
-    const provider = getPluginCardProvider(currentPluginId);
-    const defaultSource = source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : currentPluginId));
+    const isOneProxy = currentPluginId === 'one_piece' && pluginState.format === 'oneproxy';
+    const provider = getPluginCardProvider(isOneProxy ? 'oneproxy' : currentPluginId, pluginState.format);
+    const defaultSource = source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId)));
     setIsBacksOnlyModal(type === 'back');
     setArtSourceTab(defaultSource);
     setArtTargetCard(null);
@@ -3192,12 +3212,13 @@ export default function App() {
         setArtSourceTab('scryfall');
       }
     } else {
-      const targetSource = currentPluginId === 'pokemon' ? 'limitless' : currentPluginId;
+      const isOneProxy = currentPluginId === 'one_piece' && pluginState.format === 'oneproxy';
+      const targetSource = currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId);
       if (artSourceTab !== targetSource) {
         setArtSourceTab(targetSource);
       }
     }
-  }, [pluginState.selectedPlugin?.id]);
+  }, [pluginState.selectedPlugin?.id, pluginState.format]);
 
   useEffect(() => {
     if (pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy') {
@@ -9329,16 +9350,17 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
-                            const provKey = pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : (pluginState.selectedPlugin?.id || 'pokemon');
+                            const isOneProxy = pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy';
+                            const provKey = pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : (pluginState.selectedPlugin?.id || 'pokemon'));
                             setArtSourceTab(provKey);
-                            handleSearchArt(artQuery || getPluginCardProvider(pluginState.selectedPlugin?.id).defaultQuery, undefined, provKey);
+                            handleSearchArt(artQuery || getPluginCardProvider(provKey, pluginState.format).defaultQuery, undefined, provKey);
                           }}
                           className={cn(
                             "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
                             "bg-primary-600 text-white shadow-lg shadow-primary-600/30"
                           )}
                         >
-                          {getPluginCardProvider(pluginState.selectedPlugin?.id).tabLabel}
+                          {getPluginCardProvider(pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy' ? 'oneproxy' : pluginState.selectedPlugin?.id, pluginState.format).tabLabel}
                         </button>
                       )}
                     </div>
@@ -9368,7 +9390,9 @@ export default function App() {
                       placeholder={
                         isBacksOnlyModal 
                           ? "Search back patterns (e.g. Lotus, Retro, Japanese, Dark, Classic)..." 
-                          : `Search ${getPluginCardProvider(pluginState.selectedPlugin?.id).providerName} cards (e.g. ${getPluginCardProvider(pluginState.selectedPlugin?.id).defaultQuery})...`
+                          : (artSourceTab === 'oneproxy'
+                              ? "Search local OneProxy card assets (e.g. OP01-001 or card name)..."
+                              : `Search ${getPluginCardProvider(pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy' ? 'oneproxy' : pluginState.selectedPlugin?.id, pluginState.format).providerName} cards...`)
                       }
                       className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-primary-500"
                       autoFocus
@@ -9639,7 +9663,7 @@ export default function App() {
                 {isSearchingArt ? (
                   <div className="h-72 flex flex-col items-center justify-center gap-3 text-white/40">
                     <Loader2 size={36} className="animate-spin text-primary-400" />
-                    <span className="text-xs">Fetching cards & printings from {artSourceTab === 'limitless' ? 'Limitless TCG' : artSourceTab === 'scryfall' ? 'Scryfall API' : artSourceTab === 'mpcfill' ? 'MPCFill' : getPluginCardProvider(artSourceTab in PLUGIN_CARD_PROVIDERS ? artSourceTab : pluginState.selectedPlugin?.id).providerName}...</span>
+                    <span className="text-xs">Fetching cards & printings from {artSourceTab === 'limitless' ? 'Limitless TCG' : artSourceTab === 'scryfall' ? 'Scryfall API' : artSourceTab === 'mpcfill' ? 'MPCFill' : (artSourceTab === 'oneproxy' ? 'OneProxy Local Library' : getPluginCardProvider(artSourceTab in PLUGIN_CARD_PROVIDERS ? artSourceTab : pluginState.selectedPlugin?.id).providerName)}...</span>
                   </div>
                 ) : artResults.length > 0 ? (
                   <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${artCardSize}px, 1fr))` }}>

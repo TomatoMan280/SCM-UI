@@ -2171,6 +2171,21 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     oneProxyDbMtime = 0;
   };
 
+  const getOneProxySearchDirs = (): string[] => {
+    const dirs: string[] = [];
+    const addDir = (d: string) => {
+      if (d && fs.existsSync(d) && !dirs.includes(d)) {
+        dirs.push(d);
+      }
+    };
+    addDir(oneProxyImagesDir);
+    addDir(path.join(oneProxyCacheDir, 'images'));
+    addDir(oneProxyCacheDir);
+    addDir(path.join(defaultOneProxyCacheDir, 'images'));
+    addDir(defaultOneProxyCacheDir);
+    return dirs;
+  };
+
   // Initialize paths from config if present
   if (fs.existsSync(oneProxyConfigFile)) {
     try {
@@ -2697,20 +2712,43 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         case 'oneproxy': {
           const db = getOneProxyCardsDb();
           const queryLower = q.toLowerCase().trim();
-          
+
+          // OneProxy card selection is strictly LOCAL ONLY - index local image files
+          const localCardsMap = new Map<string, string>(); // cleanNo lower -> original baseName
+          const checkDirs = getOneProxySearchDirs();
+          for (const dir of checkDirs) {
+            if (fs.existsSync(dir)) {
+              try {
+                const files = fs.readdirSync(dir);
+                for (const f of files) {
+                  const ext = path.extname(f).toLowerCase();
+                  if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+                    const baseName = path.parse(f).name;
+                    if (!localCardsMap.has(baseName.toLowerCase())) {
+                      localCardsMap.set(baseName.toLowerCase(), baseName);
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+
+          // Filter cards from DB that are ACTUALLY downloaded on local disk
           const matched = db.filter((p: any) => {
+            const cardNo = (p.cardNumber || '').trim();
+            const cleanNo = cardNo.replace(/[\/\\]/g, '_').toLowerCase();
+            const existsLocally = localCardsMap.has(cleanNo);
+            if (!existsLocally) return false;
+
+            if (!queryLower) return true;
             const nameMatch = p.name && p.name.toLowerCase().includes(queryLower);
-            const numMatch = p.cardNumber && p.cardNumber.toLowerCase().includes(queryLower);
+            const numMatch = cardNo.toLowerCase().includes(queryLower);
             const colorMatch = p.color && p.color.toLowerCase() === queryLower;
             return nameMatch || numMatch || colorMatch;
           }).slice(0, 40);
 
           results = matched.map((p: any) => {
             const cardNo = p.cardNumber || '';
-            const cleanNo = cardNo.replace(/[\/\\]/g, '_');
-            const isCached = fs.existsSync(path.join(oneProxyImagesDir, `${cleanNo}.png`)) ||
-                             fs.existsSync(path.join(oneProxyImagesDir, `${cleanNo}.jpg`)) ||
-                             fs.existsSync(path.join(oneProxyImagesDir, `${cleanNo}.webp`));
             return {
               id: cardNo,
               name: p.name || cardNo,
@@ -2722,9 +2760,30 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               rarity: p.rarity,
               color: p.color,
               cardType: p.cardType,
-              cached: isCached
+              cached: true
             };
           });
+
+          // Also allow matching directly by local filename if DB didn't match
+          if (results.length === 0 && localCardsMap.size > 0 && queryLower) {
+            let matchedFilesCount = 0;
+            for (const [baseLower, originalName] of localCardsMap.entries()) {
+              if (baseLower.includes(queryLower)) {
+                results.push({
+                  id: originalName,
+                  name: originalName,
+                  set: 'Local',
+                  set_name: 'Local OneProxy Asset',
+                  collector_number: originalName,
+                  imageUrl: `/api/oneproxy/image/${encodeURIComponent(originalName)}`,
+                  thumbnailUrl: `/api/oneproxy/image/${encodeURIComponent(originalName)}`,
+                  cached: true
+                });
+                matchedFilesCount++;
+                if (matchedFilesCount >= 40) break;
+              }
+            }
+          }
           break;
         }
 
@@ -3505,7 +3564,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
   });
 
-  // OneProxy High-Resolution Image Resolver (Local-First Disk Cache with Polite Throttling)
+  // OneProxy High-Resolution Image Resolver (Local Assets Only - ZERO individual remote fetches)
   app.get("/api/oneproxy/image/:cardId", async (req, res) => {
     const rawCardId = (req.params.cardId || '').trim();
     if (!rawCardId) {
@@ -3513,11 +3572,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
     const cleanId = rawCardId.replace(/[\/\\]/g, '_').trim();
 
-    // 1. Check local disk cache (ZERO remote traffic)
-    const checkDirs = [oneProxyImagesDir];
-    if (oneProxyImagesDir !== oneProxyCacheDir) {
-      checkDirs.push(oneProxyCacheDir);
-    }
+    // Check local disk cache (ZERO remote traffic - local only)
+    const checkDirs = getOneProxySearchDirs();
     for (const dir of checkDirs) {
       for (const ext of ['.png', '.jpg', '.jpeg', '.webp']) {
         const localFile = path.join(dir, `${cleanId}${ext}`);
@@ -3536,100 +3592,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       }
     }
 
-    // 2. Anti-spam download protection (Max 30 downloads / min)
-    const now = Date.now();
-    oneProxyDownloadTimestamps = oneProxyDownloadTimestamps.filter(t => now - t < 60000);
-    if (oneProxyDownloadTimestamps.length >= 30) {
-      return res.status(429).json({
-        error: "Download rate limit reached (max 30 new cards per minute). Please wait a moment to avoid straining the OneProxy server."
-      });
-    }
-
-    // 3. In-flight deduplication to prevent parallel requests for the same image
-    if (!inFlightDownloads.has(cleanId)) {
-      const downloadPromise = (async () => {
-        try {
-          // Polite throttling: at least 300ms since last remote call
-          const elapsed = Date.now() - lastRemoteDownloadTime;
-          if (elapsed < 300) {
-            await new Promise(r => setTimeout(r, 300 - elapsed));
-          }
-          lastRemoteDownloadTime = Date.now();
-
-          // Resolve image metadata from OneProxy
-          const metaUrl = `https://oneproxy.torforge.dev/api/card-image?v=2&id=${encodeURIComponent(rawCardId)}`;
-          const metaResp = await fetch(metaUrl, {
-            headers: {
-              "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
-              "Accept": "application/json"
-            }
-          });
-
-          let imgUrl: string | null = null;
-          if (metaResp.ok) {
-            const meta: any = await metaResp.json();
-            if (meta?.hasImage && meta?.imageUrl) {
-              imgUrl = meta.imageUrl.startsWith('/') ? `https://oneproxy.torforge.dev${meta.imageUrl}` : meta.imageUrl;
-              imgUrl += (imgUrl.includes('?') ? '&' : '?') + 'size=full';
-            }
-          }
-
-          if (!imgUrl) {
-            // Bandai fallback
-            imgUrl = `https://en.onepiece-cardgame.com/images/cardlist/card/${rawCardId}.png`;
-          }
-
-          // Polite pause before fetching image
-          await new Promise(r => setTimeout(r, 150));
-          lastRemoteDownloadTime = Date.now();
-
-          const imgResp = await fetch(imgUrl, {
-            headers: {
-              "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
-              "Accept": "image/*, */*"
-            }
-          });
-
-          if (!imgResp.ok) {
-            return null;
-          }
-
-          const arrayBuffer = await imgResp.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-          const contentType = imgResp.headers.get('content-type') || 'image/png';
-
-          // Save to local cache for all future requests
-          try {
-            const saveExt = contentType.includes('jpeg') ? '.jpg' : (contentType.includes('webp') ? '.webp' : '.png');
-            fs.writeFileSync(path.join(oneProxyImagesDir, `${cleanId}${saveExt}`), buffer);
-          } catch (_) {}
-
-          oneProxyDownloadTimestamps.push(Date.now());
-          return { buffer, contentType };
-        } catch (err) {
-          console.error(`[OneProxy] Download failed for ${rawCardId}:`, err);
-          return null;
-        } finally {
-          inFlightDownloads.delete(cleanId);
-        }
-      })();
-
-      inFlightDownloads.set(cleanId, downloadPromise);
-    }
-
-    try {
-      const result = await inFlightDownloads.get(cleanId);
-      if (result) {
-        res.setHeader('Content-Type', result.contentType);
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        res.setHeader('X-OneProxy-Source', 'download-and-cached');
-        return res.send(result.buffer);
-      } else {
-        return res.status(404).send("Card image not found");
-      }
-    } catch (err: any) {
-      return res.status(500).send(`Failed to resolve image: ${err.message}`);
-    }
+    // Per OneProxy requirements, do not perform individual fetches on the fly.
+    return res.status(404).send("Card image not found in local OneProxy assets library.");
   });
 
   // OneProxy Configuration Endpoint (Save custom cache path / existing library)

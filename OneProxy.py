@@ -234,62 +234,16 @@ def resolve_card_image(card_code: str) -> Tuple[Optional[bytes], str]:
                 with open(cached_file, "rb") as f:
                     return f.read(), ext
 
-    # 1. Query OneProxy card image resolver
-    url = f"{API_CARD_IMAGE}?v=2&id={urllib.parse.quote(card_code)}"
-    meta = request_with_retry(url, is_json=True)
-
-    if not meta or not meta.get("hasImage") or not meta.get("imageUrl"):
-        # If alt-art _p1 failed, try falling back to base card
-        if "_p" in card_code:
-            base_code = card_code.split("_p")[0]
-            print(f"[OneProxy] Alt art {card_code} not found, falling back to base card {base_code}...")
-            return resolve_card_image(base_code)
-        
-        # Check if database has collectrUrl fallback
-        db = get_cards_database()
-        card_entry = db.get(card_code.upper())
-        if card_entry and card_entry.get("imageUrl"):
-            remote_url = card_entry["imageUrl"]
-            url_with_collectr = f"{API_CARD_IMAGE}?v=2&id={urllib.parse.quote(card_code)}&collectrUrl={urllib.parse.quote(remote_url)}"
-            meta = request_with_retry(url_with_collectr, is_json=True)
-
-    if not meta or not meta.get("hasImage") or not meta.get("imageUrl"):
-        # Fallback to official Bandai server if not found in OneProxy
-        bandai_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{card_code}.png"
-        try:
-            print(f"[OneProxy] Attempting Bandai fallback for {card_code}...")
-            art_data, _ = request_with_retry(bandai_url, is_json=False)
-            if art_data:
-                return art_data, ".png"
-        except Exception:
-            pass
-        return None, ".png"
-
-    # 2. Download the high-resolution image
-    img_path = meta["imageUrl"]
-    full_img_url = f"{BASE_URL}{img_path}" if img_path.startswith("/") else img_path
-
-    # Request size=full for uncompressed, maximum fidelity print quality
-    if "?" in full_img_url:
-        full_img_url += "&size=full"
-    else:
-        full_img_url += "?size=full"
-
-    img_data, content_type = request_with_retry(full_img_url, is_json=False)
-    if not img_data:
-        return None, ".png"
-
-    ext = ".jpg" if "jpeg" in content_type else (".webp" if "webp" in content_type else ".png")
-    
-    # Save to local cache
+    # 1. Fallback to official Bandai server (zero individual remote fetches to OneProxy per site owner instructions)
+    bandai_url = f"https://en.onepiece-cardgame.com/images/cardlist/card/{card_code}.png"
     try:
-        cached_file = IMG_CACHE_DIR / f"{clean_code}{ext}"
-        with open(cached_file, "wb") as f:
-            f.write(img_data)
+        print(f"[OneProxy] Attempting Bandai fallback for {card_code}...")
+        art_data, _ = request_with_retry(bandai_url, is_json=False)
+        if art_data:
+            return art_data, ".png"
     except Exception:
         pass
-
-    return img_data, ext
+    return None, ".png"
 
 # ==============================================================================
 # Deck Parsers

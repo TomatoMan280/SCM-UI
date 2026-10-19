@@ -70,34 +70,7 @@ def resolve_oneproxy_image(card_number: str) -> bytes:
                 with open(cached_file, 'rb') as f:
                     return f.read()
 
-    # Query OneProxy API
-    try:
-        url = f"https://oneproxy.torforge.dev/api/card-image?v=2&id={urllib.parse.quote(card_number)}"
-        res = session.get(url, headers=HEADERS, timeout=20)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get('hasImage') and data.get('imageUrl'):
-                img_path = data['imageUrl']
-                full_url = f"https://oneproxy.torforge.dev{img_path}" if img_path.startswith('/') else img_path
-                separator = '&' if '?' in full_url else '?'
-                full_url = f"{full_url}{separator}size=full"
-
-                img_res = session.get(full_url, headers=HEADERS, timeout=30)
-                if img_res.status_code == 200 and len(img_res.content) > 0:
-                    content = img_res.content
-                    # Cache locally
-                    try:
-                        with open(CACHE_DIR / f"{card_clean}.png", 'wb') as cf:
-                            cf.write(content)
-                    except Exception:
-                        pass
-                    # Rate limiting protection (polite anti-spam throttle)
-                    time.sleep(0.3)
-                    return content
-    except Exception as e:
-        print(f"[OneProxy] Warning: Could not fetch {card_number} from OneProxy: {e}")
-
-    # Fallback to Bandai
+    # Fallback to Bandai (zero individual remote fetches to OneProxy per site owner instructions)
     try:
         bandai_url = CARD_ART_URL_TEMPLATE.format(card_number=card_number)
         print(f"[OneProxy] Falling back to Bandai for {card_number}...")
