@@ -6199,10 +6199,12 @@ export default function App() {
                                               </span>
                                             </div>
                                             <p className="text-[11px] text-white/70 leading-relaxed">
-                                              {oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.remainingCardsCount !== undefined ? (
+                                              {oneProxyStatus?.hasLegacyWebp ? (
+                                                <>This will upgrade {oneProxyStatus.legacyWebpCount?.toLocaleString()} watermarked preview cards to crystal clear, full-resolution print artwork directly from OneProxy with zero watermarks.</>
+                                              ) : oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.remainingCardsCount !== undefined ? (
                                                 <>This will download {oneProxyStatus.remainingCardsCount.toLocaleString()} remaining high-resolution card artworks ({oneProxyStatus.cachedImagesCount.toLocaleString()} already saved of {oneProxyStatus.cardCount ? oneProxyStatus.cardCount.toLocaleString() : 'all'}).</>
                                               ) : (
-                                                <>This will download ~{oneProxyStatus?.cardCount ? oneProxyStatus.cardCount.toLocaleString() : '5,000+'} high-resolution print card artworks.</>
+                                                <>This will download ~{oneProxyStatus?.cardCount ? oneProxyStatus.cardCount.toLocaleString() : '5,000+'} high-resolution print card artworks (~3.6 GB) directly from OneProxy.</>
                                               )}
                                               {oneProxyStatus?.freeDiskSpaceFormatted && (
                                                 <span className="text-emerald-400 font-medium"> ({oneProxyStatus.freeDiskSpaceFormatted} free on drive)</span>
@@ -6252,6 +6254,11 @@ export default function App() {
                                               <>
                                                 <Loader2 size={13} className="animate-spin" />
                                                 <span>Starting Download...</span>
+                                              </>
+                                            ) : oneProxyStatus?.hasLegacyWebp ? (
+                                              <>
+                                                <Sparkles size={13} />
+                                                <span>Upgrade to Clean High-Res Art ({oneProxyStatus.legacyWebpCount?.toLocaleString()} cards)</span>
                                               </>
                                             ) : (
                                               <>
@@ -6378,14 +6385,39 @@ export default function App() {
                                           {/* Header row with count, storage, and action buttons */}
                                           <div className="flex flex-wrap items-center justify-between gap-2">
                                             <div className="flex items-center gap-2">
-                                              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                              <div className={cn("w-2 h-2 rounded-full", oneProxyStatus?.hasLegacyWebp ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse")} />
                                               <span className="text-xs font-bold text-white/90">OneProxy Cache</span>
                                               <span className="text-[10px] bg-white/5 text-white/50 border border-white/10 px-2 py-0.5 rounded-md">
-                                                {oneProxyStatus?.cachedImagesCount ?? 0} cards ({oneProxyStatus?.totalSizeFormatted || '0 B'})
+                                                {oneProxyStatus?.hasLegacyWebp
+                                                  ? `${oneProxyStatus?.cleanImagesCount ?? 0} clean / ${oneProxyStatus?.legacyWebpCount ?? 0} sample previews (${oneProxyStatus?.totalSizeFormatted || '0 B'})`
+                                                  : `${oneProxyStatus?.cachedImagesCount ?? 0} cards (${oneProxyStatus?.totalSizeFormatted || '0 B'})`
+                                                }
                                               </span>
                                             </div>
 
                                             <div className="flex items-center gap-2">
+                                              {oneProxyStatus?.hasLegacyWebp ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setOneProxyView('download_prompt')}
+                                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                                  title="Upgrade cards to clean, watermark-free high-resolution artwork"
+                                                >
+                                                  <Sparkles size={11} />
+                                                  <span>Upgrade Art</span>
+                                                </button>
+                                              ) : (oneProxyStatus?.remainingCardsCount ?? 0) > 0 ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setOneProxyView('download_prompt')}
+                                                  className="px-2 py-1 bg-primary-600/30 hover:bg-primary-600/50 text-primary-200 border border-primary-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                                  title="Download remaining missing cards"
+                                                >
+                                                  <Download size={11} />
+                                                  <span>Download Remaining ({oneProxyStatus.remainingCardsCount})</span>
+                                                </button>
+                                              ) : null}
+
                                               <button
                                                 type="button"
                                                 onClick={() => setOneProxyView('options')}
@@ -6417,6 +6449,25 @@ export default function App() {
                                               </button>
                                             </div>
                                           </div>
+
+                                          {/* Legacy WebP Sample Watermark Banner */}
+                                          {oneProxyStatus?.hasLegacyWebp && (
+                                            <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <AlertCircle size={13} className="text-amber-400 shrink-0" />
+                                                <span className="text-[11px] text-amber-200/90 truncate">
+                                                  {oneProxyStatus.legacyWebpCount?.toLocaleString()} preview cards have "SAMPLE" watermarks.
+                                                </span>
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => setOneProxyView('download_prompt')}
+                                                className="text-[11px] text-amber-300 font-bold hover:underline shrink-0 cursor-pointer"
+                                              >
+                                                Upgrade Now &rarr;
+                                              </button>
+                                            </div>
+                                          )}
 
                                           {/* Folder Location Footnote (Clean with NO bottom right text!) */}
                                           <div className="flex items-center text-[10px] text-white/40 pt-1 border-t border-white/5">
