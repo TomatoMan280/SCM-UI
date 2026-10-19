@@ -513,7 +513,7 @@ async function startServer() {
   const upscaleDirectoryImages = async (dirPath: string, optionsOrScale: number | UpscaleOptions = 2) => {
     if (!fs.existsSync(dirPath)) return 0;
     try {
-      const files = fs.readdirSync(dirPath).filter(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+      const files = fs.readdirSync(dirPath).filter(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp')));
       if (files.length === 0) return 0;
       files.forEach(f => saveOriginalBackup(path.join(dirPath, f)));
 
@@ -1918,7 +1918,7 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
 
       const createdFiles: string[] = [];
       for (const fn of fileList) {
-        const safeFilename = fn.endsWith('.png') || fn.endsWith('.jpg') || fn.endsWith('.jpeg') ? fn : `${fn}.png`;
+        const safeFilename = fn.endsWith('.png') || fn.endsWith('.jpg') || fn.endsWith('.jpeg') || fn.endsWith('.webp') ? fn : `${fn}.png`;
         const filePath = path.join(destDir, safeFilename);
         fs.writeFileSync(filePath, buffer);
         createdFiles.push(safeFilename);
@@ -4125,7 +4125,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       const getFiles = (dir: string) => {
         try {
           if (fs.existsSync(dir)) {
-            return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+            return fs.readdirSync(dir).filter(f => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp'));
           }
         } catch (e) { }
         return [];
@@ -4263,7 +4263,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         const fullDir = path.join(scmPath, 'game', dir);
         if (fs.existsSync(fullDir)) {
           fs.readdirSync(fullDir).forEach(f => {
-            if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) fs.unlinkSync(path.join(fullDir, f));
+            if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp')) fs.unlinkSync(path.join(fullDir, f));
           });
         }
       });
@@ -5427,7 +5427,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       const getFiles = (dir: string) => {
         try {
           if (fs.existsSync(dir)) {
-            return fs.readdirSync(dir).filter((f: string) => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'));
+            return fs.readdirSync(dir).filter((f: string) => f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp'));
           }
         } catch (e) { }
         return [];
@@ -5583,7 +5583,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       if (command === 'create_pdf.py') {
         sanitizeGameCardDirectories();
         const frontsDir = path.join(scmPath, 'game', 'front');
-        const hasCards = fs.existsSync(frontsDir) && fs.readdirSync(frontsDir).some(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+        const hasCards = fs.existsSync(frontsDir) && fs.readdirSync(frontsDir).some(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp')));
         if (!hasCards) {
           sendEvent('error', "[System Error] No card fronts found in the project workspace. Please add at least one card before generating a PDF.");
           res.end();
@@ -5885,7 +5885,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 if (fs.existsSync(srcDir)) {
                     fs.mkdirSync(dstDir, { recursive: true });
                     fs.readdirSync(srcDir).forEach(f => {
-                       if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
+                       if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp')) {
                            fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
                        }
                     });
@@ -5931,7 +5931,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       if (command === 'create_pdf.py') {
         sanitizeGameCardDirectories();
         const frontsDir = path.join(scmPath, 'game', 'front');
-        const hasCards = fs.existsSync(frontsDir) && fs.readdirSync(frontsDir).some(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')));
+        const hasCards = fs.existsSync(frontsDir) && fs.readdirSync(frontsDir).some(f => !f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp')));
         if (!hasCards) {
           return res.json({ success: false, error: "No card fronts found in the project workspace. Please add at least one card before generating a PDF.", output: ["No card fronts found in project workspace."] });
         }
@@ -6170,7 +6170,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               if (fs.existsSync(searchDir)) {
                 try {
                   fs.readdirSync(searchDir).forEach(f => {
-                     if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) filesSet.add(f);
+                     if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp')) filesSet.add(f);
                   });
                 } catch(e) {}
               }
@@ -6189,7 +6189,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
             if (fs.existsSync(srcDir)) {
                 fs.mkdirSync(dstDir, { recursive: true });
                 fs.readdirSync(srcDir).forEach(f => {
-                   if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg')) {
+                   if (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp')) {
                        fs.copyFileSync(path.join(srcDir, f), path.join(dstDir, f));
                    }
                 });
@@ -6402,7 +6402,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           [dir, dirGame].forEach(d => {
             if (fs.existsSync(d)) {
               fs.readdirSync(d).forEach(f => {
-                if (!f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg'))) {
+                if (!f.startsWith('.') && (f.endsWith('.png') || f.endsWith('.jpg') || f.endsWith('.jpeg') || f.endsWith('.webp'))) {
                   targetPaths.push(path.join(d, f));
                 }
               });
@@ -6575,7 +6575,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
        
        if (fs.existsSync(srcFolder)) {
           fs.readdirSync(srcFolder).forEach(file => {
-             if (file.endsWith('.png') || file.endsWith('.jpg') || file.endsWith('.jpeg')) {
+             if (file.endsWith('.png') || file.endsWith('.jpg') || file.endsWith('.jpeg') || file.endsWith('.webp')) {
                 const identity = `${type}:${file}`;
                 const resolution = resolutions?.[identity] || 'replace';
                 if (!(resolution === 'skip' && fs.existsSync(path.join(dstFolder, file)))) {
