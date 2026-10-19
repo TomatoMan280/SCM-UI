@@ -9255,8 +9255,8 @@ export default function App() {
                       {artTargetCard?.targetMode === 'double_sided'
                         ? `Choose any card (e.g. Sol Ring, token) or back pattern to assign as the reverse face of ${cleanCardName(artTargetCard.name)}.`
                         : isBacksOnlyModal
-                          ? "Search and add high-resolution card back patterns from MPC or Scryfall into your workspace."
-                          : "Browse alternative prints, showcase frames, and custom art (Proxxied style) with DPI sorting."}
+                          ? "Search and add high-resolution card back patterns into your workspace."
+                          : "Browse prints, versions, and alternative card artwork."}
                     </p>
                   </div>
                 </div>
@@ -9803,9 +9803,6 @@ export default function App() {
                     <ImageIcon size={32} className="opacity-40 text-primary-400" />
                     <p className="text-sm font-semibold text-white/60">
                       {isBacksOnlyModal ? "Type a search term above to find card back patterns." : "Type a card name above to browse printings."}
-                    </p>
-                    <p className="text-xs text-white/30 max-w-md">
-                      {isBacksOnlyModal ? "Search through community 800 and 1200 DPI card backs or official releases." : "Search MPCFill for 1200 DPI custom arts or Scryfall for all official printings."}
                     </p>
                   </div>
                 )}
