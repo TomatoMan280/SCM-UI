@@ -7,7 +7,8 @@ from re import sub
 from unicodedata import normalize, category
 from enum import Enum
 
-DECK_API_URL = 'https://decklog-en.bushiroad.com/system/app/api/view/{deck_code}'
+DECK_API_EN = 'https://decklog-en.bushiroad.com/system/app/api/view/{deck_code}'
+DECK_API_JP = 'https://decklog.bushiroad.com/system/app/api/view/{deck_code}'
 
 session = Session()
 
@@ -24,6 +25,10 @@ game_title_id_mapping = {
     '6': GameTitle.SHADOWVERSE_EVOLVE,
     '7': GameTitle.GODZILLA,
     '8': GameTitle.HOLOLIVE,
+    '101': GameTitle.CARDFIGHT_VANGUARD,
+    '102': GameTitle.WEISS_SCHWARZ,
+    '106': GameTitle.SHADOWVERSE_EVOLVE,
+    '108': GameTitle.HOLOLIVE,
 }
 
 game_image_url_mapping = {
@@ -31,20 +36,23 @@ game_image_url_mapping = {
     GameTitle.WEISS_SCHWARZ: 'https://en.ws-tcg.com/wordpress/wp-content/images/cardimages/{card_image}',
     GameTitle.SHADOWVERSE_EVOLVE: 'https://en.shadowverse-evolve.com/wordpress/wp-content/images/cardlist/{card_image}',
     GameTitle.GODZILLA: 'https://en.godzilla-cardgame.com/wordpress/wp-content/images/cardlist/{card_image}',
-    GameTitle.HOLOLIVE: 'https://en.hololive-official-cardgame.com/wp-content/images/cardlist/{card_image}'
+    GameTitle.HOLOLIVE: 'https://en.hololive-official-cardgame.com/wp-content/images/cardlist/{card_image}',
+}
+
+game_image_url_jp_fallback = {
+    GameTitle.CARDFIGHT_VANGUARD: 'https://cf-vanguard.com/wordpress/wp-content/images/cardlist/{card_image}',
+    GameTitle.WEISS_SCHWARZ: 'https://ws-tcg.com/wordpress/wp-content/images/cardlist/{card_image}',
+    GameTitle.SHADOWVERSE_EVOLVE: 'https://shadowverse-evolve.com/wordpress/wp-content/images/cardlist/{card_image}',
+    GameTitle.HOLOLIVE: 'https://hololive-official-cardgame.com/wp-content/images/cardlist/{card_image}',
 }
 
 def request_bushiroad(query: str, referer: str = '') -> Response:
-    if referer == '':
-        r = session.get(query, headers = {'user-agent': 'silhouette-card-maker/0.1', 'accept': '*/*'})
-    else:
-        r = session.get(query, headers = {'user-agent': 'silhouette-card-maker/0.1', 'accept': '*/*', 'referer': referer})
-
-    # Check for 2XX response code
+    headers = {'user-agent': 'silhouette-card-maker/0.1', 'accept': '*/*'}
+    if referer:
+        headers['referer'] = referer
+    r = session.get(query, headers=headers, timeout=30)
     r.raise_for_status()
-
     sleep(0.075)
-
     return r
 
 def resolve_image_url(game_title: GameTitle, card_image: str) -> str:
@@ -54,17 +62,37 @@ def resolve_image_url(game_title: GameTitle, card_image: str) -> str:
     return image_url_template.format(card_image=card_image)
 
 def fetch_decklist(deck_code: str):
-    deck_request = request_bushiroad(DECK_API_URL.format(deck_code=deck_code), 'https://decklog-en.bushiroad.com/')
-    json = deck_request.json()
+    # Try English DeckLog first
+    json_data = None
+    try:
+        url_en = DECK_API_EN.format(deck_code=deck_code)
+        resp = request_bushiroad(url_en, 'https://decklog-en.bushiroad.com/')
+        if resp.status_code == 200:
+            json_data = resp.json()
+    except Exception:
+        pass
 
-    game_title_id = str(json.get('game_title_id'))
+    # Fallback to Japanese DeckLog
+    if not json_data or not json_data.get('game_title_id'):
+        try:
+            url_jp = DECK_API_JP.format(deck_code=deck_code)
+            resp = request_bushiroad(url_jp, 'https://decklog.bushiroad.com/')
+            if resp.status_code == 200:
+                json_data = resp.json()
+        except Exception as e:
+            raise ValueError(f'Failed to fetch deck code {deck_code} from Bushiroad DeckLog: {e}')
+
+    if not json_data:
+        raise ValueError(f'Deck code {deck_code} not found on Bushiroad DeckLog.')
+
+    game_title_id = str(json_data.get('game_title_id'))
     game_title = game_title_id_mapping.get(game_title_id)
     if game_title is None:
         raise ValueError(f'Unsupported game title ID: {game_title_id}')
 
-    main_deck = json.get('list') or []
-    leader = json.get('p_list') or []
-    evolve_deck = json.get('sub_list') or []
+    main_deck = json_data.get('list') or []
+    leader = json_data.get('p_list') or []
+    evolve_deck = json_data.get('sub_list') or []
     deck = leader + main_deck + evolve_deck
 
     return (game_title, deck)

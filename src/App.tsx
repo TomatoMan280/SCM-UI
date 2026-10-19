@@ -443,9 +443,11 @@ const PLUGINS: PluginConfig[] = [
   {
     id: 'one_piece',
     name: 'One Piece',
-    formats: ['egman', 'optcgsim'],
+    formats: ['optcgsim', 'oneproxy', 'egman'],
     options: [],
     websites: [
+      { name: 'OneProxy', url: 'https://oneproxy.torforge.dev' },
+      { name: 'Limitless OPTCG', url: 'https://onepiece.limitlesstcg.com' },
       { name: 'Egman Events', url: 'https://egmanevents.com/' },
       { name: 'OPTCG Sim', url: 'https://optcgsim.com/' }
     ]
@@ -1956,13 +1958,12 @@ export default function App() {
       if (res.ok) {
         const data: UpdateCheckResponse = await res.json();
         setUpdateInfo(data);
-        if (manual) {
-          setHasUserCheckedUpdates(true);
-          if (data.hasUpdate) {
-            setUpdateStatusToast(`New update available: ${data.latestVersion}!`);
-          } else {
-            setUpdateStatusToast(`You are on the latest version (${data.currentVersion})!`);
-          }
+        setHasUserCheckedUpdates(true);
+        if (data.hasUpdate) {
+          setUpdateStatusToast(`New update available: ${data.latestVersion}!`);
+          setTimeout(() => setUpdateStatusToast(null), 6000);
+        } else if (manual) {
+          setUpdateStatusToast(`You are on the latest version (${data.currentVersion})!`);
           setTimeout(() => setUpdateStatusToast(null), 4000);
         }
       } else if (manual) {
@@ -1984,7 +1985,212 @@ export default function App() {
   useEffect(() => {
     fetchUpdateSettings();
     checkForUpdates(false);
+    fetchOneProxyStatus();
   }, []);
+
+  // OneProxy cache state and handlers
+  const [oneProxyStatus, setOneProxyStatus] = useState<any>(null);
+  const [oneProxyView, setOneProxyView] = useState<'options' | 'download_prompt' | 'downloading' | 'link_prompt' | 'ready'>('options');
+  const [oneProxyDownloadPath, setOneProxyDownloadPath] = useState('');
+  const [oneProxyBulkProgress, setOneProxyBulkProgress] = useState<any>(null);
+  const [isStartingBulkDownload, setIsStartingBulkDownload] = useState(false);
+  const [isCancellingBulkDownload, setIsCancellingBulkDownload] = useState(false);
+  const [isSyncingOneProxy, setIsSyncingOneProxy] = useState(false);
+  const [customCacheInput, setCustomCacheInput] = useState('');
+  const [isEditingCachePath, setIsEditingCachePath] = useState(false);
+  const [isSavingCachePath, setIsSavingCachePath] = useState(false);
+  const [isBrowsingCachePath, setIsBrowsingCachePath] = useState(false);
+  const [isBrowsingDownloadPath, setIsBrowsingDownloadPath] = useState(false);
+  const [cacheConfigMsg, setCacheConfigMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const formatSize = (bytes: number): string => {
+    if (!bytes || bytes <= 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const fetchOneProxyStatus = async () => {
+    try {
+      const resp = await fetch('/api/oneproxy/status');
+      if (resp.ok) {
+        const data = await resp.json();
+        setOneProxyStatus(data);
+        if (data.cacheDir && !customCacheInput) {
+          setCustomCacheInput(data.cacheDir);
+        }
+        if (data.defaultUserDir && !oneProxyDownloadPath) {
+          setOneProxyDownloadPath(data.defaultUserDir);
+        }
+        if (data.bulkDownloadState?.isActive) {
+          setOneProxyBulkProgress(data.bulkDownloadState);
+          setOneProxyView('downloading');
+        } else if (data.isBulkDownloaded || (data.hasCustomFolderConfigured && data.cachedImagesCount > 50)) {
+          setOneProxyView(prev => (prev === 'options' ? 'ready' : prev));
+        }
+      }
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    if (oneProxyView !== 'downloading' && !oneProxyBulkProgress?.isActive) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const resp = await fetch('/api/oneproxy/download-progress');
+        if (resp.ok) {
+          const prog = await resp.json();
+          setOneProxyBulkProgress(prog);
+          if (prog.isCompleted) {
+            fetchOneProxyStatus();
+            setOneProxyView('ready');
+            addLog(`[OneProxy] Download complete! ${prog.downloadedCards} cards downloaded.`);
+          } else if (!prog.isActive && prog.statusText?.includes('cancelled')) {
+            fetchOneProxyStatus();
+            setOneProxyView('download_prompt');
+            addLog(`[OneProxy] Download cancelled.`);
+          }
+        }
+      } catch (_) {}
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [oneProxyView, oneProxyBulkProgress?.isActive]);
+
+  const handleStartBulkDownload = async () => {
+    if (isStartingBulkDownload) return;
+    setIsStartingBulkDownload(true);
+    setCacheConfigMsg(null);
+    try {
+      const target = (oneProxyDownloadPath || oneProxyStatus?.defaultUserDir || '').trim();
+      addLog(`[OneProxy] Starting asset library download to: ${target}...`);
+      const resp = await fetch('/api/oneproxy/download-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetDir: target })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setOneProxyView('downloading');
+        setOneProxyBulkProgress({
+          isActive: true,
+          percent: 0,
+          processedCards: 0,
+          totalCards: data.totalCards || oneProxyStatus?.cardCount || 5035,
+          currentCardNumber: '',
+          currentCardName: 'Initializing download...',
+          statusText: 'Connecting to OneProxy...'
+        });
+      } else {
+        setCacheConfigMsg({ type: 'error', text: data.error || 'Failed to start download' });
+      }
+    } catch (e: any) {
+      setCacheConfigMsg({ type: 'error', text: e.message || 'Network error' });
+    } finally {
+      setIsStartingBulkDownload(false);
+    }
+  };
+
+  const handleCancelBulkDownload = async () => {
+    if (isCancellingBulkDownload) return;
+    setIsCancellingBulkDownload(true);
+    try {
+      await fetch('/api/oneproxy/download-cancel', { method: 'POST' });
+      setOneProxyView('download_prompt');
+      fetchOneProxyStatus();
+    } catch (_) {}
+    finally {
+      setIsCancellingBulkDownload(false);
+    }
+  };
+
+  const handleBrowseDownloadDir = async () => {
+    if (isBrowsingDownloadPath) return;
+    setIsBrowsingDownloadPath(true);
+    try {
+      const resp = await fetch('/api/oneproxy/browse', { method: 'POST' });
+      const data = await resp.json();
+      const chosen = data.selectedPath || data.path;
+      if (resp.ok && data.success && chosen) {
+        setOneProxyDownloadPath(chosen);
+      }
+    } catch (_) {}
+    finally {
+      setIsBrowsingDownloadPath(false);
+    }
+  };
+
+  const handleBrowseCacheDir = async () => {
+    if (isBrowsingCachePath) return;
+    setIsBrowsingCachePath(true);
+    setCacheConfigMsg(null);
+    try {
+      const resp = await fetch('/api/oneproxy/browse', { method: 'POST' });
+      const data = await resp.json();
+      const chosen = data.selectedPath || data.path;
+      if (resp.ok && data.success && chosen) {
+        setCustomCacheInput(chosen);
+        handleSaveCacheDir(chosen);
+      }
+    } catch (e: any) {
+      setCacheConfigMsg({ type: 'error', text: e.message || 'Folder browse failed' });
+    } finally {
+      setIsBrowsingCachePath(false);
+    }
+  };
+
+  const handleSaveCacheDir = async (pathOverride?: string) => {
+    const targetPath = (pathOverride !== undefined ? pathOverride : customCacheInput).trim();
+    setIsSavingCachePath(true);
+    setCacheConfigMsg(null);
+    try {
+      const resp = await fetch('/api/oneproxy/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cacheDir: targetPath })
+      });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setCacheConfigMsg({ type: 'success', text: data.message });
+        setCustomCacheInput(data.cacheDir);
+        fetchOneProxyStatus();
+        setOneProxyView('ready');
+        addLog(`[OneProxy] Cache directory updated: ${data.cacheDir}`);
+      } else {
+        setCacheConfigMsg({ type: 'error', text: data.error || 'Failed to update cache directory' });
+        addLog(`[OneProxy] Error: ${data.error}`);
+      }
+    } catch (e: any) {
+      setCacheConfigMsg({ type: 'error', text: e.message || 'Network error' });
+      addLog(`[OneProxy] Error: ${e.message}`);
+    } finally {
+      setIsSavingCachePath(false);
+    }
+  };
+
+  const handleSyncOneProxy = async () => {
+    if (isSyncingOneProxy) return;
+    setIsSyncingOneProxy(true);
+    addLog("[OneProxy] Checking for card database updates...");
+    try {
+      const resp = await fetch('/api/oneproxy/sync', { method: 'POST' });
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        if (data.status) {
+          setOneProxyStatus(data.status);
+        }
+        addLog(`[OneProxy] Success: Synchronized ${data.cardCount} cards into local offline cache.`);
+      } else {
+        addLog(`[OneProxy] ${data.error || 'Update check failed'}`);
+      }
+      fetchOneProxyStatus();
+    } catch (err: any) {
+      addLog(`[OneProxy] Network error: ${err.message}`);
+    } finally {
+      setIsSyncingOneProxy(false);
+    }
+  };
 
   useEffect(() => {
     if (!downloadState.isDownloading) return;
@@ -2992,6 +3198,12 @@ export default function App() {
       }
     }
   }, [pluginState.selectedPlugin?.id]);
+
+  useEffect(() => {
+    if (pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy') {
+      fetchOneProxyStatus();
+    }
+  }, [pluginState.selectedPlugin?.id, pluginState.format]);
 
   const [pluginFile, setPluginFile] = useState<File | null>(null);
   const [customScripts, setCustomScripts] = useState<string[]>([]);
@@ -4651,7 +4863,7 @@ export default function App() {
                       "font-mono text-[10px] transition-colors",
                       updateInfo?.hasUpdate ? "text-primary-400 font-bold" : "text-white/80 group-hover/ver:text-white"
                     )}>
-                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.6'}
+                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.7'}
                     </span>
                   </div>
                 </div>
@@ -4896,7 +5108,15 @@ export default function App() {
                                     label="Card Size"
                                     value={cmdOptions.card_size}
                                     onChange={(v) => setCmdOptions(p => ({ ...p, card_size: v }))}
-                                    options={['standard', 'poker', 'bridge', 'american_mini', 'bridge_square', 'business', 'catan', 'credit', 'domino', 'domino_square', 'euro_business', 'euro_mini', 'japanese', 'jumbo', 'micro', 'mini', 'standard_double', 'tarot', '70mm_square']}
+                                    badge={
+                                      (cmdOptions.card_size === 'standard_mtg' || cmdOptions.card_size === 'standard_sorcery') ? (
+                                        <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 shadow-sm">
+                                          <Sparkles size={9} />
+                                          SCM-Extras
+                                        </span>
+                                      ) : undefined
+                                    }
+                                    options={['standard', 'standard_mtg', 'standard_sorcery', 'poker', 'bridge', 'american_mini', 'bridge_square', 'business', 'catan', 'credit', 'domino', 'domino_square', 'euro_business', 'euro_mini', 'japanese', 'jumbo', 'micro', 'mini', 'standard_double', 'tarot', '70mm_square']}
                                   />
                                   <SelectGroup
                                     label="Paper Size"
@@ -5403,14 +5623,23 @@ export default function App() {
                       </button>
 
                       <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
-                        <h4 className="text-sm font-bold text-white/80 mb-2">Cutting Templates</h4>
-                        <p className="text-xs text-white/40 pb-2">Templates matching your selected paper and card size.</p>
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-bold text-white/80">Cutting Templates</h4>
+                          {(cmdOptions.card_size === 'standard_mtg' || cmdOptions.card_size === 'standard_sorcery') && (
+                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              SCM-Extras Template
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-white/40 pb-2">
+                          Templates matching your selected paper ({cmdOptions.paper_size}) and card size ({cmdOptions.card_size}{cmdOptions.borderless ? ' - borderless' : ''}).
+                        </p>
                         <div className="flex gap-2">
                           <button
                             onClick={() => handleDownloadTemplate('studio3')}
                             className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-bold transition-all text-center text-white/60 hover:text-white cursor-pointer"
                           >
-                            Download .studio3
+                            Download .studio3 {cmdOptions.card_size === 'standard_mtg' ? '(MTG 2.5mm)' : cmdOptions.card_size === 'standard_sorcery' ? '(Sorcery 4.5mm)' : ''}
                           </button>
                         </div>
                       </div>
@@ -5735,8 +5964,11 @@ export default function App() {
                                     <select
                                       value={pluginState.selectedPlugin.id}
                                       onChange={(e) => {
-                                        const p = PLUGINS.find(pl => pl.id === e.target.value)!;
-                                        setPluginState({ ...pluginState, selectedPlugin: p, format: p.formats[0], options: {} });
+                                        const val = (e.target.value || '').trim();
+                                        const p = PLUGINS.find(pl => pl.id === val || pl.name.toLowerCase() === val.toLowerCase()) || PLUGINS[0];
+                                        if (p) {
+                                          setPluginState({ ...pluginState, selectedPlugin: p, format: p.formats?.[0] || '', options: {} });
+                                        }
                                       }}
                                       className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
                                     >
@@ -5841,6 +6073,339 @@ export default function App() {
                                       onChange={(v) => setPluginState(prev => ({ ...prev, format: v }))}
                                       options={pluginState.selectedPlugin.formats}
                                     />
+                                  )}
+
+                                  {/* OneProxy Polite Offline Cache & Asset Manager (Visible ONLY when OneProxy format is selected) */}
+                                  {pluginState.selectedPlugin.id === 'one_piece' && pluginState.format === 'oneproxy' && (
+                                    <div className="mt-3 p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
+                                      {/* State 1: Two Initial Options */}
+                                      {oneProxyView === 'options' && (
+                                        <div className="space-y-2.5">
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1.5">
+                                              <div className="w-2 h-2 rounded-full bg-primary-400" />
+                                              <span className="text-xs font-bold text-white/90">OneProxy Asset Setup</span>
+                                            </div>
+                                            {oneProxyStatus?.cachedImagesCount > 0 && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setOneProxyView('ready')}
+                                                className="text-[11px] text-primary-400 hover:text-primary-300 transition-colors underline cursor-pointer"
+                                              >
+                                                View Active Cache ({oneProxyStatus.cachedImagesCount} cards) →
+                                              </button>
+                                            )}
+                                          </div>
+
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                            {/* Option A: Download OneProxy Assets */}
+                                            <button
+                                              type="button"
+                                              onClick={() => setOneProxyView('download_prompt')}
+                                              className="group relative text-left p-3.5 rounded-xl bg-gradient-to-br from-primary-500/10 via-primary-600/5 to-transparent border border-primary-500/30 hover:border-primary-400 hover:from-primary-500/20 transition-all cursor-pointer shadow-sm active:scale-[0.99] flex flex-col justify-between"
+                                            >
+                                              <div>
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                  <div className="w-7 h-7 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-all shrink-0">
+                                                    <Download size={14} />
+                                                  </div>
+                                                  <span className="text-xs font-bold text-white group-hover:text-primary-200">
+                                                    Download OneProxy Assets
+                                                  </span>
+                                                </div>
+                                                <p className="text-[11px] text-white/60 leading-relaxed">
+                                                  Download high-res card art (~{oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.estimatedRemainingSizeFormatted ? `${oneProxyStatus.estimatedRemainingSizeFormatted} remaining` : (oneProxyStatus?.estimatedFullSizeFormatted || "3.6 GB")}) locally for instant offline deck rendering with zero rate limits.
+                                                </p>
+                                              </div>
+                                              <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-primary-400 group-hover:text-primary-300">
+                                                <span>Select Folder & Download</span>
+                                                <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                                              </div>
+                                            </button>
+
+                                            {/* Option B: I Already Have Assets */}
+                                            <button
+                                              type="button"
+                                              onClick={() => setOneProxyView('link_prompt')}
+                                              className="group relative text-left p-3.5 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/20 hover:bg-white/[0.06] transition-all cursor-pointer shadow-sm active:scale-[0.99] flex flex-col justify-between"
+                                            >
+                                              <div>
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                  <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white/80 group-hover:bg-white/20 group-hover:text-white transition-all shrink-0">
+                                                    <FolderOpen size={14} />
+                                                  </div>
+                                                  <span className="text-xs font-bold text-white">
+                                                    I Already Have Assets
+                                                  </span>
+                                                </div>
+                                                <p className="text-[11px] text-white/60 leading-relaxed">
+                                                  Already have the OneProxy cards downloaded? Link your existing folder to use your saved library immediately.
+                                                </p>
+                                              </div>
+                                              <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-white/70 group-hover:text-white">
+                                                <span>Link Existing Folder</span>
+                                                <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
+                                              </div>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* State 2: Download Prompt (Space Requirement & Path Setup) */}
+                                      {oneProxyView === 'download_prompt' && (
+                                        <div className="space-y-3">
+                                          <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
+                                            <button
+                                              type="button"
+                                              onClick={() => setOneProxyView('options')}
+                                              className="flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors cursor-pointer"
+                                            >
+                                              <ChevronLeft size={13} />
+                                              <span>Back to Options</span>
+                                            </button>
+                                            <span className="text-xs font-bold text-white">Download OneProxy Assets</span>
+                                          </div>
+
+                                          {/* Space Requirement Notice */}
+                                          <div className="p-3 rounded-lg bg-primary-950/40 border border-primary-500/25 space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-1.5 text-primary-300 font-semibold text-xs">
+                                                <Info size={13} />
+                                                <span>Storage & Space Requirement</span>
+                                              </div>
+                                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary-500/20 text-primary-200 border border-primary-500/30 font-bold">
+                                                ~{oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.estimatedRemainingSizeFormatted ? `${oneProxyStatus.estimatedRemainingSizeFormatted} Remaining` : `${oneProxyStatus?.estimatedFullSizeFormatted || "3.6 GB"} Required`}
+                                              </span>
+                                            </div>
+                                            <p className="text-[11px] text-white/70 leading-relaxed">
+                                              {oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.remainingCardsCount !== undefined ? (
+                                                <>This will download {oneProxyStatus.remainingCardsCount.toLocaleString()} remaining high-resolution card artworks ({oneProxyStatus.cachedImagesCount.toLocaleString()} already saved of {oneProxyStatus.cardCount ? oneProxyStatus.cardCount.toLocaleString() : 'all'}).</>
+                                              ) : (
+                                                <>This will download ~{oneProxyStatus?.cardCount ? oneProxyStatus.cardCount.toLocaleString() : '5,000+'} high-resolution print card artworks.</>
+                                              )}
+                                              {oneProxyStatus?.freeDiskSpaceFormatted && (
+                                                <span className="text-emerald-400 font-medium"> ({oneProxyStatus.freeDiskSpaceFormatted} free on drive)</span>
+                                              )}
+                                            </p>
+                                          </div>
+
+                                          {/* Destination Folder Selector */}
+                                          <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between text-[11px]">
+                                              <label className="text-white/80 font-medium">Download Destination Folder</label>
+                                              <span className="text-[10px] text-white/40 font-mono">
+                                                Default: {oneProxyStatus?.defaultUserDir || 'C:\\Users\\OneProxy'}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              <input
+                                                type="text"
+                                                value={oneProxyDownloadPath || oneProxyStatus?.defaultUserDir || ''}
+                                                onChange={(e) => setOneProxyDownloadPath(e.target.value)}
+                                                placeholder={oneProxyStatus?.defaultUserDir || "C:\\Users\\<Username>\\OneProxy"}
+                                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono"
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={handleBrowseDownloadDir}
+                                                disabled={isBrowsingDownloadPath}
+                                                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/15 text-white/80 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                                              >
+                                                {isBrowsingDownloadPath ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
+                                                <span>Browse</span>
+                                              </button>
+                                            </div>
+                                            <p className="text-[10px] text-white/40">
+                                              If no path is selected, files will download to <code className="text-primary-300 font-mono">{oneProxyStatus?.defaultUserDir || 'C:\\Users\\OneProxy'}</code>.
+                                            </p>
+                                          </div>
+
+                                          {/* Start Download Button */}
+                                          <button
+                                            type="button"
+                                            onClick={handleStartBulkDownload}
+                                            disabled={isStartingBulkDownload}
+                                            className="w-full py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-[0.99] disabled:opacity-50"
+                                          >
+                                            {isStartingBulkDownload ? (
+                                              <>
+                                                <Loader2 size={13} className="animate-spin" />
+                                                <span>Starting Download...</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Download size={13} />
+                                                <span>Start Downloading Assets (~{oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.estimatedRemainingSizeFormatted ? oneProxyStatus.estimatedRemainingSizeFormatted : (oneProxyStatus?.estimatedFullSizeFormatted || "3.6 GB")})</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                      )}
+
+                                      {/* State 3: Downloading Progress Bar */}
+                                      {oneProxyView === 'downloading' && (
+                                        <div className="space-y-2.5 py-1">
+                                          {/* Progress Header */}
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-2.5 h-2.5 rounded-full bg-primary-400 animate-ping" />
+                                              <span className="text-xs font-bold text-white">Downloading OneProxy Assets</span>
+                                              <span className="text-[10px] bg-primary-500/20 text-primary-300 border border-primary-500/30 px-2 py-0.5 rounded-full font-bold">
+                                                {oneProxyBulkProgress?.percent ?? 0}%
+                                              </span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={handleCancelBulkDownload}
+                                              disabled={isCancellingBulkDownload}
+                                              className="text-[10px] text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-2 py-0.5 rounded-md cursor-pointer transition-colors"
+                                            >
+                                              {isCancellingBulkDownload ? "Cancelling..." : "Cancel Download"}
+                                            </button>
+                                          </div>
+
+                                          {/* Progress Bar Track */}
+                                          <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden p-0.5 border border-white/10 relative">
+                                            <div
+                                              className="h-full rounded-full bg-gradient-to-r from-primary-500 via-indigo-500 to-emerald-400 transition-all duration-300 ease-out"
+                                              style={{ width: `${Math.max(2, oneProxyBulkProgress?.percent ?? 0)}%` }}
+                                            />
+                                          </div>
+
+                                          {/* Progress Status Details */}
+                                          <div className="flex items-center justify-between text-[11px] text-white/60">
+                                            <span className="truncate max-w-[260px] text-white/80 font-medium">
+                                              {oneProxyBulkProgress?.currentCardNumber ? (
+                                                <>Card {oneProxyBulkProgress.currentCardNumber}: <span className="text-white/60">{oneProxyBulkProgress.currentCardName}</span></>
+                                              ) : (
+                                                oneProxyBulkProgress?.statusText || "Downloading cards..."
+                                              )}
+                                            </span>
+                                            <span className="font-mono text-white/70 shrink-0">
+                                              {oneProxyBulkProgress?.processedCards ?? 0} / {oneProxyBulkProgress?.totalCards || oneProxyStatus?.cardCount || 5035} cards
+                                            </span>
+                                          </div>
+
+                                          {/* Downloaded stats */}
+                                          <div className="flex items-center justify-between text-[10px] text-white/40 pt-1 border-t border-white/5 font-mono">
+                                            <span className="truncate max-w-[240px]">Destination: {oneProxyBulkProgress?.targetDir || oneProxyDownloadPath || oneProxyStatus?.defaultUserDir}</span>
+                                            <span>{formatSize(oneProxyBulkProgress?.totalBytesDownloaded ?? 0)} downloaded</span>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* State 4: Link Existing Folder */}
+                                      {oneProxyView === 'link_prompt' && (
+                                        <div className="space-y-3">
+                                          <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
+                                            <button
+                                              type="button"
+                                              onClick={() => setOneProxyView('options')}
+                                              className="flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors cursor-pointer"
+                                            >
+                                              <ChevronLeft size={13} />
+                                              <span>Back to Options</span>
+                                            </button>
+                                            <span className="text-xs font-bold text-white">Link Existing OneProxy Folder</span>
+                                          </div>
+
+                                          <div className="space-y-1.5">
+                                            <label className="text-[11px] text-white/80 font-medium block">Folder Location on Your PC</label>
+                                            <div className="flex items-center gap-2">
+                                              <input
+                                                type="text"
+                                                value={customCacheInput}
+                                                onChange={(e) => setCustomCacheInput(e.target.value)}
+                                                placeholder="Folder path..."
+                                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono"
+                                              />
+                                              <button
+                                                type="button"
+                                                onClick={handleBrowseCacheDir}
+                                                disabled={isBrowsingCachePath}
+                                                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/15 text-white/80 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                                              >
+                                                {isBrowsingCachePath ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
+                                                <span>Browse</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleSaveCacheDir()}
+                                                disabled={isSavingCachePath}
+                                                className="px-2.5 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                                              >
+                                                {isSavingCachePath ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                                                <span>Link Folder</span>
+                                              </button>
+                                            </div>
+                                            {cacheConfigMsg && (
+                                              <div className={cn(
+                                                "text-[10px] p-1.5 rounded-md flex items-center gap-1.5",
+                                                cacheConfigMsg.type === 'success' ? "text-emerald-300 bg-emerald-500/10" : "text-rose-300 bg-rose-500/10"
+                                              )}>
+                                                {cacheConfigMsg.type === 'success' ? <CheckCircle size={11} /> : <AlertCircle size={11} />}
+                                                <span>{cacheConfigMsg.text}</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* State 5: Ready / Configured Cache View */}
+                                      {oneProxyView === 'ready' && (
+                                        <div className="space-y-2.5">
+                                          {/* Header row with count, storage, and action buttons */}
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                              <span className="text-xs font-bold text-white/90">OneProxy Cache</span>
+                                              <span className="text-[10px] bg-white/5 text-white/50 border border-white/10 px-2 py-0.5 rounded-md">
+                                                {oneProxyStatus?.cachedImagesCount ?? 0} cards ({oneProxyStatus?.totalSizeFormatted || '0 B'})
+                                              </span>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => setOneProxyView('options')}
+                                                className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors cursor-pointer py-1 px-2 rounded-md hover:bg-white/5"
+                                                title="Change cache folder or link existing library"
+                                              >
+                                                <FolderOpen size={12} />
+                                                <span>Change Folder</span>
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                onClick={handleSyncOneProxy}
+                                                disabled={isSyncingOneProxy}
+                                                className="px-2.5 py-1 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                                title="Check for newly released One Piece cards"
+                                              >
+                                                {isSyncingOneProxy ? (
+                                                  <>
+                                                    <Loader2 size={11} className="animate-spin text-primary-400" />
+                                                    <span>Checking...</span>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <RefreshCw size={11} />
+                                                    <span>Check Updates</span>
+                                                  </>
+                                                )}
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* Folder Location Footnote (Clean with NO bottom right text!) */}
+                                          <div className="flex items-center text-[10px] text-white/40 pt-1 border-t border-white/5">
+                                            <span className="truncate max-w-full font-mono text-white/50" title={oneProxyStatus?.cacheDir}>
+                                              📁 {oneProxyStatus?.cacheDir || '~/.cache/oneproxy'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
 
@@ -6004,13 +6569,13 @@ export default function App() {
                                 </div>
                               )}
 
-                              {/* Direct Card Ingestion */}
+                              {/* Card Selector */}
                               {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
                                 <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
                                   <div className="space-y-0.5 flex-1">
                                     <div className="flex items-center gap-2">
                                       <PlusCircle size={16} className="text-primary-400" />
-                                      <span className="font-bold text-xs uppercase tracking-wider text-white">Direct Card Ingestion</span>
+                                      <span className="font-bold text-xs uppercase tracking-wider text-white">Card Selector</span>
                                     </div>
                                     <p className="text-[11px] text-white/50">
                                       Search any card or backing by name and add directly into your project workspace without needing a decklist.
@@ -6022,7 +6587,7 @@ export default function App() {
                                       onClick={() => openAddCardPicker()}
                                       className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
                                     >
-                                      <PlusCircle size={15} /> Direct Card Ingestion
+                                      <PlusCircle size={15} /> Card Selector
                                     </button>
                                   </div>
                                 </div>
@@ -7400,7 +7965,7 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold uppercase tracking-wider text-white/50">Current Version</span>
                           <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-white font-bold">
-                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.6'}
+                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.7'}
                           </span>
                         </div>
                         {updateInfo?.hasUpdate ? (
@@ -9508,17 +10073,30 @@ const ErrorBanner: React.FC<{ logs: string[] }> = ({ logs }) => {
   );
 };
 
-function SelectGroup({ label, value, options, onChange }: { label: string, value: string, options: string[], onChange: (v: string) => void }) {
+function SelectGroup({ label, value, options, onChange, badge }: { 
+  label: string; 
+  value: string; 
+  options: (string | { label: string; value: string })[]; 
+  onChange: (v: string) => void; 
+  badge?: React.ReactNode;
+}) {
   return (
     <div className="space-y-1.5 flex-1">
-      <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">{label}</label>
+      <div className="flex items-center justify-between">
+        <label className="text-[10px] font-bold uppercase tracking-widest text-white/30">{label}</label>
+        {badge}
+      </div>
       <div className="relative group">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-primary-500 transition-all text-white/80 appearance-none cursor-pointer hover:bg-white/10"
         >
-          {options.map((opt, i) => <option key={`${opt}-${i}`} value={opt} className="bg-[#1a1a20]">{opt}</option>)}
+          {options.map((opt, i) => {
+            const optVal = typeof opt === 'string' ? opt : opt.value;
+            const optLabel = typeof opt === 'string' ? opt : opt.label;
+            return <option key={`${optVal}-${i}`} value={optVal} className="bg-[#1a1a20] text-white">{optLabel}</option>;
+          })}
         </select>
         <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 pointer-events-none group-hover:text-primary-400 transition-colors" />
       </div>

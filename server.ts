@@ -86,8 +86,6 @@ async function startServer() {
       return cachedGpuInfo.data;
     }
 
-    const { spawnSync } = require('child_process');
-
     // 1. Try nvidia-smi (real-time accurate VRAM total & free)
     try {
       const nvsmi = spawnSync('nvidia-smi', ['--query-gpu=name,memory.total,memory.free', '--format=csv,noheader,nounits'], {
@@ -1026,7 +1024,7 @@ async function startServer() {
       const now = Date.now();
 
       // Read current version from package.json
-      let currentVersion = '3.0.6';
+      let currentVersion = '3.0.7';
       try {
         const possiblePkgPaths = [
           path.join(baseAppPath, 'package.json'),
@@ -1129,7 +1127,7 @@ async function startServer() {
         const isCurrent = compareVersions(r.tag_name, currentVersion, assets) === 0;
         const isNewer = compareVersions(r.tag_name, currentVersion, assets) > 0;
 
-        const primaryAsset = assets.find((a: any) => a.isPreferred) || assets.find((a: any) => a.isInstaller) || assets[0] || null;
+        const primaryAsset = assets.find((a: any) => a.isPreferred) || assets.find((a: any) => a.isInstaller) || null;
 
         return {
           id: r.id,
@@ -1911,7 +1909,8 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
         "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
       };
 
-      const response = await fetch(imageUrl, { headers, redirect: 'follow' });
+      const downloadTargetUrl = imageUrl.startsWith('/') ? `http://127.0.0.1:${PORT}${imageUrl}` : imageUrl;
+      const response = await fetch(downloadTargetUrl, { headers, redirect: 'follow' });
       if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
 
       const arrayBuffer = await response.arrayBuffer();
@@ -2137,6 +2136,454 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   let cachedNetrunnerCards: any[] | null = null;
   let cachedFabCards: any[] | null = null;
 
+  // ==========================================
+  // OneProxy Polite Offline Cache & Rate Limiting System
+  // ==========================================
+  const defaultOneProxyCacheDir = path.join(os.homedir(), '.cache', 'oneproxy');
+  const defaultUserOneProxyDir = path.join(os.homedir(), 'OneProxy');
+  const oneProxyConfigFile = path.join(defaultOneProxyCacheDir, 'config.json');
+
+  let oneProxyCacheDir = defaultOneProxyCacheDir;
+  let oneProxyImagesDir = path.join(oneProxyCacheDir, 'images');
+  let oneProxyDbPath = path.join(oneProxyCacheDir, 'all_cards.json');
+  let oneProxySyncStatusPath = path.join(oneProxyCacheDir, 'sync_status.json');
+
+  const resolveOneProxyPaths = (dir: string) => {
+    oneProxyCacheDir = path.resolve(dir);
+    const subImages = path.join(oneProxyCacheDir, 'images');
+    if (fs.existsSync(subImages)) {
+      oneProxyImagesDir = subImages;
+    } else {
+      oneProxyImagesDir = oneProxyCacheDir;
+    }
+
+    const localDb = path.join(oneProxyCacheDir, 'all_cards.json');
+    if (fs.existsSync(localDb)) {
+      oneProxyDbPath = localDb;
+    } else if (fs.existsSync(path.join(defaultOneProxyCacheDir, 'all_cards.json'))) {
+      oneProxyDbPath = path.join(defaultOneProxyCacheDir, 'all_cards.json');
+    } else {
+      oneProxyDbPath = localDb;
+    }
+
+    oneProxySyncStatusPath = path.join(oneProxyCacheDir, 'sync_status.json');
+    oneProxyDbMemoryCache = null;
+    oneProxyDbMtime = 0;
+  };
+
+  // Initialize paths from config if present
+  if (fs.existsSync(oneProxyConfigFile)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(oneProxyConfigFile, 'utf-8'));
+      if (cfg.cacheDir && typeof cfg.cacheDir === 'string' && fs.existsSync(cfg.cacheDir)) {
+        resolveOneProxyPaths(cfg.cacheDir);
+      }
+    } catch (_) {}
+  }
+
+  if (!fs.existsSync(oneProxyImagesDir)) {
+    try { fs.mkdirSync(oneProxyImagesDir, { recursive: true }); } catch (_) {}
+  }
+
+  const formatBytes = (bytes: number): string => {
+    if (!bytes || bytes <= 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const getDirectoryImageStats = (dirPath: string): { totalBytes: number; fileCount: number } => {
+    let totalBytes = 0;
+    let fileCount = 0;
+    if (!fs.existsSync(dirPath)) return { totalBytes, fileCount };
+    try {
+      const files = fs.readdirSync(dirPath);
+      for (const file of files) {
+        if (/\.(png|jpg|jpeg|webp)$/i.test(file)) {
+          try {
+            const filePath = path.join(dirPath, file);
+            const stat = fs.statSync(filePath);
+            if (stat.isFile()) {
+              totalBytes += stat.size;
+              fileCount++;
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    return { totalBytes, fileCount };
+  };
+
+  let oneProxyDbMemoryCache: any[] | null = null;
+  let oneProxyDbMtime = 0;
+  let isOneProxySyncing = false;
+
+  const getOneProxyStatus = () => {
+    const hasDb = fs.existsSync(oneProxyDbPath);
+    let cardCount = 0;
+    let lastChecked = 0;
+
+    if (fs.existsSync(oneProxySyncStatusPath)) {
+      try {
+        const status = JSON.parse(fs.readFileSync(oneProxySyncStatusPath, 'utf-8'));
+        lastChecked = Number(status.lastChecked) || 0;
+        cardCount = Number(status.cardCount) || 0;
+      } catch (_) {}
+    }
+
+    if (hasDb) {
+      try {
+        const stat = fs.statSync(oneProxyDbPath);
+        if (!lastChecked || stat.mtimeMs > lastChecked) {
+          lastChecked = stat.mtimeMs;
+        }
+        if (!oneProxyDbMemoryCache || stat.mtimeMs !== oneProxyDbMtime) {
+          const raw = JSON.parse(fs.readFileSync(oneProxyDbPath, 'utf-8'));
+          oneProxyDbMemoryCache = Array.isArray(raw) ? raw : (raw.products || []);
+          oneProxyDbMtime = stat.mtimeMs;
+        }
+        if (oneProxyDbMemoryCache && oneProxyDbMemoryCache.length > 0) {
+          cardCount = oneProxyDbMemoryCache.length;
+        }
+      } catch (_) {}
+    }
+
+    // Measure disk sizes
+    let dbSizeBytes = 0;
+    if (fs.existsSync(oneProxyDbPath)) {
+      try { dbSizeBytes = fs.statSync(oneProxyDbPath).size; } catch (_) {}
+    }
+    const dbSizeFormatted = formatBytes(dbSizeBytes);
+
+    let imagesSizeBytes = 0;
+    let cachedImagesCount = 0;
+    const imgStats = getDirectoryImageStats(oneProxyImagesDir);
+    imagesSizeBytes += imgStats.totalBytes;
+    cachedImagesCount += imgStats.fileCount;
+
+    if (oneProxyImagesDir !== oneProxyCacheDir && fs.existsSync(oneProxyCacheDir)) {
+      const rootStats = getDirectoryImageStats(oneProxyCacheDir);
+      if (rootStats.fileCount > 0) {
+        imagesSizeBytes += rootStats.totalBytes;
+        cachedImagesCount += rootStats.fileCount;
+      }
+    }
+    const imagesSizeFormatted = formatBytes(imagesSizeBytes);
+    const totalSizeBytes = dbSizeBytes + imagesSizeBytes;
+    const totalSizeFormatted = formatBytes(totalSizeBytes);
+
+    // Dynamic library estimation
+    const totalCatalogCards = cardCount || oneProxyDbMemoryCache?.length || 5035;
+
+    // Calibrate average card size based on actual cached images on disk if available
+    let averageCardSizeBytes = 750 * 1024; // Default ~750 KB per high-resolution print card artwork
+    if (cachedImagesCount >= 5 && imagesSizeBytes > 0) {
+      const measuredAvg = Math.round(imagesSizeBytes / cachedImagesCount);
+      if (measuredAvg >= 100 * 1024 && measuredAvg <= 4 * 1024 * 1024) {
+        averageCardSizeBytes = measuredAvg;
+      }
+    }
+    const averageCardSizeFormatted = formatBytes(averageCardSizeBytes);
+
+    const remainingCardsCount = Math.max(0, totalCatalogCards - cachedImagesCount);
+    const estimatedFullSizeBytes = totalCatalogCards * averageCardSizeBytes;
+    const estimatedFullSizeFormatted = formatBytes(estimatedFullSizeBytes);
+    const estimatedRemainingSizeBytes = remainingCardsCount * averageCardSizeBytes;
+    const estimatedRemainingSizeFormatted = formatBytes(estimatedRemainingSizeBytes);
+
+    // Free disk space
+    let freeDiskSpaceBytes = 0;
+    let freeDiskSpaceFormatted = 'Unknown';
+    try {
+      const checkPath = fs.existsSync(oneProxyCacheDir) ? oneProxyCacheDir : os.homedir();
+      const statfs = fs.statfsSync(checkPath);
+      freeDiskSpaceBytes = statfs.bavail * statfs.bsize;
+      freeDiskSpaceFormatted = formatBytes(freeDiskSpaceBytes);
+    } catch (_) {}
+
+    const hasEnoughDiskSpace = freeDiskSpaceBytes > 0 ? (freeDiskSpaceBytes > (estimatedRemainingSizeBytes || estimatedFullSizeBytes)) : true;
+
+    const now = Date.now();
+    const timeSinceLastCheckMs = lastChecked ? (now - lastChecked) : 0;
+    const isDefaultDir = path.resolve(oneProxyCacheDir).toLowerCase() === path.resolve(defaultOneProxyCacheDir).toLowerCase();
+    let hasCustomFolderConfigured = false;
+    let isBulkDownloaded = false;
+    if (fs.existsSync(oneProxyConfigFile)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(oneProxyConfigFile, 'utf-8'));
+        if (cfg.cacheDir) hasCustomFolderConfigured = true;
+        if (cfg.bulkDownloaded) isBulkDownloaded = true;
+      } catch (_) {}
+    }
+
+    return {
+      cacheDir: oneProxyCacheDir,
+      defaultCacheDir: defaultOneProxyCacheDir,
+      defaultUserDir: defaultUserOneProxyDir,
+      isDefaultDir,
+      hasCustomFolderConfigured,
+      isBulkDownloaded,
+      hasCache: hasDb,
+      cardCount: totalCatalogCards,
+      remainingCardsCount,
+      cachedImagesCount,
+      averageCardSizeBytes,
+      averageCardSizeFormatted,
+      dbSizeBytes,
+      dbSizeFormatted,
+      imagesSizeBytes,
+      imagesSizeFormatted,
+      totalSizeBytes,
+      totalSizeFormatted,
+      estimatedFullSizeBytes,
+      estimatedFullSizeFormatted,
+      estimatedRemainingSizeBytes,
+      estimatedRemainingSizeFormatted,
+      freeDiskSpaceBytes,
+      freeDiskSpaceFormatted,
+      hasEnoughDiskSpace,
+      lastChecked,
+      timeSinceLastCheckMs,
+      canCheckUpdate: true,
+      hoursRemaining: 0,
+      isSyncing: isOneProxySyncing,
+      bulkDownloadState: oneProxyBulkDownloadState
+    };
+  };
+
+  // OneProxy Bulk Downloader State
+  let oneProxyBulkDownloadState = {
+    isActive: false,
+    isPaused: false,
+    totalCards: 0,
+    processedCards: 0,
+    downloadedCards: 0,
+    skippedCards: 0,
+    failedCards: 0,
+    currentCardNumber: '',
+    currentCardName: '',
+    totalBytesDownloaded: 0,
+    percent: 0,
+    statusText: '',
+    targetDir: '',
+    startTime: 0,
+    error: null as string | null,
+    isCompleted: false
+  };
+
+  let oneProxyBulkCancelRequested = false;
+
+  const startOneProxyBulkDownload = async (targetDirectory?: string) => {
+    if (oneProxyBulkDownloadState.isActive) {
+      return { success: false, message: "Download is already in progress" };
+    }
+
+    const targetDir = (targetDirectory || defaultUserOneProxyDir).trim();
+    const resolvedTarget = path.resolve(targetDir);
+
+    try {
+      if (!fs.existsSync(resolvedTarget)) {
+        fs.mkdirSync(resolvedTarget, { recursive: true });
+      }
+      const targetImagesDir = path.join(resolvedTarget, 'images');
+      if (!fs.existsSync(targetImagesDir)) {
+        fs.mkdirSync(targetImagesDir, { recursive: true });
+      }
+
+      // Save initial config
+      if (!fs.existsSync(defaultOneProxyCacheDir)) {
+        fs.mkdirSync(defaultOneProxyCacheDir, { recursive: true });
+      }
+      fs.writeFileSync(oneProxyConfigFile, JSON.stringify({ cacheDir: resolvedTarget, bulkDownloaded: false }, null, 2), 'utf-8');
+      resolveOneProxyPaths(resolvedTarget);
+
+      // Copy database if exists or fetch
+      let cards = getOneProxyCardsDb();
+      if (!cards || cards.length === 0) {
+        try {
+          const resp = await fetch("https://oneproxy.torforge.dev/api/all-cards", {
+            headers: {
+              "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
+              "Accept": "application/json"
+            }
+          });
+          if (resp.ok) {
+            const data: any = await resp.json();
+            const products = Array.isArray(data) ? data : (data.products || []);
+            fs.writeFileSync(oneProxyDbPath, JSON.stringify(data), 'utf-8');
+            oneProxyDbMemoryCache = products;
+            cards = products;
+          }
+        } catch (e: any) {
+          console.error("[OneProxy Bulk] Failed to fetch card DB:", e.message);
+        }
+      }
+
+      // Deduplicate cards by cardNumber
+      const uniqueCardsMap = new Map<string, any>();
+      for (const c of cards) {
+        const num = (c.cardNumber || '').trim();
+        if (num && !uniqueCardsMap.has(num)) {
+          uniqueCardsMap.set(num, c);
+        }
+      }
+      const cardList = Array.from(uniqueCardsMap.values());
+
+      oneProxyBulkCancelRequested = false;
+      oneProxyBulkDownloadState = {
+        isActive: true,
+        isPaused: false,
+        totalCards: cardList.length,
+        processedCards: 0,
+        downloadedCards: 0,
+        skippedCards: 0,
+        failedCards: 0,
+        currentCardNumber: '',
+        currentCardName: '',
+        totalBytesDownloaded: 0,
+        percent: 0,
+        statusText: 'Starting download...',
+        targetDir: resolvedTarget,
+        startTime: Date.now(),
+        error: null,
+        isCompleted: false
+      };
+
+      // Asynchronous background download worker loop
+      (async () => {
+        const concurrency = 4;
+        let currentIndex = 0;
+
+        const downloadWorker = async () => {
+          while (currentIndex < cardList.length && !oneProxyBulkCancelRequested) {
+            const idx = currentIndex++;
+            const card = cardList[idx];
+            const rawId = (card.cardNumber || '').trim();
+            const cleanId = rawId.replace(/[\/\\]/g, '_').trim();
+            const cardName = card.name || cleanId;
+
+            oneProxyBulkDownloadState.currentCardNumber = rawId;
+            oneProxyBulkDownloadState.currentCardName = cardName;
+            oneProxyBulkDownloadState.processedCards = idx + 1;
+            oneProxyBulkDownloadState.percent = Math.min(100, Math.round(((idx + 1) / cardList.length) * 100));
+
+            // Check if card art is already cached
+            let exists = false;
+            for (const ext of ['.png', '.jpg', '.jpeg', '.webp']) {
+              if (fs.existsSync(path.join(targetImagesDir, `${cleanId}${ext}`)) || fs.existsSync(path.join(resolvedTarget, `${cleanId}${ext}`))) {
+                exists = true;
+                break;
+              }
+            }
+
+            if (exists) {
+              oneProxyBulkDownloadState.skippedCards++;
+              continue;
+            }
+
+            // Determine image URL
+            let imgUrl = card.imageUrl;
+            if (!imgUrl) {
+              imgUrl = `https://en.onepiece-cardgame.com/images/cardlist/card/${cleanId}.png`;
+            }
+
+            try {
+              const resp = await fetch(imgUrl, {
+                headers: {
+                  "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
+                  "Accept": "image/*, */*"
+                }
+              });
+
+              if (resp.ok) {
+                const arrayBuf = await resp.arrayBuffer();
+                const buf = Buffer.from(arrayBuf);
+                const ct = resp.headers.get('content-type') || '';
+                const ext = ct.includes('jpeg') ? '.jpg' : (ct.includes('webp') ? '.webp' : '.png');
+                const destFile = path.join(targetImagesDir, `${cleanId}${ext}`);
+                fs.writeFileSync(destFile, buf);
+
+                oneProxyBulkDownloadState.downloadedCards++;
+                oneProxyBulkDownloadState.totalBytesDownloaded += buf.length;
+              } else {
+                // Bandai fallback
+                if (!imgUrl.includes('onepiece-cardgame.com')) {
+                  const bUrl = `https://en.onepiece-cardgame.com/images/cardlist/card/${cleanId}.png`;
+                  const bResp = await fetch(bUrl, {
+                    headers: {
+                      "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)"
+                    }
+                  });
+                  if (bResp.ok) {
+                    const bBuf = Buffer.from(await bResp.arrayBuffer());
+                    fs.writeFileSync(path.join(targetImagesDir, `${cleanId}.png`), bBuf);
+                    oneProxyBulkDownloadState.downloadedCards++;
+                    oneProxyBulkDownloadState.totalBytesDownloaded += bBuf.length;
+                  } else {
+                    oneProxyBulkDownloadState.failedCards++;
+                  }
+                } else {
+                  oneProxyBulkDownloadState.failedCards++;
+                }
+              }
+            } catch (e: any) {
+              oneProxyBulkDownloadState.failedCards++;
+            }
+
+            // Polite pause
+            await new Promise(r => setTimeout(r, 50));
+          }
+        };
+
+        const workers = [];
+        for (let w = 0; w < concurrency; w++) {
+          workers.push(downloadWorker());
+        }
+        await Promise.all(workers);
+
+        oneProxyBulkDownloadState.isActive = false;
+        if (oneProxyBulkCancelRequested) {
+          oneProxyBulkDownloadState.statusText = 'Download cancelled by user.';
+        } else {
+          oneProxyBulkDownloadState.isCompleted = true;
+          oneProxyBulkDownloadState.percent = 100;
+          oneProxyBulkDownloadState.statusText = `Download complete! ${oneProxyBulkDownloadState.downloadedCards} cards downloaded, ${oneProxyBulkDownloadState.skippedCards} already present.`;
+          try {
+            fs.writeFileSync(oneProxyConfigFile, JSON.stringify({ cacheDir: resolvedTarget, bulkDownloaded: true }, null, 2), 'utf-8');
+          } catch (_) {}
+        }
+      })();
+
+      return { success: true, message: "Download started", targetDir: resolvedTarget, totalCards: cardList.length };
+    } catch (err: any) {
+      oneProxyBulkDownloadState.isActive = false;
+      return { success: false, error: err.message };
+    }
+  };
+
+  const getOneProxyCardsDb = (): any[] => {
+    if (!fs.existsSync(oneProxyDbPath)) return [];
+    try {
+      const stat = fs.statSync(oneProxyDbPath);
+      if (oneProxyDbMemoryCache && stat.mtimeMs === oneProxyDbMtime) {
+        return oneProxyDbMemoryCache;
+      }
+      const raw = JSON.parse(fs.readFileSync(oneProxyDbPath, 'utf-8'));
+      oneProxyDbMemoryCache = Array.isArray(raw) ? raw : (raw.products || []);
+      oneProxyDbMtime = stat.mtimeMs;
+      return oneProxyDbMemoryCache || [];
+    } catch (e) {
+      console.error("[OneProxy] Error reading local cards DB:", e);
+      return [];
+    }
+  };
+
+  // Polite download rate limiting: max 30 remote downloads per minute, minimum 300ms pause between remote calls
+  let oneProxyDownloadTimestamps: number[] = [];
+  const inFlightDownloads = new Map<string, Promise<{ buffer: Buffer; contentType: string } | null>>();
+  let lastRemoteDownloadTime = 0;
+
   app.get("/api/plugin/cards/search", async (req, res) => {
     const plugin = (req.query.plugin as string || '').trim().toLowerCase();
     const q = (req.query.q as string || '').trim();
@@ -2247,31 +2694,72 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           break;
         }
 
-        case 'one_piece': {
-          const response = await fetch(`https://onepiece.limitlesstcg.com/cards?q=${encodeURIComponent(q)}&display=list`, {
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            }
+        case 'oneproxy': {
+          const db = getOneProxyCardsDb();
+          const queryLower = q.toLowerCase().trim();
+          
+          const matched = db.filter((p: any) => {
+            const nameMatch = p.name && p.name.toLowerCase().includes(queryLower);
+            const numMatch = p.cardNumber && p.cardNumber.toLowerCase().includes(queryLower);
+            const colorMatch = p.color && p.color.toLowerCase() === queryLower;
+            return nameMatch || numMatch || colorMatch;
+          }).slice(0, 40);
+
+          results = matched.map((p: any) => {
+            const cardNo = p.cardNumber || '';
+            const cleanNo = cardNo.replace(/[\/\\]/g, '_');
+            const isCached = fs.existsSync(path.join(oneProxyImagesDir, `${cleanNo}.png`)) ||
+                             fs.existsSync(path.join(oneProxyImagesDir, `${cleanNo}.jpg`)) ||
+                             fs.existsSync(path.join(oneProxyImagesDir, `${cleanNo}.webp`));
+            return {
+              id: cardNo,
+              name: p.name || cardNo,
+              set: p.set || 'OP',
+              set_name: p.set || 'One Piece Card Game',
+              collector_number: cardNo,
+              imageUrl: `/api/oneproxy/image/${encodeURIComponent(cardNo)}`,
+              thumbnailUrl: `/api/oneproxy/image/${encodeURIComponent(cardNo)}`,
+              rarity: p.rarity,
+              color: p.color,
+              cardType: p.cardType,
+              cached: isCached
+            };
           });
-          if (response.ok) {
-            const html = await response.text();
-            const rowRegex = /<tr\s+data-hover="([^"]+)"[^>]*>[\s\S]*?<td><a[^>]*>([^<]+)<\/a><\/td>[\s\S]*?<td><a[^>]*>([^<]+)<\/a><\/td>/g;
-            let m;
-            while ((m = rowRegex.exec(html)) !== null && results.length < 40) {
-              const imgUrl = m[1];
-              const cardNum = m[2].trim();
-              const cardName = m[3].replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
-              results.push({
-                id: cardNum,
-                name: cardName,
-                set: cardNum.split('-')[0] || 'OP',
-                set_name: 'One Piece Card Game',
-                collector_number: cardNum,
-                imageUrl: imgUrl,
-                thumbnailUrl: imgUrl
-              });
+          break;
+        }
+
+        case 'one_piece':
+        case 'limitless_optcg': {
+          try {
+            const response = await fetch(`https://onepiece.limitlesstcg.com/cards?q=${encodeURIComponent(q)}&display=list`, {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+              }
+            });
+            if (response.ok) {
+              const html = await response.text();
+              const rowRegex = /<tr\s+data-hover="([^"]+)"[^>]*>[\s\S]*?<td><a[^>]*>([^<]+)<\/a><\/td>[\s\S]*?<td><a[^>]*>([^<]+)<\/a><\/td>/g;
+              let m;
+              while ((m = rowRegex.exec(html)) !== null && results.length < 40) {
+                const imgUrl = m[1];
+                const cardNum = m[2].trim();
+                const cardName = m[3].replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
+                const fileMatch = imgUrl.split('/').pop()?.replace(/\.[^.]+$/, '') || '';
+                const uniqueId = fileMatch ? `${cardNum}_${fileMatch}` : `${cardNum}_${results.length}`;
+                results.push({
+                  id: uniqueId,
+                  name: cardName,
+                  set: cardNum.split('-')[0] || 'OP',
+                  set_name: 'One Piece Card Game',
+                  collector_number: cardNum,
+                  imageUrl: imgUrl,
+                  thumbnailUrl: imgUrl
+                });
+              }
             }
+          } catch (err: any) {
+            console.error('[Limitless OPTCG Search Error]:', err.message);
           }
           break;
         }
@@ -2606,6 +3094,349 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           break;
         }
 
+        case 'bushiroad': {
+          const subgame = (req.query.subgame as string || '').toLowerCase().trim();
+          
+          // Check if query is explicitly a DeckLog code or decklog URL
+          const isDeckLogUrl = q.includes('decklog') || q.includes('/view/');
+          const isExplicitDeckCode = subgame === 'decklog' || isDeckLogUrl || (!subgame && /^[a-zA-Z0-9]{4,6}$/.test(q) && /\d/.test(q));
+          
+          if (isExplicitDeckCode) {
+            try {
+              const deckMatch = q.match(/([a-zA-Z0-9]{4,6})(?:\/|$|\s|\?)/);
+              const deckCode = (q.includes('decklog') ? (q.match(/\/view\/([a-zA-Z0-9]+)/)?.[1] || deckMatch?.[1]) : q).trim().toUpperCase();
+              if (deckCode) {
+                let response = await fetch(`https://decklog-en.bushiroad.com/system/app/api/view/${encodeURIComponent(deckCode)}`, {
+                  headers: {
+                    'User-Agent': 'silhouette-card-maker/0.1',
+                    'Referer': 'https://decklog-en.bushiroad.com/'
+                  }
+                });
+                if (!response.ok) {
+                  response = await fetch(`https://decklog.bushiroad.com/system/app/api/view/${encodeURIComponent(deckCode)}`, {
+                    headers: {
+                      'User-Agent': 'silhouette-card-maker/0.1',
+                      'Referer': 'https://decklog.bushiroad.com/'
+                    }
+                  });
+                }
+                if (response.ok) {
+                  const json: any = await response.json();
+                  if (json && (json.list || json.p_list || json.sub_list)) {
+                    const list = [...(json.p_list || []), ...(json.list || []), ...(json.sub_list || [])];
+                    const titleMap: Record<string, { name: string, base: string, code: string }> = {
+                      '1': { name: 'Cardfight!! Vanguard', base: 'https://en.cf-vanguard.com/wordpress/wp-content/images/cardlist/', code: 'VG' },
+                      '2': { name: 'Weiβ Schwarz', base: 'https://en.ws-tcg.com/wordpress/wp-content/images/cardimages/', code: 'WS' },
+                      '6': { name: 'Shadowverse: Evolve', base: 'https://en.shadowverse-evolve.com/wordpress/wp-content/images/cardlist/', code: 'SVE' },
+                      '7': { name: 'GODZILLA CARD GAME', base: 'https://en.godzilla-cardgame.com/wordpress/wp-content/images/cardlist/', code: 'GCG' },
+                      '8': { name: 'hololive OFFICIAL CARD GAME', base: 'https://en.hololive-official-cardgame.com/wp-content/images/cardlist/', code: 'hOCG' },
+                      '101': { name: 'Cardfight!! Vanguard (JP)', base: 'https://cf-vanguard.com/wordpress/wp-content/images/cardlist/', code: 'VG' },
+                      '102': { name: 'Weiβ Schwarz (JP)', base: 'https://ws-tcg.com/wordpress/wp-content/images/cardlist/', code: 'WS' },
+                      '106': { name: 'Shadowverse: Evolve (JP)', base: 'https://shadowverse-evolve.com/wordpress/wp-content/images/cardlist/', code: 'SVE' },
+                      '108': { name: 'hololive OFFICIAL CARD GAME (JP)', base: 'https://hololive-official-cardgame.com/wp-content/images/cardlist/', code: 'hOCG' }
+                    };
+                    const gInfo = titleMap[String(json.game_title_id)] || { name: 'Bushiroad', base: '', code: 'BUSHI' };
+                    results = list.map((c: any) => {
+                      const img = c.img ? `${gInfo.base}${c.img}` : (c.card_image ? `${gInfo.base}${c.card_image}` : '');
+                      return {
+                        id: c.card_number || c.card_id || String(c.id),
+                        name: c.name || c.card_name || c.card_number,
+                        set: gInfo.code,
+                        set_name: `${gInfo.name} (${json.deck_name || 'DeckLog'})`,
+                        collector_number: c.card_number || '1',
+                        imageUrl: img,
+                        thumbnailUrl: img
+                      };
+                    }).filter((c: any) => !!c.imageUrl);
+                    if (results.length > 0) {
+                      break;
+                    }
+                  }
+                }
+              }
+            } catch (err: any) {
+              console.error('[DeckLog Search Error]:', err.message);
+            }
+          }
+
+          // Game-specific card database queries
+          if (subgame === 'vg' || subgame === 'vanguard') {
+            const url = `https://en.cf-vanguard.com/cardlist/cardsearch/?keyword=${encodeURIComponent(q)}`;
+            const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            if (response.ok) {
+              const html = await response.text();
+              const regex = /<a[^>]+href="([^"]*\/cardlist\/\?cardno=([^"&]+)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+              let match;
+              while ((match = regex.exec(html)) !== null && results.length < 40) {
+                const cardNo = decodeURIComponent(match[2]);
+                let img = match[3];
+                if (img.startsWith('/')) img = `https://en.cf-vanguard.com${img}`;
+                const name = match[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim() || cardNo;
+                results.push({
+                  id: cardNo,
+                  name,
+                  set: cardNo.split('/')[0] || 'VG',
+                  set_name: 'Cardfight!! Vanguard',
+                  collector_number: cardNo,
+                  imageUrl: img,
+                  thumbnailUrl: img
+                });
+              }
+            }
+          } else if (subgame === 'ws' || subgame === 'weiss') {
+            const url = `https://en.ws-tcg.com/cardlist/searchresults/?keyword=${encodeURIComponent(q)}`;
+            const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            if (response.ok) {
+              const html = await response.text();
+              const regex = /<a[^>]+href="([^"]*\/cardlist\/\?cardno=([^"&]+)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+              let match;
+              while ((match = regex.exec(html)) !== null && results.length < 40) {
+                const cardNo = decodeURIComponent(match[2]);
+                let img = match[3];
+                if (img.startsWith('/')) img = `https://en.ws-tcg.com${img}`;
+                const name = match[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim() || cardNo;
+                results.push({
+                  id: cardNo,
+                  name,
+                  set: cardNo.split('/')[0] || 'WS',
+                  set_name: 'Weiβ Schwarz',
+                  collector_number: cardNo,
+                  imageUrl: img,
+                  thumbnailUrl: img
+                });
+              }
+            }
+          } else if (subgame === 'sve' || subgame === 'shadowverse') {
+            const url = `https://en.shadowverse-evolve.com/cards/searchresults/?card_name=${encodeURIComponent(q)}`;
+            const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            if (response.ok) {
+              const html = await response.text();
+              const regex = /<a[^>]+href="([^"]*(?:cardno|detail)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+              let match;
+              while ((match = regex.exec(html)) !== null && results.length < 40) {
+                let img = match[2];
+                if (img.startsWith('/')) img = `https://en.shadowverse-evolve.com${img}`;
+                const name = match[3].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
+                const noMatch = match[1].match(/cardno=([^&"]+)/);
+                const cardNo = noMatch ? decodeURIComponent(noMatch[1]) : (img.split('/').pop()?.replace(/\.[^.]+$/, '') || name);
+                results.push({
+                  id: cardNo,
+                  name,
+                  set: cardNo.split('-')[0] || 'SVE',
+                  set_name: 'Shadowverse: Evolve',
+                  collector_number: cardNo,
+                  imageUrl: img,
+                  thumbnailUrl: img
+                });
+              }
+            }
+          } else if (subgame === 'hocg' || subgame === 'hololive') {
+            const url = `https://en.hololive-official-cardgame.com/cardlist/cardsearch/?keyword=${encodeURIComponent(q)}`;
+            const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            if (response.ok) {
+              const html = await response.text();
+              const regex = /<a[^>]+href="([^"]*(?:cardno|cardlist)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+              let match;
+              while ((match = regex.exec(html)) !== null && results.length < 40) {
+                let img = match[2];
+                if (img.startsWith('/')) img = `https://en.hololive-official-cardgame.com${img}`;
+                const name = match[3].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
+                const noMatch = match[1].match(/cardno=([^&"]+)/);
+                const cardNo = noMatch ? decodeURIComponent(noMatch[1]) : (img.split('/').pop()?.replace(/\.[^.]+$/, '') || name);
+                results.push({
+                  id: cardNo,
+                  name,
+                  set: cardNo.split('-')[0] || 'hOCG',
+                  set_name: 'hololive OFFICIAL CARD GAME',
+                  collector_number: cardNo,
+                  imageUrl: img,
+                  thumbnailUrl: img
+                });
+              }
+            }
+          } else if (subgame === 'gcg' || subgame === 'godzilla') {
+            const url = `https://en.godzilla-cardgame.com/manage/card-list-user/list?keyword=${encodeURIComponent(q)}&per_page=40&page=1`;
+            const response = await fetch(url, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0',
+                'Referer': 'https://en.godzilla-cardgame.com/cardlist/'
+              }
+            });
+            if (response.ok) {
+              const data: any = await response.json();
+              const items = data.items || [];
+              for (const it of items) {
+                if (results.length >= 40) break;
+                const pic = it.picture;
+                const img = pic ? `https://en.godzilla-cardgame.com/wordpress/wp-content/images/cardlist/${pic}` : '';
+                results.push({
+                  id: it.card_number || String(it.id),
+                  name: it.card_name || it.card_number,
+                  set: it.expansion || 'GCG',
+                  set_name: it.expansion_name || 'GODZILLA CARD GAME',
+                  collector_number: it.card_number || String(it.id),
+                  imageUrl: img,
+                  thumbnailUrl: img
+                });
+              }
+            }
+          } else if (subgame === 'pocg' || subgame === 'palworld') {
+            const url = `https://en.palworld-official-cardgame.com/wordpress/wp-content/images/cardlist/`;
+            // Search decklog or direct card list for Palworld
+            try {
+              const searchUrl = `https://en.palworld-official-cardgame.com/cardlist/cardsearch/?keyword=${encodeURIComponent(q)}`;
+              const resp = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+              if (resp.ok) {
+                const html = await resp.text();
+                const regex = /<a[^>]+href="([^"]*(?:cardno|detail)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+                let m;
+                while ((m = regex.exec(html)) !== null && results.length < 40) {
+                  let img = m[2];
+                  if (img.startsWith('/')) img = `https://en.palworld-official-cardgame.com${img}`;
+                  const name = m[3].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
+                  const noMatch = m[1].match(/cardno=([^&"]+)/);
+                  const cardNo = noMatch ? decodeURIComponent(noMatch[1]) : (img.split('/').pop()?.replace(/\.[^.]+$/, '') || name);
+                  results.push({
+                    id: cardNo,
+                    name,
+                    set: 'POCG',
+                    set_name: 'Palworld OFFICIAL CARD GAME',
+                    collector_number: cardNo,
+                    imageUrl: img,
+                    thumbnailUrl: img
+                  });
+                }
+              }
+            } catch (_) {}
+          } else if (subgame === 'bf' || subgame === 'buddyfight') {
+            try {
+              const searchUrl = `https://fc-buddyfight.com/cardlist/cardsearch/?keyword=${encodeURIComponent(q)}`;
+              const resp = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+              if (resp.ok) {
+                const html = await resp.text();
+                const regex = /<a[^>]+href="([^"]*cardno=([^"&]+)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+                let m;
+                while ((m = regex.exec(html)) !== null && results.length < 40) {
+                  const cardNo = decodeURIComponent(m[2]);
+                  let img = m[3];
+                  if (img.startsWith('/')) img = `https://fc-buddyfight.com${img}`;
+                  const name = m[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim() || cardNo;
+                  results.push({
+                    id: cardNo,
+                    name,
+                    set: 'BF',
+                    set_name: 'Future Card Buddyfight',
+                    collector_number: cardNo,
+                    imageUrl: img,
+                    thumbnailUrl: img
+                  });
+                }
+              }
+            } catch (_) {}
+          } else if (subgame === 'blau') {
+            try {
+              const searchUrl = `https://ws-blau.com/cardlist/cardsearch/?keyword=${encodeURIComponent(q)}`;
+              const resp = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+              if (resp.ok) {
+                const html = await resp.text();
+                const regex = /<a[^>]+href="([^"]*cardno=([^"&]+)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+                let m;
+                while ((m = regex.exec(html)) !== null && results.length < 40) {
+                  const cardNo = decodeURIComponent(m[2]);
+                  let img = m[3];
+                  if (img.startsWith('/')) img = `https://ws-blau.com${img}`;
+                  const name = m[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim() || cardNo;
+                  results.push({
+                    id: cardNo,
+                    name,
+                    set: 'BLAU',
+                    set_name: 'Weiβ Schwarz Blau',
+                    collector_number: cardNo,
+                    imageUrl: img,
+                    thumbnailUrl: img
+                  });
+                }
+              }
+            } catch (_) {}
+          } else if (subgame === 're' || subgame === 'rebirth') {
+            try {
+              const searchUrl = `https://rebirth-fy.com/cardlist/cardsearch/?keyword=${encodeURIComponent(q)}`;
+              const resp = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+              if (resp.ok) {
+                const html = await resp.text();
+                const regex = /<a[^>]+href="([^"]*cardno=([^"&]+)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+                let m;
+                while ((m = regex.exec(html)) !== null && results.length < 40) {
+                  const cardNo = decodeURIComponent(m[2]);
+                  let img = m[3];
+                  if (img.startsWith('/')) img = `https://rebirth-fy.com${img}`;
+                  const name = m[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim() || cardNo;
+                  results.push({
+                    id: cardNo,
+                    name,
+                    set: 'RE',
+                    set_name: 'Rebirth for you',
+                    collector_number: cardNo,
+                    imageUrl: img,
+                    thumbnailUrl: img
+                  });
+                }
+              }
+            } catch (_) {}
+          } else if (subgame === 'llc' || subgame === 'lovelive') {
+            try {
+              const searchUrl = `https://lovelive-cardgame.com/cardlist/cardsearch/?keyword=${encodeURIComponent(q)}`;
+              const resp = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+              if (resp.ok) {
+                const html = await resp.text();
+                const regex = /<a[^>]+href="([^"]*cardno=([^"&]+)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+                let m;
+                while ((m = regex.exec(html)) !== null && results.length < 40) {
+                  const cardNo = decodeURIComponent(m[2]);
+                  let img = m[3];
+                  if (img.startsWith('/')) img = `https://lovelive-cardgame.com${img}`;
+                  const name = m[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim() || cardNo;
+                  results.push({
+                    id: cardNo,
+                    name,
+                    set: 'LLC',
+                    set_name: 'LoveLive! series Official Card Game',
+                    collector_number: cardNo,
+                    imageUrl: img,
+                    thumbnailUrl: img
+                  });
+                }
+              }
+            } catch (_) {}
+          } else if (subgame === 'wsr' || subgame === 'rose') {
+            try {
+              const searchUrl = `https://ws-rose.com/cardlist/cardsearch/?keyword=${encodeURIComponent(q)}`;
+              const resp = await fetch(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+              if (resp.ok) {
+                const html = await resp.text();
+                const regex = /<a[^>]+href="([^"]*cardno=([^"&]+)[^"]*)"[^>]*>[\s\S]*?<img[^>]+src="([^"]+)"[^>]+alt="([^"]*)"/gi;
+                let m;
+                while ((m = regex.exec(html)) !== null && results.length < 40) {
+                  const cardNo = decodeURIComponent(m[2]);
+                  let img = m[3];
+                  if (img.startsWith('/')) img = `https://ws-rose.com${img}`;
+                  const name = m[4].replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim() || cardNo;
+                  results.push({
+                    id: cardNo,
+                    name,
+                    set: 'WSR',
+                    set_name: 'Weiss Schwarz Rose',
+                    collector_number: cardNo,
+                    imageUrl: img,
+                    thumbnailUrl: img
+                  });
+                }
+              }
+            } catch (_) {}
+          }
+          break;
+        }
+
         default: {
           // Fallback: If plugin is unrecognized or custom, return empty array with clean message
           results = [];
@@ -2617,6 +3448,290 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     } catch (err: any) {
       console.error(`[Plugin Search Error - ${plugin}]:`, err.message);
       res.status(500).json({ error: `Card search failed for ${plugin}`, details: err.message, data: [] });
+    }
+  });
+
+  // OneProxy Polite Cache Status Endpoint
+  app.get("/api/oneproxy/status", (req, res) => {
+    res.json(getOneProxyStatus());
+  });
+
+  // OneProxy Sync/Update Endpoint
+  app.post("/api/oneproxy/sync", async (req, res) => {
+    if (isOneProxySyncing) {
+      return res.status(409).json({ success: false, error: "An update check is already in progress." });
+    }
+
+    isOneProxySyncing = true;
+    try {
+      console.log("[OneProxy] Checking for card database update...");
+      const resp = await fetch("https://oneproxy.torforge.dev/api/all-cards", {
+        headers: {
+          "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
+          "Accept": "application/json"
+        }
+      });
+      if (!resp.ok) {
+        throw new Error(`OneProxy server returned HTTP ${resp.status}`);
+      }
+      const data: any = await resp.json();
+      const products = Array.isArray(data) ? data : (data.products || []);
+      if (!fs.existsSync(oneProxyCacheDir)) {
+        fs.mkdirSync(oneProxyCacheDir, { recursive: true });
+      }
+      fs.writeFileSync(oneProxyDbPath, JSON.stringify(data), 'utf-8');
+
+      const now = Date.now();
+      const syncInfo = { lastChecked: now, cardCount: products.length };
+      fs.writeFileSync(oneProxySyncStatusPath, JSON.stringify(syncInfo, null, 2), 'utf-8');
+
+      oneProxyDbMemoryCache = products;
+      oneProxyDbMtime = fs.statSync(oneProxyDbPath).mtimeMs;
+
+      console.log(`[OneProxy] Update check complete. ${products.length} cards saved to local cache.`);
+      const updatedStatus = getOneProxyStatus();
+      return res.json({
+        success: true,
+        cardCount: products.length,
+        lastChecked: now,
+        message: `Successfully synchronized ${products.length} cards to local cache.`,
+        status: updatedStatus
+      });
+    } catch (err: any) {
+      console.error("[OneProxy] Update check failed:", err.message);
+      return res.status(500).json({ success: false, error: `Failed to check for OneProxy updates: ${err.message}` });
+    } finally {
+      isOneProxySyncing = false;
+    }
+  });
+
+  // OneProxy High-Resolution Image Resolver (Local-First Disk Cache with Polite Throttling)
+  app.get("/api/oneproxy/image/:cardId", async (req, res) => {
+    const rawCardId = (req.params.cardId || '').trim();
+    if (!rawCardId) {
+      return res.status(400).send("Card ID is required");
+    }
+    const cleanId = rawCardId.replace(/[\/\\]/g, '_').trim();
+
+    // 1. Check local disk cache (ZERO remote traffic)
+    const checkDirs = [oneProxyImagesDir];
+    if (oneProxyImagesDir !== oneProxyCacheDir) {
+      checkDirs.push(oneProxyCacheDir);
+    }
+    for (const dir of checkDirs) {
+      for (const ext of ['.png', '.jpg', '.jpeg', '.webp']) {
+        const localFile = path.join(dir, `${cleanId}${ext}`);
+        if (fs.existsSync(localFile)) {
+          try {
+            const stat = fs.statSync(localFile);
+            if (stat.size > 0) {
+              const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
+              res.setHeader('Content-Type', mime);
+              res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+              res.setHeader('X-OneProxy-Source', 'local-disk-cache');
+              return res.sendFile(localFile);
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 2. Anti-spam download protection (Max 30 downloads / min)
+    const now = Date.now();
+    oneProxyDownloadTimestamps = oneProxyDownloadTimestamps.filter(t => now - t < 60000);
+    if (oneProxyDownloadTimestamps.length >= 30) {
+      return res.status(429).json({
+        error: "Download rate limit reached (max 30 new cards per minute). Please wait a moment to avoid straining the OneProxy server."
+      });
+    }
+
+    // 3. In-flight deduplication to prevent parallel requests for the same image
+    if (!inFlightDownloads.has(cleanId)) {
+      const downloadPromise = (async () => {
+        try {
+          // Polite throttling: at least 300ms since last remote call
+          const elapsed = Date.now() - lastRemoteDownloadTime;
+          if (elapsed < 300) {
+            await new Promise(r => setTimeout(r, 300 - elapsed));
+          }
+          lastRemoteDownloadTime = Date.now();
+
+          // Resolve image metadata from OneProxy
+          const metaUrl = `https://oneproxy.torforge.dev/api/card-image?v=2&id=${encodeURIComponent(rawCardId)}`;
+          const metaResp = await fetch(metaUrl, {
+            headers: {
+              "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
+              "Accept": "application/json"
+            }
+          });
+
+          let imgUrl: string | null = null;
+          if (metaResp.ok) {
+            const meta: any = await metaResp.json();
+            if (meta?.hasImage && meta?.imageUrl) {
+              imgUrl = meta.imageUrl.startsWith('/') ? `https://oneproxy.torforge.dev${meta.imageUrl}` : meta.imageUrl;
+              imgUrl += (imgUrl.includes('?') ? '&' : '?') + 'size=full';
+            }
+          }
+
+          if (!imgUrl) {
+            // Bandai fallback
+            imgUrl = `https://en.onepiece-cardgame.com/images/cardlist/card/${rawCardId}.png`;
+          }
+
+          // Polite pause before fetching image
+          await new Promise(r => setTimeout(r, 150));
+          lastRemoteDownloadTime = Date.now();
+
+          const imgResp = await fetch(imgUrl, {
+            headers: {
+              "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
+              "Accept": "image/*, */*"
+            }
+          });
+
+          if (!imgResp.ok) {
+            return null;
+          }
+
+          const arrayBuffer = await imgResp.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const contentType = imgResp.headers.get('content-type') || 'image/png';
+
+          // Save to local cache for all future requests
+          try {
+            const saveExt = contentType.includes('jpeg') ? '.jpg' : (contentType.includes('webp') ? '.webp' : '.png');
+            fs.writeFileSync(path.join(oneProxyImagesDir, `${cleanId}${saveExt}`), buffer);
+          } catch (_) {}
+
+          oneProxyDownloadTimestamps.push(Date.now());
+          return { buffer, contentType };
+        } catch (err) {
+          console.error(`[OneProxy] Download failed for ${rawCardId}:`, err);
+          return null;
+        } finally {
+          inFlightDownloads.delete(cleanId);
+        }
+      })();
+
+      inFlightDownloads.set(cleanId, downloadPromise);
+    }
+
+    try {
+      const result = await inFlightDownloads.get(cleanId);
+      if (result) {
+        res.setHeader('Content-Type', result.contentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        res.setHeader('X-OneProxy-Source', 'download-and-cached');
+        return res.send(result.buffer);
+      } else {
+        return res.status(404).send("Card image not found");
+      }
+    } catch (err: any) {
+      return res.status(500).send(`Failed to resolve image: ${err.message}`);
+    }
+  });
+
+  // OneProxy Configuration Endpoint (Save custom cache path / existing library)
+  app.post("/api/oneproxy/config", (req, res) => {
+    const rawPath = (req.body?.cacheDir || '').trim();
+    if (!rawPath) {
+      // Reset to default
+      if (fs.existsSync(oneProxyConfigFile)) {
+        try { fs.unlinkSync(oneProxyConfigFile); } catch (_) {}
+      }
+      resolveOneProxyPaths(defaultOneProxyCacheDir);
+      return res.json({
+        success: true,
+        message: "Reset OneProxy cache location to default (~/.cache/oneproxy).",
+        status: getOneProxyStatus()
+      });
+    }
+
+    const resolved = path.resolve(rawPath);
+    try {
+      if (!fs.existsSync(resolved)) {
+        fs.mkdirSync(resolved, { recursive: true });
+      }
+      const imagesSub = path.join(resolved, 'images');
+      if (!fs.existsSync(imagesSub)) {
+        try { fs.mkdirSync(imagesSub, { recursive: true }); } catch (_) {}
+      }
+
+      if (!fs.existsSync(defaultOneProxyCacheDir)) {
+        fs.mkdirSync(defaultOneProxyCacheDir, { recursive: true });
+      }
+      fs.writeFileSync(oneProxyConfigFile, JSON.stringify({ cacheDir: resolved }, null, 2), 'utf-8');
+
+      resolveOneProxyPaths(resolved);
+      const updatedStatus = getOneProxyStatus();
+
+      return res.json({
+        success: true,
+        message: `OneProxy cache path updated to: ${resolved}. Found ${updatedStatus.cardCount} cards in database and ${updatedStatus.cachedImagesCount} existing cached card arts.`,
+        status: updatedStatus
+      });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: `Failed to set cache path: ${e.message}` });
+    }
+  });
+
+  // OneProxy Folder Browser Endpoint (Native Windows Folder Selection)
+  app.post("/api/oneproxy/browse", (req, res) => {
+    try {
+      const psCommand = `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select OneProxy Cache Folder'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }`;
+      const result = execSync(`powershell -NoProfile -NonInteractive -Command "${psCommand}"`, { timeout: 45000 }).toString().trim();
+      if (result) {
+        return res.json({ success: true, path: result, selectedPath: result });
+      }
+      return res.json({ success: false, message: "No folder selected." });
+    } catch (e: any) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
+  // OneProxy Bulk Download Endpoints
+  app.post("/api/oneproxy/download-all", async (req, res) => {
+    const rawDir = (req.body?.targetDir || '').trim();
+    const result = await startOneProxyBulkDownload(rawDir);
+    res.json(result);
+  });
+
+  app.get("/api/oneproxy/download-progress", (req, res) => {
+    res.json(oneProxyBulkDownloadState);
+  });
+
+  app.post("/api/oneproxy/download-cancel", (req, res) => {
+    oneProxyBulkCancelRequested = true;
+    oneProxyBulkDownloadState.isActive = false;
+    oneProxyBulkDownloadState.statusText = "Download cancelled by user.";
+    res.json({ success: true, message: "Download cancelled." });
+  });
+
+  // Universal image proxy to bypass Chromium ORB/CORS for external logos and images
+  app.get("/api/image-proxy", async (req, res) => {
+    const targetUrl = (req.query.url as string || '').trim();
+    if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
+      return res.status(400).send("Invalid target URL");
+    }
+    try {
+      const response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+        }
+      });
+      if (!response.ok) {
+        return res.status(response.status).send(`Failed to fetch image: ${response.statusText}`);
+      }
+      const contentType = response.headers.get('content-type') || 'image/png';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      const arrayBuffer = await response.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
+    } catch (e: any) {
+      res.status(500).send(`Image proxy error: ${e.message}`);
     }
   });
 
@@ -5695,6 +6810,54 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     console.log(`Server running on http://localhost:${PORT}`);
     // Support Electron's readiness check
     if (isElectron) console.log('SCMUI_READY');
+
+    // Check for SCMUI updates on startup (runs softly in background)
+    setTimeout(async () => {
+      try {
+        console.log('[SCMUI] Checking for SCMUI updates on startup...');
+        const ghRes = await fetch('https://api.github.com/repos/TomatoMan280/SCM-UI/releases', {
+          headers: {
+            'User-Agent': 'SCMUI-App',
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        if (ghRes.ok) {
+          const releases = await ghRes.json();
+          rawReleasesCache = { timestamp: Date.now(), data: releases };
+          console.log(`[SCMUI] Startup update check complete. ${releases.length} releases found.`);
+        }
+      } catch (e: any) {
+        console.log('[SCMUI] Startup update check failed or offline:', e.message);
+      }
+    }, 1500);
+
+    // Check for OneProxy card database updates on startup
+    setTimeout(async () => {
+      try {
+        console.log('[OneProxy] Checking for card database updates on startup...');
+        const resp = await fetch('https://oneproxy.torforge.dev/api/all-cards', {
+          headers: {
+            'User-Agent': 'silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)',
+            'Accept': 'application/json'
+          }
+        });
+        if (resp.ok) {
+          const data: any = await resp.json();
+          const products = Array.isArray(data) ? data : (data.products || []);
+          if (!fs.existsSync(oneProxyCacheDir)) {
+            fs.mkdirSync(oneProxyCacheDir, { recursive: true });
+          }
+          fs.writeFileSync(oneProxyDbPath, JSON.stringify(data), 'utf-8');
+          const now = Date.now();
+          fs.writeFileSync(oneProxySyncStatusPath, JSON.stringify({ lastChecked: now, cardCount: products.length }, null, 2), 'utf-8');
+          oneProxyDbMemoryCache = products;
+          oneProxyDbMtime = fs.statSync(oneProxyDbPath).mtimeMs;
+          console.log(`[OneProxy] Startup update check complete. ${products.length} cards indexed.`);
+        }
+      } catch (err: any) {
+        console.log(`[OneProxy] Startup update check skipped or offline: ${err.message}`);
+      }
+    }, 3000);
   });
 }
 

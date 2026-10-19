@@ -58,10 +58,13 @@ def parse_bushiroad_url(deck_text: str, handle_card: Callable) -> None:
         print(f'Errors: {error_lines}')
 
 class DeckFormat(str, Enum):
+    BUSHIROAD = 'bushiroad'
     BUSHIROAD_URL = 'bushiroad_url'
 
 def parse_deck(deck_text: str, format: DeckFormat, handle_card: Callable) -> None:
-    if format == DeckFormat.BUSHIROAD_URL:
+    fmt = format.value if isinstance(format, DeckFormat) else str(format).lower()
+    if fmt in ('bushiroad', 'bushiroad_url'):
         return parse_bushiroad_url(deck_text, handle_card)
     else:
-        raise ValueError('Unrecognized deck format.')
+        raise ValueError(f'Unrecognized deck format: {format}')
+

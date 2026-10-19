@@ -10,3 +10,7 @@ cache/
 * (*).*
 src/silhouette-card-maker/
 *.onnx
+__pycache__/
+*.pyc
+scratch/
+temp_release_*/
