@@ -2084,8 +2084,13 @@ export default function App() {
           if (prog.isCompleted) {
             fetchOneProxyStatus();
             fetchOneProxySets();
-            setOneProxyView('ready');
-            addLog(`[OneProxy] Download complete! ${prog.downloadedCards} cards downloaded.`);
+            setTimeout(() => {
+              setOneProxyView('ready');
+            }, 1200);
+            const msg = prog.downloadedCards > 0
+              ? `[OneProxy] Download complete! ${prog.downloadedCards} cards downloaded (${prog.skippedCards || 0} already up to date).`
+              : `[OneProxy] Download complete! All ${prog.skippedCards || 0} card(s) already downloaded and up to date.`;
+            addLog(msg);
           } else if (!prog.isActive && prog.statusText?.includes('cancelled')) {
             fetchOneProxyStatus();
             fetchOneProxySets();
@@ -6203,56 +6208,55 @@ export default function App() {
                                          </div>
 
                                           {/* State 1: Options (Shown when user has no downloaded sets) */}
-                                          {oneProxyView === 'options' && (
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setSelectedOneProxySets([]);
-                                                  fetchOneProxySets();
-                                                  setOneProxyView('download_prompt');
-                                                }}
-                                                className="group p-3 rounded-xl bg-gradient-to-br from-primary-500/10 via-primary-600/5 to-transparent border border-primary-500/30 hover:border-primary-400 hover:from-primary-500/20 transition-all cursor-pointer shadow-sm active:scale-[0.99] flex items-center justify-between"
-                                              >
-                                                <div className="flex items-center gap-2.5">
-                                                  <div className="w-8 h-8 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-all shrink-0">
-                                                    <Download size={15} />
-                                                  </div>
-                                                  <div className="text-left">
-                                                    <span className="text-xs font-bold text-white group-hover:text-primary-200 block">
-                                                      Download Card Sets
-                                                    </span>
-                                                    <span className="text-[11px] text-white/50">
-                                                      Download official OneProxy sets to your computer
-                                                    </span>
-                                                  </div>
-                                                </div>
-                                                <ChevronRight size={14} className="text-white/30 group-hover:text-primary-400 group-hover:translate-x-0.5 transition-all shrink-0" />
-                                              </button>
+                                           {oneProxyView === 'options' && (
+                                             <div className="flex flex-col gap-2.5">
+                                               <button
+                                                 type="button"
+                                                 onClick={() => {
+                                                   setSelectedOneProxySets([]);
+                                                   fetchOneProxySets();
+                                                   setOneProxyView('download_prompt');
+                                                 }}
+                                                 className="group w-full p-3.5 rounded-xl bg-gradient-to-br from-primary-500/10 via-primary-600/5 to-transparent border border-primary-500/30 hover:border-primary-400 hover:from-primary-500/20 transition-all cursor-pointer shadow-sm active:scale-[0.99] flex items-center justify-between gap-3 text-left"
+                                               >
+                                                 <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                   <div className="w-9 h-9 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-all shrink-0">
+                                                     <Download size={16} />
+                                                   </div>
+                                                   <div className="min-w-0 flex-1">
+                                                     <span className="text-xs font-bold text-white group-hover:text-primary-200 block mb-0.5">
+                                                       Download Card Sets
+                                                     </span>
+                                                     <span className="text-[11px] text-white/50 block leading-relaxed">
+                                                       Download official OneProxy sets to your computer
+                                                     </span>
+                                                   </div>
+                                                 </div>
+                                                 <ChevronRight size={14} className="text-white/30 group-hover:text-primary-400 group-hover:translate-x-0.5 transition-all shrink-0" />
+                                               </button>
 
-                                              <button
-                                                type="button"
-                                                onClick={() => setOneProxyView('link_prompt')}
-                                                className="group p-3 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/20 hover:bg-white/[0.06] transition-all cursor-pointer shadow-sm active:scale-[0.99] flex items-center justify-between"
-                                              >
-                                                <div className="flex items-center gap-2.5">
-                                                  <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white/80 group-hover:bg-white/20 group-hover:text-white transition-all shrink-0">
-                                                    <FolderOpen size={15} />
-                                                  </div>
-                                                  <div className="text-left">
-                                                    <span className="text-xs font-bold text-white block">
-                                                      Link Existing Folder
-                                                    </span>
-                                                    <span className="text-[11px] text-white/50">
-                                                      Already have a OneProxy folder? Link it to skip downloading
-                                                    </span>
-                                                  </div>
-                                                </div>
-                                                <ChevronRight size={14} className="text-white/30 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all shrink-0" />
-                                              </button>
-                                            </div>
-                                          )}
-
+                                               <button
+                                                 type="button"
+                                                 onClick={() => setOneProxyView('link_prompt')}
+                                                 className="group w-full p-3.5 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/20 hover:bg-white/[0.06] transition-all cursor-pointer shadow-sm active:scale-[0.99] flex items-center justify-between gap-3 text-left"
+                                               >
+                                                 <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                   <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center text-white/80 group-hover:bg-white/20 group-hover:text-white transition-all shrink-0">
+                                                     <FolderOpen size={16} />
+                                                   </div>
+                                                   <div className="min-w-0 flex-1">
+                                                     <span className="text-xs font-bold text-white block mb-0.5">
+                                                       Link Existing Folder
+                                                     </span>
+                                                     <span className="text-[11px] text-white/50 block leading-relaxed">
+                                                       Already have a OneProxy folder? Link it to skip downloading
+                                                     </span>
+                                                   </div>
+                                                 </div>
+                                                 <ChevronRight size={14} className="text-white/30 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all shrink-0" />
+                                               </button>
+                                             </div>
+                                           )}
                                          {/* State 2: Download / Set Selection View */}
                                          {oneProxyView === 'download_prompt' && (
                                            <div className="space-y-3">

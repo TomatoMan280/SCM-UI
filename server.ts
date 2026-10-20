@@ -2829,7 +2829,11 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           } else {
             oneProxyBulkDownloadState.isCompleted = true;
             oneProxyBulkDownloadState.percent = 100;
-            oneProxyBulkDownloadState.statusText = `Download complete! ${oneProxyBulkDownloadState.downloadedCards} cards downloaded, ${oneProxyBulkDownloadState.skippedCards} already up to date.`;
+            if (oneProxyBulkDownloadState.downloadedCards === 0 && oneProxyBulkDownloadState.skippedCards > 0) {
+              oneProxyBulkDownloadState.statusText = `Download complete! All ${oneProxyBulkDownloadState.skippedCards} card(s) already up to date.`;
+            } else {
+              oneProxyBulkDownloadState.statusText = `Download complete! ${oneProxyBulkDownloadState.downloadedCards} cards downloaded, ${oneProxyBulkDownloadState.skippedCards} already up to date.`;
+            }
             try {
               fs.writeFileSync(oneProxyConfigFile, JSON.stringify({ cacheDir: resolvedTarget, bulkDownloaded: true }, null, 2), 'utf-8');
             } catch (_) {}
@@ -2857,7 +2861,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const plugin = (req.query.plugin as string || '').trim().toLowerCase();
     const q = (req.query.q as string || '').trim();
 
-    if (!q) {
+    if (!q && plugin !== 'oneproxy') {
       return res.json({ success: true, count: 0, data: [] });
     }
 
@@ -2967,8 +2971,21 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           const db = getOneProxyCardsDb();
           const queryLower = q.toLowerCase().trim();
 
+          // Build fast DB lookup by clean cardNumber / cardId
+          const dbMap = new Map<string, any>();
+          for (const c of db) {
+            const cardNo = (c.cardNumber || c.cardId || '').trim().toLowerCase();
+            if (cardNo) {
+              if (!dbMap.has(cardNo)) dbMap.set(cardNo, c);
+              const alt1 = cardNo.replace(/-/g, '_');
+              const alt2 = cardNo.replace(/_/g, '-');
+              if (!dbMap.has(alt1)) dbMap.set(alt1, c);
+              if (!dbMap.has(alt2)) dbMap.set(alt2, c);
+            }
+          }
+
           // OneProxy card selection is strictly LOCAL ONLY - index local image files recursively
-          const localCardsMap = new Map<string, { originalName: string; mtime: number; filePath: string }>(); // cleanNo lower -> meta
+          const localCardsMap = new Map<string, { originalName: string; mtime: number; filePath: string }>();
           const checkDirs = getOneProxySearchDirs();
 
           const scanDirRecursive = (currentDir: string) => {
@@ -2982,6 +2999,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                     scanDirRecursive(fullP);
                   }
                 } else if (entry.isFile()) {
+                  if (entry.name.toLowerCase() === 'badge.png' || entry.name.toLowerCase() === 'icon.png') continue;
                   const ext = path.extname(entry.name).toLowerCase();
                   if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
                     const baseName = path.parse(entry.name).name;
@@ -3001,60 +3019,62 @@ app.get("/api/moxfield-proxy", async (req, res) => {
             scanDirRecursive(dir);
           }
 
-          // Filter cards from DB that are ACTUALLY downloaded on local disk
-          const matched = db.filter((p: any) => {
-            const cardNo = (p.cardNumber || '').trim();
-            const cleanNo = cardNo.replace(/[\/\\]/g, '_').toLowerCase();
-            const existsLocally = localCardsMap.has(cleanNo);
-            if (!existsLocally) return false;
+          // Search and map ALL matching local cards and card backs
+          for (const [cleanKey, meta] of localCardsMap.entries()) {
+            const dbCard = dbMap.get(cleanKey);
+            let matches = false;
 
-            if (!queryLower) return true;
-            const nameMatch = p.name && p.name.toLowerCase().includes(queryLower);
-            const numMatch = cardNo.toLowerCase().includes(queryLower);
-            const colorMatch = p.color && p.color.toLowerCase() === queryLower;
-            return nameMatch || numMatch || colorMatch;
-          }).slice(0, 40);
+            if (!queryLower) {
+              matches = true;
+            } else {
+              const fileNameLower = meta.originalName.toLowerCase();
+              const pathLower = meta.filePath.toLowerCase();
+              if (fileNameLower.includes(queryLower) || pathLower.includes(queryLower)) {
+                matches = true;
+              } else if (dbCard) {
+                const nameMatch = dbCard.name && dbCard.name.toLowerCase().includes(queryLower);
+                const numMatch = dbCard.cardNumber && dbCard.cardNumber.toLowerCase().includes(queryLower);
+                const setMatch = dbCard.set && dbCard.set.toLowerCase().includes(queryLower);
+                const colorMatch = dbCard.color && dbCard.color.toLowerCase() === queryLower;
+                matches = Boolean(nameMatch || numMatch || setMatch || colorMatch);
+              }
+            }
 
-          results = matched.map((p: any) => {
-            const cardNo = p.cardNumber || '';
-            const cleanNo = cardNo.replace(/[\/\\]/g, '_').toLowerCase();
-            const meta = localCardsMap.get(cleanNo);
-            const vParam = meta?.mtime ? `?v=${meta.mtime}` : '';
-            return {
-              id: cardNo,
-              name: p.name || cardNo,
-              set: p.set || 'OP',
-              set_name: p.set || 'One Piece Card Game',
-              collector_number: cardNo,
-              imageUrl: `/api/oneproxy/image/${encodeURIComponent(cardNo)}${vParam}`,
-              thumbnailUrl: `/api/oneproxy/image/${encodeURIComponent(cardNo)}${vParam}`,
-              rarity: p.rarity,
-              color: p.color,
-              cardType: p.cardType,
-              cached: true
-            };
-          });
-
-          // Also allow matching directly by local filename if DB didn't match
-          if (results.length === 0 && localCardsMap.size > 0 && queryLower) {
-            let matchedFilesCount = 0;
-            for (const [baseLower, meta] of localCardsMap.entries()) {
-              if (baseLower.includes(queryLower)) {
-                const vParam = meta.mtime ? `?v=${meta.mtime}` : '';
+            if (matches) {
+              const vParam = meta.mtime ? `?v=${meta.mtime}` : '';
+              const isBack = meta.filePath.includes('BACK') || cleanKey.includes('back');
+              if (dbCard) {
+                results.push({
+                  id: dbCard.cardNumber || meta.originalName,
+                  name: dbCard.name || meta.originalName,
+                  set: dbCard.set || 'OP',
+                  set_name: dbCard.set || 'One Piece Card Game',
+                  collector_number: dbCard.cardNumber || meta.originalName,
+                  imageUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
+                  thumbnailUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
+                  rarity: dbCard.rarity,
+                  color: dbCard.color,
+                  cardType: dbCard.cardType,
+                  cached: true
+                });
+              } else {
+                const cleanName = meta.originalName.replace(/[-_]/g, ' ');
+                const setCode = isBack ? 'BACK' : (meta.originalName.split('-')[0] || 'Local');
                 results.push({
                   id: meta.originalName,
-                  name: meta.originalName,
-                  set: 'Local',
-                  set_name: 'Local OneProxy Asset',
+                  name: cleanName,
+                  set: setCode,
+                  set_name: isBack ? 'Card Backing' : 'Local OneProxy Asset',
                   collector_number: meta.originalName,
                   imageUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
                   thumbnailUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
+                  cardType: isBack ? 'Back' : 'Card',
                   cached: true
                 });
-                matchedFilesCount++;
-                if (matchedFilesCount >= 40) break;
               }
             }
+
+            if (results.length >= 60) break;
           }
           break;
         }
