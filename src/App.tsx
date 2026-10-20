@@ -2046,6 +2046,7 @@ export default function App() {
   const [selectedOneProxySets, setSelectedOneProxySets] = useState<string[]>([]);
   const [oneProxySetTab, setOneProxySetTab] = useState<'all' | 'boosters' | 'starters' | 'extra' | 'specials'>('all');
   const [isLoadingSets, setIsLoadingSets] = useState(false);
+  const [selectMissingNotice, setSelectMissingNotice] = useState<string | null>(null);
 
   const formatSize = (bytes: number): string => {
     if (!bytes || bytes <= 0) return '0 B';
@@ -6396,8 +6397,14 @@ export default function App() {
                                                  <button
                                                    type="button"
                                                    onClick={() => {
-                                                     const missing = oneProxySets.filter(s => !s.isComplete).map(s => s.setCode);
-                                                     setSelectedOneProxySets(missing.length > 0 ? missing : oneProxySets.map(s => s.setCode));
+                                                     const missing = oneProxySets.filter(s => !s.isComplete || (s.percent !== undefined && s.percent < 100) || (s.assetCount > 0 && s.downloadedCount < s.assetCount)).map(s => s.setCode);
+                                                     setSelectedOneProxySets(missing);
+                                                     if (missing.length === 0) {
+                                                       setSelectMissingNotice('All sets completed!');
+                                                     } else {
+                                                       setSelectMissingNotice(missing.length + ' missing set' + (missing.length === 1 ? '' : 's'));
+                                                     }
+                                                     setTimeout(() => setSelectMissingNotice(null), 3500);
                                                    }}
                                                    className="px-2 py-0.5 rounded bg-primary-500/10 hover:bg-primary-500/20 text-primary-300 border border-primary-500/20 transition-colors cursor-pointer font-medium text-[11px]"
                                                  >
@@ -6411,9 +6418,16 @@ export default function App() {
                                                    Clear
                                                  </button>
                                                </div>
-                                               <span className="font-mono text-white/80 text-[11px]">
-                                                 {selectedOneProxySets.length} / {oneProxySets.length} selected
-                                               </span>
+                                               <div className="flex items-center gap-2">
+                                                 {selectMissingNotice && (
+                                                   <span className="text-[11px] text-emerald-400 font-medium">
+                                                     {selectMissingNotice}
+                                                   </span>
+                                                 )}
+                                                 <span className="font-mono text-white/80 text-[11px]">
+                                                   {selectedOneProxySets.length} / {oneProxySets.length} selected
+                                                 </span>
+                                               </div>
                                              </div>
 
                                              {/* Sets Grid */}
