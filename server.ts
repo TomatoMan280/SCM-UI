@@ -1606,31 +1606,40 @@ except Exception:
       }
 
       console.log(`[Updates] Launching installer: ${installerPath} (simulated: ${isSimulated})`);
-      if (!isSimulated && fs.existsSync(installerPath)) {
-        if (process.platform === 'win32') {
-          exec(`start "" "${installerPath}"`);
-        } else if (process.platform === 'darwin') {
-          exec(`open "${installerPath}"`);
-        } else {
-          try { fs.chmodSync(installerPath, 0o755); } catch (_) {}
-          if (installerPath.endsWith('.AppImage')) {
-            exec(`"${installerPath}" &`);
-          } else {
-            exec(`xdg-open "${installerPath}"`);
-          }
-        }
-      }
 
       res.json({ success: true, message: 'Installer launched successfully', restarting: true });
 
       setTimeout(() => {
         try {
-          if (process.env.ELECTRON_RUN_AS_NODE || process.env.USER_DATA_PATH) {
-            console.log('[Updates] Closing server to allow installer to proceed...');
-            process.exit(0);
+          if (!isSimulated && fs.existsSync(installerPath)) {
+            if (process.platform === 'win32') {
+              const installerProc = spawn(installerPath, [], {
+                detached: true,
+                stdio: 'ignore'
+              });
+              installerProc.unref();
+            } else if (process.platform === 'darwin') {
+              exec(`open "${installerPath}"`);
+            } else {
+              try { fs.chmodSync(installerPath, 0o755); } catch (_) {}
+              if (installerPath.endsWith('.AppImage')) {
+                const installerProc = spawn(installerPath, [], { detached: true, stdio: 'ignore' });
+                installerProc.unref();
+              } else {
+                exec(`xdg-open "${installerPath}"`);
+              }
+            }
           }
-        } catch (_) {}
-      }, 1500);
+
+          console.log('SCMUI_QUIT_FOR_UPDATE');
+          console.log('[Updates] Closing server and app to allow installer to proceed...');
+          setTimeout(() => {
+            process.exit(0);
+          }, 800);
+        } catch (err: any) {
+          console.error('[Updates] Execution error:', err);
+        }
+      }, 500);
     } catch (e: any) {
       console.error('[Updates] Launch installer error:', e);
       res.status(500).json({ error: e?.message || 'Failed to launch installer' });
