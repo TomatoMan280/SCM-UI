@@ -2105,7 +2105,7 @@ export default function App() {
 
     const interval = setInterval(async () => {
       try {
-        const resp = await fetch('/api/oneproxy/download-progress');
+        const resp = await fetch('/api/oneproxy/download-progress' + ((window as any).__mockProgress ? '?mock=true' : ''));
         if (resp.ok) {
           const prog = await resp.json();
           setOneProxyBulkProgress(prog);
@@ -3309,6 +3309,12 @@ export default function App() {
     setIsArtPickerOpen(true);
     handleSearchArt(initialQuery, undefined, defaultSource);
   };
+
+  useEffect(() => {
+    (window as any).__setOneProxyView = setOneProxyView;
+    (window as any).__openAddCardPicker = openAddCardPicker;
+    (window as any).__setOneProxyBulkProgress = setOneProxyBulkProgress;
+  }, []);
 
   const [pluginState, setPluginState] = useState(() => {
     const saved = localStorage.getItem('scm_plugin_state');

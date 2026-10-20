@@ -4638,6 +4638,27 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   });
 
   app.get("/api/oneproxy/download-progress", (req, res) => {
+    if (req.query.mock === 'true') {
+      return res.json({
+        isActive: true,
+        isPaused: false,
+        totalCards: 5375,
+        processedCards: 3870,
+        downloadedCards: 3870,
+        skippedCards: 0,
+        failedCards: 0,
+        currentSet: 'OP01',
+        currentCardNumber: 'OP01-001',
+        currentCardName: 'OP01-001.png',
+        totalBytesDownloaded: 18600000000,
+        percent: 72,
+        statusText: 'Downloading card OP01-001.png (1 worker)...',
+        targetDir: 'C:\\Users\\cecil\\OneProxy',
+        startTime: Date.now() - 120000,
+        error: null,
+        isCompleted: false
+      });
+    }
     res.json(oneProxyBulkDownloadState);
   });
 
