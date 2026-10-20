@@ -1701,6 +1701,8 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
       if (typeFilter && typeFilter !== 'all') filterStr += ` t:${typeFilter}`;
       if (colorFilter && colorFilter !== 'all') filterStr += ` c:${colorFilter}`;
       if (rarityFilter && rarityFilter !== 'all') filterStr += ` r:${rarityFilter}`;
+      const formatFilter = (req.query.format as string || 'all').toLowerCase().trim();
+      if (formatFilter && formatFilter !== 'all') filterStr += ` f:${formatFilter}`;
       const setFilter = req.query.set as string;
       if (setFilter && setFilter.trim() !== '') filterStr += ` e:${setFilter.trim()}`;
       if (frameFilter && frameFilter !== 'all') {
@@ -1752,11 +1754,13 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
   // MPCFill Community Art & Backings Search API
   app.get("/api/mpc/search", async (req, res) => {
     const q = (req.query.q as string || '').trim();
-    const isBack = req.query.isBack === 'true';
+    const faceFilter = (req.query.face as string || req.query.cardType as string || 'all').toLowerCase().trim();
+    let isBack = req.query.isBack === 'true' || faceFilter === 'backs';
+    if (faceFilter === 'fronts') isBack = false;
     const dpiFilter = req.query.dpi as string || 'all';
     const setFilter = req.query.set as string;
 
-    console.log(`[MPCFill Search] Query: "${q}", isBack: ${isBack}, dpi: ${dpiFilter}, set: ${setFilter || 'none'}`);
+    console.log(`[MPCFill Search] Query: "${q}", isBack: ${isBack}, face: ${faceFilter}, dpi: ${dpiFilter}, set: ${setFilter || 'none'}`);
 
     const headers = {
       "User-Agent": "SCMUI/1.1.0",
@@ -1823,6 +1827,8 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
 
     // Step 2: Combine with curated high-DPI library
     const filteredCurated = curatedMpcLibrary.filter(item => {
+      if (faceFilter === 'backs' && item.type !== 'back') return false;
+      if (faceFilter === 'fronts' && item.type === 'back') return false;
       if (isBack && item.type !== 'back') return false;
       if (!isBack && item.type === 'back' && q) {
         // Only show backs if query specifically searches for backs or back pattern
@@ -2169,6 +2175,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   let oneProxyStatusPath = path.join(oneProxyCacheDir, 'status.json');
   let oneProxySyncStatusPath = path.join(oneProxyCacheDir, 'sync_status.json');
   let oneProxyBadgePath = path.join(oneProxyCacheDir, 'badge.png');
+  let oneProxyThumbsDir = path.join(oneProxyCacheDir, 'thumbnails');
 
   const resolveOneProxyPaths = (dir: string) => {
     oneProxyCacheDir = path.resolve(dir);
@@ -2185,10 +2192,12 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     oneProxyStatusPath = path.join(oneProxyCacheDir, 'status.json');
     oneProxySyncStatusPath = path.join(oneProxyCacheDir, 'sync_status.json');
     oneProxyBadgePath = path.join(oneProxyCacheDir, 'badge.png');
+    oneProxyThumbsDir = path.join(oneProxyCacheDir, 'thumbnails');
 
     try {
       if (!fs.existsSync(oneProxyImagesDir)) fs.mkdirSync(oneProxyImagesDir, { recursive: true });
       if (!fs.existsSync(oneProxyManifestsDir)) fs.mkdirSync(oneProxyManifestsDir, { recursive: true });
+      if (!fs.existsSync(oneProxyThumbsDir)) fs.mkdirSync(oneProxyThumbsDir, { recursive: true });
     } catch (_) {}
 
     oneProxyDbMemoryCache = null;
@@ -3058,6 +3067,11 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         case 'oneproxy': {
           const db = getOneProxyCardsDb();
           const queryLower = q.toLowerCase().trim();
+          const filterSet = (req.query.set as string || 'all').toLowerCase().trim();
+          const filterColor = (req.query.color as string || 'all').toLowerCase().trim();
+          const filterType = (req.query.type as string || 'all').toLowerCase().trim();
+          const filterRarity = (req.query.rarity as string || 'all').toLowerCase().trim();
+          const sortBy = (req.query.order as string || 'number').toLowerCase().trim();
 
           // Build fast DB lookup by clean cardNumber / cardId
           const dbMap = new Map<string, any>();
@@ -3083,7 +3097,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               for (const entry of entries) {
                 const fullP = path.join(currentDir, entry.name);
                 if (entry.isDirectory()) {
-                  if (entry.name !== 'manifests' && entry.name !== '.git') {
+                  if (entry.name !== 'manifests' && entry.name !== '.git' && entry.name !== 'thumbnails') {
                     scanDirRecursive(fullP);
                   }
                 } else if (entry.isFile()) {
@@ -3111,8 +3125,49 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           // Search and map ALL matching local cards and card backs
           for (const [cleanKey, meta] of localCardsMap.entries()) {
             const dbCard = dbMap.get(cleanKey);
-            let matches = false;
+            const isBack = meta.filePath.includes('BACK') || cleanKey.includes('back');
+            const cardColor = (dbCard?.color || '').toLowerCase();
+            const cardType = (dbCard?.cardType || (isBack ? 'Back' : 'Card')).toLowerCase();
+            const cardRarity = (dbCard?.rarity || '').toLowerCase();
+            const cardSet = (dbCard?.set || '').toLowerCase();
 
+            // 1. Set Filter
+            if (filterSet && filterSet !== 'all') {
+              if (filterSet === 'back' || filterSet === 'backs') {
+                if (!isBack) continue;
+              } else if (filterSet === 'don') {
+                if (!cleanKey.startsWith('don') && cardType !== 'don!!') continue;
+              } else {
+                if (!cleanKey.startsWith(filterSet) && !cardSet.includes(filterSet)) continue;
+              }
+            }
+
+            // 2. Color Filter
+            if (filterColor && filterColor !== 'all') {
+              if (filterColor === 'multicolor') {
+                if (!cardColor.includes('/')) continue;
+              } else if (!cardColor.includes(filterColor)) {
+                continue;
+              }
+            }
+
+            // 3. Card Type Filter
+            if (filterType && filterType !== 'all') {
+              if (filterType === 'back') {
+                if (!isBack) continue;
+              } else if (filterType === 'don') {
+                if (!cleanKey.startsWith('don') && cardType !== 'don!!') continue;
+              } else {
+                if (!cardType.includes(filterType)) continue;
+              }
+            }
+
+            // 4. Rarity Filter
+            if (filterRarity && filterRarity !== 'all') {
+              if (cardRarity !== filterRarity) continue;
+            }
+
+            let matches = false;
             if (!queryLower) {
               matches = true;
             } else {
@@ -3131,7 +3186,6 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
             if (matches) {
               const vParam = meta.mtime ? `?v=${meta.mtime}` : '';
-              const isBack = meta.filePath.includes('BACK') || cleanKey.includes('back');
               if (dbCard) {
                 results.push({
                   id: dbCard.cardNumber || meta.originalName,
@@ -3140,10 +3194,12 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   set_name: dbCard.set || 'One Piece Card Game',
                   collector_number: dbCard.cardNumber || meta.originalName,
                   imageUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
-                  thumbnailUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
+                  thumbnailUrl: `/api/oneproxy/thumb/${encodeURIComponent(meta.originalName)}${vParam}`,
                   rarity: dbCard.rarity,
                   color: dbCard.color,
                   cardType: dbCard.cardType,
+                  cost: dbCard.cost !== undefined && dbCard.cost !== null ? Number(dbCard.cost) : undefined,
+                  power: dbCard.power !== undefined && dbCard.power !== null ? Number(dbCard.power) : undefined,
                   dpi: meta.dpi || 300,
                   cached: true
                 });
@@ -3157,15 +3213,33 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   set_name: isBack ? 'Card Backing' : 'Local OneProxy Asset',
                   collector_number: meta.originalName,
                   imageUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
-                  thumbnailUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
+                  thumbnailUrl: `/api/oneproxy/thumb/${encodeURIComponent(meta.originalName)}${vParam}`,
                   cardType: isBack ? 'Back' : 'Card',
                   dpi: meta.dpi || 300,
                   cached: true
                 });
               }
             }
+          }
 
-            if (results.length >= 60) break;
+          // Sort OneProxy results
+          if (sortBy === 'name') {
+            results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          } else if (sortBy === 'cost_desc') {
+            results.sort((a, b) => (Number(b.cost) || 0) - (Number(a.cost) || 0));
+          } else if (sortBy === 'cost_asc') {
+            results.sort((a, b) => (Number(a.cost) || 0) - (Number(b.cost) || 0));
+          } else if (sortBy === 'power_desc') {
+            results.sort((a, b) => (Number(b.power) || 0) - (Number(a.power) || 0));
+          } else if (sortBy === 'power_asc') {
+            results.sort((a, b) => (Number(a.power) || 0) - (Number(b.power) || 0));
+          } else {
+            // Natural collector number sort
+            results.sort((a, b) => (a.collector_number || a.id || '').localeCompare(b.collector_number || b.id || '', undefined, { numeric: true, sensitivity: 'base' }));
+          }
+
+          if (results.length > 150) {
+            results = results.slice(0, 150);
           }
           break;
         }
@@ -3994,46 +4068,26 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
   });
 
-  // OneProxy High-Resolution Image Resolver (Local Assets Only - ZERO individual remote fetches)
-  app.get("/api/oneproxy/image/:cardId", async (req, res) => {
-    const rawCardId = decodeURIComponent((req.params.cardId || '').trim());
-    if (!rawCardId) {
-      return res.status(400).send("Card ID is required");
-    }
-    const cleanId = rawCardId.replace(/[\/\\]/g, '_').trim();
+  // Helper to locate a OneProxy source file on local disk
+  const findOneProxySourceFile = (cardId: string): string | null => {
+    const cleanId = (cardId || '').replace(/[\/\\]/g, '_').trim();
     const cleanIdLower = cleanId.toLowerCase();
     const baseIdLower = path.parse(cleanIdLower).name;
-
-    // Check direct relative path if cardId contains folder separators
     const checkDirs = getOneProxySearchDirs();
-    for (const dir of checkDirs) {
-      // 1. Direct path check (e.g. OP01/OP01-001.png or BACK/Card-Back.png)
-      const directCandidate = path.join(dir, rawCardId);
-      if (fs.existsSync(directCandidate) && fs.statSync(directCandidate).isFile()) {
-        const stat = fs.statSync(directCandidate);
-        const ext = path.extname(directCandidate).toLowerCase();
-        const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
-        res.setHeader('Content-Type', mime);
-        res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
-        res.setHeader('X-OneProxy-Source', 'local-disk-cache');
-        return res.sendFile(directCandidate);
-      }
 
-      // 2. Direct candidate with extension
+    for (const dir of checkDirs) {
+      const directCandidate = path.join(dir, cardId);
+      if (fs.existsSync(directCandidate) && fs.statSync(directCandidate).isFile()) {
+        return directCandidate;
+      }
       for (const ext of ['.png', '.jpg', '.jpeg', '.webp']) {
         const fileWithExt = path.join(dir, `${baseIdLower}${ext}`);
         if (fs.existsSync(fileWithExt) && fs.statSync(fileWithExt).isFile()) {
-          const stat = fs.statSync(fileWithExt);
-          const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
-          res.setHeader('Content-Type', mime);
-          res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
-          res.setHeader('X-OneProxy-Source', 'local-disk-cache');
-          return res.sendFile(fileWithExt);
+          return fileWithExt;
         }
       }
     }
 
-    // 3. Recursive directory scan for matching filename
     for (const dir of checkDirs) {
       if (!fs.existsSync(dir)) continue;
       const searchRecursive = (currentDir: string): string | null => {
@@ -4042,7 +4096,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           for (const entry of entries) {
             const fullP = path.join(currentDir, entry.name);
             if (entry.isDirectory()) {
-              if (entry.name !== 'manifests' && entry.name !== '.git') {
+              if (entry.name !== 'manifests' && entry.name !== '.git' && entry.name !== 'thumbnails') {
                 const found = searchRecursive(fullP);
                 if (found) return found;
               }
@@ -4061,20 +4115,64 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         } catch (_) {}
         return null;
       };
-
       const matchedFile = searchRecursive(dir);
-      if (matchedFile && fs.existsSync(matchedFile)) {
-        const ext = path.extname(matchedFile).toLowerCase();
-        const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
-        res.setHeader('Content-Type', mime);
-        res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
-        res.setHeader('X-OneProxy-Source', 'local-disk-cache');
-        return res.sendFile(matchedFile);
-      }
+      if (matchedFile && fs.existsSync(matchedFile)) return matchedFile;
+    }
+    return null;
+  };
+
+  // OneProxy High-Resolution Image Resolver (Full resolution for printing & enlarge)
+  app.get("/api/oneproxy/image/:cardId", async (req, res) => {
+    const rawCardId = decodeURIComponent((req.params.cardId || '').trim());
+    if (!rawCardId) return res.status(400).send("Card ID is required");
+
+    const matchedFile = findOneProxySourceFile(rawCardId);
+    if (matchedFile && fs.existsSync(matchedFile)) {
+      const ext = path.extname(matchedFile).toLowerCase();
+      const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+      res.setHeader('X-OneProxy-Source', 'local-disk-cache');
+      return res.sendFile(matchedFile);
+    }
+    return res.status(404).send("Card image not found in local OneProxy assets library.");
+  });
+
+  // OneProxy Fast Thumbnail Resolver (Cached 240px JPEG for silky-smooth UI grid)
+  app.get("/api/oneproxy/thumb/:cardId", async (req, res) => {
+    const rawCardId = decodeURIComponent((req.params.cardId || '').trim());
+    if (!rawCardId) return res.status(400).send("Card ID is required");
+
+    const cleanBase = path.parse(rawCardId.replace(/[\/\\]/g, '_')).name;
+    const thumbFile = path.join(oneProxyThumbsDir, `${cleanBase}.jpg`);
+
+    // 1. Instant disk cache hit (1ms)
+    if (fs.existsSync(thumbFile)) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+      return res.sendFile(thumbFile);
     }
 
-    // Per OneProxy requirements, do not perform individual fetches on the fly.
-    return res.status(404).send("Card image not found in local OneProxy assets library.");
+    // 2. Find source file
+    const sourcePath = findOneProxySourceFile(rawCardId);
+    if (!sourcePath || !fs.existsSync(sourcePath)) {
+      return res.status(404).send("Source image not found");
+    }
+
+    // 3. Fast resize using Jimp and cache to disk
+    try {
+      const img = await Jimp.read(sourcePath);
+      img.resize({ w: 240 });
+      const buf = await img.getBuffer('image/jpeg', { quality: 80 });
+      try { fs.writeFileSync(thumbFile, buf); } catch (_) {}
+
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+      return res.send(buf);
+    } catch (err: any) {
+      console.warn(`[OneProxy] Fast thumb fallback for ${cleanBase}:`, err.message);
+      return res.sendFile(sourcePath);
+    }
   });
 
   // OneProxy Configuration Endpoint (Save custom cache path / existing library)

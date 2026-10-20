@@ -3027,6 +3027,7 @@ export default function App() {
     type: 'all',
     color: 'all',
     rarity: 'all',
+    format: 'all',
     order: 'released',
     set: ''
   });
@@ -3034,8 +3035,18 @@ export default function App() {
   // MPC Filters
   const [mpcFilters, setMpcFilters] = useState({
     dpi: 'all',
+    face: 'all',
     tag: 'all',
     set: ''
+  });
+
+  // OneProxy Filters
+  const [oneProxyFilters, setOneProxyFilters] = useState({
+    set: 'all',
+    color: 'all',
+    type: 'all',
+    rarity: 'all',
+    order: 'number'
   });
 
   const [isArtPickerOpen, setIsArtPickerOpen] = useState(false);
@@ -3068,6 +3079,7 @@ export default function App() {
         const params = new URLSearchParams({
           q: queryTerm,
           isBack: isBacksOnlyModal ? 'true' : 'false',
+          face: mp.face || 'all',
           dpi: mp.dpi || 'all',
           set: mp.set || ''
         });
@@ -3090,6 +3102,7 @@ export default function App() {
           type: sf.type,
           color: sf.color,
           rarity: sf.rarity,
+          format: sf.format || 'all',
           order: sf.order,
           set: sf.set || ''
         });
@@ -3104,7 +3117,23 @@ export default function App() {
       } else {
         const targetPlugin = activeSource in PLUGIN_CARD_PROVIDERS ? activeSource : currentPluginId;
         const prov = getPluginCardProvider(targetPlugin);
-        const res = await fetch(`/api/plugin/cards/search?plugin=${encodeURIComponent(targetPlugin)}&q=${encodeURIComponent(queryTerm)}`);
+
+        let searchUrl = `/api/plugin/cards/search?plugin=${encodeURIComponent(targetPlugin)}&q=${encodeURIComponent(queryTerm)}`;
+        if (targetPlugin === 'oneproxy') {
+          const op = customFilters || oneProxyFilters;
+          const params = new URLSearchParams({
+            plugin: 'oneproxy',
+            q: queryTerm || '',
+            set: op.set || 'all',
+            color: op.color || 'all',
+            type: op.type || 'all',
+            rarity: op.rarity || 'all',
+            order: op.order || 'number'
+          });
+          searchUrl = `/api/plugin/cards/search?${params.toString()}`;
+        }
+
+        const res = await fetch(searchUrl);
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
           setArtResults(data.data);
@@ -3113,7 +3142,7 @@ export default function App() {
               setArtDownloadMsg(
                 oneProxyStatus?.cachedImagesCount === 0
                   ? "No local OneProxy cards found. Card selection is local only — please download or link your OneProxy assets in Game Plugins."
-                  : (queryTerm ? `No local cards matching "${queryTerm}" found in your OneProxy directory.` : "No cards found in your OneProxy directory.")
+                  : (queryTerm ? `No local cards matching "${queryTerm}" found in your OneProxy directory.` : "No cards found matching your filters in your OneProxy directory.")
               );
             } else {
               setArtDownloadMsg(`No matching cards found for "${queryTerm}" on ${prov.providerName}.`);
@@ -9594,9 +9623,9 @@ export default function App() {
                   </button>
                 </form>
 
-                {/* Filters Toolbar with DPI Sorting */}
+                {/* Filters Toolbar */}
                 {artSourceTab === 'scryfall' && !isBacksOnlyModal ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 pt-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 pt-1">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Frame Style</label>
                       <select
@@ -9681,133 +9710,297 @@ export default function App() {
                       </select>
                     </div>
 
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By (DPI / Date)</label>
-                        <select
-                          value={scryfallFilters.order}
-                          onChange={(e) => {
-                            const updated = { ...scryfallFilters, order: e.target.value };
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Format</label>
+                      <select
+                        value={scryfallFilters.format}
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, format: e.target.value };
+                          setScryfallFilters(updated);
+                          handleSearchArt(artQuery, updated, 'scryfall');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Formats</option>
+                        <option value="commander" className="bg-[#1a1a20]">Commander / EDH</option>
+                        <option value="modern" className="bg-[#1a1a20]">Modern</option>
+                        <option value="standard" className="bg-[#1a1a20]">Standard</option>
+                        <option value="pauper" className="bg-[#1a1a20]">Pauper</option>
+                        <option value="legacy" className="bg-[#1a1a20]">Legacy</option>
+                        <option value="vintage" className="bg-[#1a1a20]">Vintage</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
+                      <select
+                        value={scryfallFilters.order}
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, order: e.target.value };
+                          setScryfallFilters(updated);
+                          handleSearchArt(artQuery, updated, 'scryfall');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="released" className="bg-[#1a1a20]">Release Date (Newest)</option>
+                        <option value="name" className="bg-[#1a1a20]">Card Name (A-Z)</option>
+                        <option value="set" className="bg-[#1a1a20]">Set Code</option>
+                        <option value="edhrec" className="bg-[#1a1a20]">EDHREC Popularity</option>
+                        <option value="usd" className="bg-[#1a1a20]">USD Value</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1 relative">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Code</label>
+                        <MtgSetCodeTooltip
+                          mtgSets={mtgSets}
+                          onSelectSet={(code) => {
+                            const updated = { ...scryfallFilters, set: code };
                             setScryfallFilters(updated);
                             handleSearchArt(artQuery, updated, 'scryfall');
                           }}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
-                        >
-                          <option value="released" className="bg-[#1a1a20]">Release Date (Newest)</option>
-                          <option value="dpi_desc" className="bg-[#1a1a20]">Highest DPI / Resolution</option>
-                          <option value="dpi_asc" className="bg-[#1a1a20]">Lowest DPI</option>
-                          <option value="name" className="bg-[#1a1a20]">Card Name (A-Z)</option>
-                          <option value="set" className="bg-[#1a1a20]">Set Code</option>
-                          <option value="edhrec" className="bg-[#1a1a20]">EDHREC Popularity</option>
-                          <option value="usd" className="bg-[#1a1a20]">USD Value</option>
-                        </select>
+                          align="right"
+                        />
                       </div>
+                      <input
+                        type="text"
+                        placeholder="e.g. MH3, UNH"
+                        title="Enter MTG set code (e.g. MH3, UNH). Hover 'Set Codes' above to view all MTG sets."
+                        value={scryfallFilters.set}
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, set: e.target.value.toUpperCase() };
+                          setScryfallFilters(updated);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSearchArt(artQuery, scryfallFilters, 'scryfall');
+                          }
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-mono placeholder:text-white/20 uppercase"
+                      />
+                    </div>
+                  </div>
+                ) : artSourceTab === 'oneproxy' ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set</label>
+                      <select
+                        value={oneProxyFilters.set}
+                        onChange={(e) => {
+                          const updated = { ...oneProxyFilters, set: e.target.value };
+                          setOneProxyFilters(updated);
+                          handleSearchArt(artQuery, updated, 'oneproxy');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Sets</option>
+                        <option value="op01" className="bg-[#1a1a20]">OP01 - Romance Dawn</option>
+                        <option value="op02" className="bg-[#1a1a20]">OP02 - Paramount War</option>
+                        <option value="op03" className="bg-[#1a1a20]">OP03 - Pillars of Strength</option>
+                        <option value="op04" className="bg-[#1a1a20]">OP04 - Kingdoms of Intrigue</option>
+                        <option value="op05" className="bg-[#1a1a20]">OP05 - Awakening of the New Era</option>
+                        <option value="op06" className="bg-[#1a1a20]">OP06 - Wings of the Captain</option>
+                        <option value="op07" className="bg-[#1a1a20]">OP07 - 500 Years in the Future</option>
+                        <option value="op08" className="bg-[#1a1a20]">OP08 - Two Legends</option>
+                        <option value="op09" className="bg-[#1a1a20]">OP09 - Emperors in the New World</option>
+                        <option value="op10" className="bg-[#1a1a20]">OP10 - Royal Bloodline</option>
+                        <option value="op11" className="bg-[#1a1a20]">OP11</option>
+                        <option value="op12" className="bg-[#1a1a20]">OP12</option>
+                        <option value="op13" className="bg-[#1a1a20]">OP13</option>
+                        <option value="op14" className="bg-[#1a1a20]">OP14</option>
+                        <option value="op15" className="bg-[#1a1a20]">OP15</option>
+                        <option value="eb01" className="bg-[#1a1a20]">EB01 - Memorial Collection</option>
+                        <option value="eb02" className="bg-[#1a1a20]">EB02</option>
+                        <option value="prb01" className="bg-[#1a1a20]">PRB01 - Premium Booster</option>
+                        <option value="st01" className="bg-[#1a1a20]">ST01 - Straw Hat Crew</option>
+                        <option value="st02" className="bg-[#1a1a20]">ST02 - Worst Generation</option>
+                        <option value="st03" className="bg-[#1a1a20]">ST03 - The Seven Warlords</option>
+                        <option value="st04" className="bg-[#1a1a20]">ST04 - Animal Kingdom Pirates</option>
+                        <option value="st10" className="bg-[#1a1a20]">ST10 - Three Captains</option>
+                        <option value="st13" className="bg-[#1a1a20]">ST13 - 3 Brothers</option>
+                        <option value="don" className="bg-[#1a1a20]">DON!! Cards</option>
+                        <option value="back" className="bg-[#1a1a20]">Card Backings</option>
+                      </select>
+                    </div>
 
-                      <div className="space-y-1 relative">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Code</label>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Color</label>
+                      <select
+                        value={oneProxyFilters.color}
+                        onChange={(e) => {
+                          const updated = { ...oneProxyFilters, color: e.target.value };
+                          setOneProxyFilters(updated);
+                          handleSearchArt(artQuery, updated, 'oneproxy');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Colors</option>
+                        <option value="red" className="bg-[#1a1a20]">Red</option>
+                        <option value="green" className="bg-[#1a1a20]">Green</option>
+                        <option value="blue" className="bg-[#1a1a20]">Blue</option>
+                        <option value="purple" className="bg-[#1a1a20]">Purple</option>
+                        <option value="black" className="bg-[#1a1a20]">Black</option>
+                        <option value="yellow" className="bg-[#1a1a20]">Yellow</option>
+                        <option value="multicolor" className="bg-[#1a1a20]">Multicolor</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Card Type</label>
+                      <select
+                        value={oneProxyFilters.type}
+                        onChange={(e) => {
+                          const updated = { ...oneProxyFilters, type: e.target.value };
+                          setOneProxyFilters(updated);
+                          handleSearchArt(artQuery, updated, 'oneproxy');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Types</option>
+                        <option value="leader" className="bg-[#1a1a20]">Leader</option>
+                        <option value="character" className="bg-[#1a1a20]">Character</option>
+                        <option value="event" className="bg-[#1a1a20]">Event</option>
+                        <option value="stage" className="bg-[#1a1a20]">Stage</option>
+                        <option value="don" className="bg-[#1a1a20]">DON!!</option>
+                        <option value="back" className="bg-[#1a1a20]">Card Backing</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Rarity</label>
+                      <select
+                        value={oneProxyFilters.rarity}
+                        onChange={(e) => {
+                          const updated = { ...oneProxyFilters, rarity: e.target.value };
+                          setOneProxyFilters(updated);
+                          handleSearchArt(artQuery, updated, 'oneproxy');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Rarities</option>
+                        <option value="l" className="bg-[#1a1a20]">Leader (L)</option>
+                        <option value="sec" className="bg-[#1a1a20]">Secret Rare (SEC)</option>
+                        <option value="sr" className="bg-[#1a1a20]">Super Rare (SR)</option>
+                        <option value="r" className="bg-[#1a1a20]">Rare (R)</option>
+                        <option value="uc" className="bg-[#1a1a20]">Uncommon (UC)</option>
+                        <option value="c" className="bg-[#1a1a20]">Common (C)</option>
+                        <option value="sp" className="bg-[#1a1a20]">Special (SP/Manga)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
+                      <select
+                        value={oneProxyFilters.order}
+                        onChange={(e) => {
+                          const updated = { ...oneProxyFilters, order: e.target.value };
+                          setOneProxyFilters(updated);
+                          handleSearchArt(artQuery, updated, 'oneproxy');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="number" className="bg-[#1a1a20]">Collector Number</option>
+                        <option value="name" className="bg-[#1a1a20]">Card Name (A-Z)</option>
+                        <option value="cost_desc" className="bg-[#1a1a20]">Cost (High to Low)</option>
+                        <option value="cost_asc" className="bg-[#1a1a20]">Cost (Low to High)</option>
+                        <option value="power_desc" className="bg-[#1a1a20]">Power (High to Low)</option>
+                        <option value="power_asc" className="bg-[#1a1a20]">Power (Low to High)</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : artSourceTab === 'mpcfill' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Category / Face</label>
+                      <select
+                        value={mpcFilters.face}
+                        onChange={(e) => {
+                          const updated = { ...mpcFilters, face: e.target.value };
+                          setMpcFilters(updated);
+                          handleSearchArt(artQuery, updated, 'mpcfill');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All (Cards & Backs)</option>
+                        <option value="fronts" className="bg-[#1a1a20]">Front Art Only</option>
+                        <option value="backs" className="bg-[#1a1a20]">Card Backings Only</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">DPI Filter</label>
+                      <select
+                        value={mpcFilters.dpi}
+                        onChange={(e) => {
+                          const updated = { ...mpcFilters, dpi: e.target.value };
+                          setMpcFilters(updated);
+                          handleSearchArt(artQuery, updated, 'mpcfill');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">Any DPI</option>
+                        <option value="1210" className="bg-[#1a1a20]">1210 DPI (Ultra Proxxied / MPC)</option>
+                        <option value="1200" className="bg-[#1a1a20]">1200+ DPI (Ultra Res)</option>
+                        <option value="1000" className="bg-[#1a1a20]">1000+ DPI</option>
+                        <option value="800" className="bg-[#1a1a20]">800+ DPI (High Res)</option>
+                        <option value="600" className="bg-[#1a1a20]">600+ DPI</option>
+                        <option value="300" className="bg-[#1a1a20]">300+ DPI</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
+                      <select
+                        value={scryfallFilters.order}
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, order: e.target.value };
+                          setScryfallFilters(updated);
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="dpi_desc" className="bg-[#1a1a20]">DPI: High to Low</option>
+                        <option value="dpi_asc" className="bg-[#1a1a20]">DPI: Low to High</option>
+                        <option value="name" className="bg-[#1a1a20]">Name (A-Z)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1 relative">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Filter</label>
+                        {pluginState.selectedPlugin?.id === 'mtg' && (
                           <MtgSetCodeTooltip
                             mtgSets={mtgSets}
                             onSelectSet={(code) => {
-                              const updated = { ...scryfallFilters, set: code };
-                              setScryfallFilters(updated);
-                              handleSearchArt(artQuery, updated, 'scryfall');
+                              const updated = { ...mpcFilters, set: code };
+                              setMpcFilters(updated);
+                              handleSearchArt(artQuery, updated, 'mpcfill');
                             }}
                             align="right"
                           />
-                        </div>
-                        <input
-                          type="text"
-                          placeholder="e.g. MH3, UNH"
-                          title="Enter MTG set code (e.g. MH3, UNH). Hover 'Set Codes' above to view all MTG sets."
-                          value={scryfallFilters.set}
-                          onChange={(e) => {
-                            const updated = { ...scryfallFilters, set: e.target.value.toUpperCase() };
-                            setScryfallFilters(updated);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleSearchArt(artQuery, scryfallFilters, 'scryfall');
-                            }
-                          }}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-mono placeholder:text-white/20 uppercase"
-                        />
+                        )}
                       </div>
+                      <input
+                        type="text"
+                        placeholder="e.g. MH3, LTR"
+                        title="Enter MTG set code (e.g. MH3, LTR). Hover 'Set Codes' above to view all MTG sets."
+                        value={mpcFilters.set}
+                        onChange={(e) => {
+                          const updated = { ...mpcFilters, set: e.target.value.toUpperCase() };
+                          setMpcFilters(updated);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSearchArt(artQuery, mpcFilters, 'mpcfill');
+                          }
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-mono placeholder:text-white/20 uppercase"
+                      />
                     </div>
-                  ) : artSourceTab === 'mpcfill' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">DPI Filter</label>
-                        <select
-                          value={mpcFilters.dpi}
-                          onChange={(e) => {
-                            const updated = { ...mpcFilters, dpi: e.target.value };
-                            setMpcFilters(updated);
-                            handleSearchArt(artQuery, updated, 'mpcfill');
-                          }}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
-                        >
-                          <option value="all" className="bg-[#1a1a20]">Any DPI</option>
-                          <option value="1210" className="bg-[#1a1a20]">1210 DPI (Ultra Proxxied / MPC)</option>
-                          <option value="1200" className="bg-[#1a1a20]">1200+ DPI (Ultra Res)</option>
-                          <option value="1000" className="bg-[#1a1a20]">1000+ DPI</option>
-                          <option value="800" className="bg-[#1a1a20]">800+ DPI (High Res)</option>
-                          <option value="600" className="bg-[#1a1a20]">600+ DPI</option>
-                          <option value="300" className="bg-[#1a1a20]">300+ DPI</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
-                        <select
-                          value={scryfallFilters.order}
-                          onChange={(e) => {
-                            const updated = { ...scryfallFilters, order: e.target.value };
-                            setScryfallFilters(updated);
-                          }}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
-                        >
-                          <option value="dpi_desc" className="bg-[#1a1a20]">DPI: High to Low</option>
-                          <option value="dpi_asc" className="bg-[#1a1a20]">DPI: Low to High</option>
-                          <option value="name" className="bg-[#1a1a20]">Name (A-Z)</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1 relative">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set Filter</label>
-                          {pluginState.selectedPlugin?.id === 'mtg' && (
-                            <MtgSetCodeTooltip
-                              mtgSets={mtgSets}
-                              onSelectSet={(code) => {
-                                const updated = { ...mpcFilters, set: code };
-                                setMpcFilters(updated);
-                                handleSearchArt(artQuery, updated, 'mpcfill');
-                              }}
-                              align="right"
-                            />
-                          )}
-                        </div>
-                        <input
-                          type="text"
-                          placeholder="e.g. MH3, LTR"
-                          title="Enter MTG set code (e.g. MH3, LTR). Hover 'Set Codes' above to view all MTG sets."
-                          value={mpcFilters.set}
-                          onChange={(e) => {
-                            const updated = { ...mpcFilters, set: e.target.value.toUpperCase() };
-                            setMpcFilters(updated);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleSearchArt(artQuery, mpcFilters, 'mpcfill');
-                            }
-                          }}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-mono placeholder:text-white/20 uppercase"
-                        />
-                      </div>
-                    </div>
-                  ) : null}
+                  </div>
+                ) : null}
 
                 {artDownloadMsg && (
                   <div className="text-xs px-3.5 py-2 rounded-xl bg-primary-600/15 border border-primary-500/30 text-primary-300 font-medium">
@@ -9816,14 +10009,36 @@ export default function App() {
                 )}
 
                 <div className="flex justify-between items-center pt-2">
-                  {pluginState.selectedPlugin?.id === 'mtg' ? (
+                  {artSourceTab === 'oneproxy' ? (
                     <button
                       onClick={() => {
-                        setScryfallFilters({ frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' });
-                        setMpcFilters({ dpi: 'all', tag: 'all', set: '' });
-                        handleSearchArt(artQuery, { frame: 'all', type: 'all', color: 'all', rarity: 'all', order: 'released', set: '' }, artSourceTab);
+                        const reset = { set: 'all', color: 'all', type: 'all', rarity: 'all', order: 'number' };
+                        setOneProxyFilters(reset);
+                        handleSearchArt(artQuery, reset, 'oneproxy');
                       }}
-                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors"
+                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Clear Filters
+                    </button>
+                  ) : artSourceTab === 'scryfall' ? (
+                    <button
+                      onClick={() => {
+                        const reset = { frame: 'all', type: 'all', color: 'all', rarity: 'all', format: 'all', order: 'released', set: '' };
+                        setScryfallFilters(reset);
+                        handleSearchArt(artQuery, reset, 'scryfall');
+                      }}
+                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Clear Filters
+                    </button>
+                  ) : artSourceTab === 'mpcfill' ? (
+                    <button
+                      onClick={() => {
+                        const reset = { dpi: 'all', face: 'all', tag: 'all', set: '' };
+                        setMpcFilters(reset);
+                        handleSearchArt(artQuery, reset, 'mpcfill');
+                      }}
+                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
                     >
                       Clear Filters
                     </button>
@@ -9856,28 +10071,33 @@ export default function App() {
                     {artResults
                       .slice()
                       .sort((a, b) => {
-                        const dpiA = a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 300);
-                        const dpiB = b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 300);
-                        if (scryfallFilters.order === 'dpi_desc') return dpiB - dpiA;
-                        if (scryfallFilters.order === 'dpi_asc') return dpiA - dpiB;
+                        if (artSourceTab === 'scryfall' && (scryfallFilters.order === 'dpi_desc' || scryfallFilters.order === 'dpi_asc')) {
+                          const dpiA = a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 300);
+                          const dpiB = b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 300);
+                          if (scryfallFilters.order === 'dpi_desc') return dpiB - dpiA;
+                          if (scryfallFilters.order === 'dpi_asc') return dpiA - dpiB;
+                        }
                         return 0;
                       })
                       .map((card) => {
-                        const img = card.imageUrl || card.image_uris?.normal || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.normal;
+                        const fullImg = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
+                        const thumbImg = card.thumbnailUrl || card.image_uris?.small || card.image_uris?.normal || fullImg;
                         const frameEffects = card.frame_effects?.join(', ') || card.tags?.join(', ');
 
                         return (
                           <div key={card.id} className="bg-white/[0.03] border border-white/10 hover:border-primary-500/40 rounded-2xl p-2.5 flex flex-col justify-between transition-all group">
                             <div>
                               <div
-                                onClick={() => img && setEnlargedImage(img)}
+                                onClick={() => fullImg && setEnlargedImage(fullImg)}
                                 className="relative aspect-[5/7] rounded-xl overflow-hidden bg-black/40 mb-2 cursor-pointer group/img"
                                 title="Click to enlarge"
                               >
-                                {img ? (
+                                {thumbImg ? (
                                   <img
-                                    src={img}
+                                    src={thumbImg}
                                     alt={card.name}
+                                    loading="lazy"
+                                    decoding="async"
                                     className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
                                   />
                                 ) : (
