@@ -2012,12 +2012,93 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   // Limitless TCG Card Search Proxy for Pokémon Direct Card Ingestion
   app.get("/api/limitless/search", async (req, res) => {
     const q = (req.query.q as string || '').trim();
-    if (!q) {
-      return res.status(400).json({ error: "Query parameter 'q' is required" });
-    }
+    const filterType = (req.query.type as string || 'all').toLowerCase().trim();
+    const filterEnergy = (req.query.energy as string || 'all').toLowerCase().trim();
+    const filterStage = (req.query.stage as string || 'all').toLowerCase().trim();
+    const filterRarity = (req.query.rarity as string || 'all').toLowerCase().trim();
+    const filterFormat = (req.query.format as string || 'all').toLowerCase().trim();
+    const filterSet = (req.query.set as string || '').toUpperCase().trim();
+    const sortBy = (req.query.order as string || 'set').toLowerCase().trim();
 
     try {
-      const url = `https://limitlesstcg.com/cards?q=${encodeURIComponent(q)}&display=list`;
+      const queryTokens: string[] = [];
+      if (q) {
+        queryTokens.push(q);
+      }
+
+      // 1. Card Type Filter
+      if (filterType && filterType !== 'all') {
+        if (['supporter', 'item', 'tool', 'stadium', 'special'].includes(filterType)) {
+          queryTokens.push(`t:${filterType}`);
+        } else if (filterType === 'trainer') {
+          queryTokens.push('t:trainer');
+        } else if (filterType === 'energy') {
+          queryTokens.push('t:energy');
+        } else if (filterType === 'pokemon') {
+          queryTokens.push('t:pkmn');
+        }
+      }
+
+      // 2. Energy / Element Filter
+      if (filterEnergy && filterEnergy !== 'all') {
+        queryTokens.push(`t:${filterEnergy}`);
+      }
+
+      // 3. Stage / Mechanic Filter
+      if (filterStage && filterStage !== 'all') {
+        if (['basic', 'stage1', 'stage2'].includes(filterStage)) {
+          queryTokens.push(`s:${filterStage}`);
+        } else if (filterStage === 'ex') {
+          queryTokens.push('is:ex');
+        } else if (filterStage === 'v') {
+          queryTokens.push('is:v,vstar,vmax');
+        } else if (filterStage === 'vstar') {
+          queryTokens.push('is:vstar');
+        } else if (filterStage === 'vmax') {
+          queryTokens.push('is:vmax');
+        } else if (filterStage === 'radiant') {
+          queryTokens.push('is:radiant');
+        } else if (filterStage === 'ace') {
+          queryTokens.push('is:ace');
+        }
+      }
+
+      // 4. Rarity Filter
+      if (filterRarity && filterRarity !== 'all') {
+        if (['c', 'u', 'r', 'rr', 'ur', 'sr'].includes(filterRarity)) {
+          queryTokens.push(`r:${filterRarity}`);
+        } else if (filterRarity === 'ir') {
+          queryTokens.push('is:fa');
+        } else if (filterRarity === 'sir') {
+          queryTokens.push('is:aa');
+        }
+      }
+
+      // 5. Format / Era Filter
+      if (filterFormat && filterFormat !== 'all') {
+        if (['standard', 'expanded'].includes(filterFormat)) {
+          queryTokens.push(`f:${filterFormat}`);
+        } else if (['sv', 'ss', 'sm', 'xy', 'bw'].includes(filterFormat)) {
+          queryTokens.push(`series:${filterFormat}`);
+        }
+      }
+
+      // 6. Set Code Filter
+      if (filterSet) {
+        queryTokens.push(`!set:${filterSet}`);
+      }
+
+      let finalQuery = queryTokens.join('+');
+      if (!finalQuery) {
+        finalQuery = 'series:sv';
+      }
+
+      let sortParam = '';
+      if (sortBy && sortBy !== 'default') {
+        sortParam = `&sort=${encodeURIComponent(sortBy)}`;
+      }
+
+      const url = `https://limitlesstcg.com/cards?q=${encodeURIComponent(finalQuery).replace(/%2B/g, '+')}&display=list${sortParam}`;
       const response = await fetch(url, {
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -2035,7 +2116,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       const rowRegex = /<tr[^>]*>[\s\S]*?<span class="card-set"(?: data-tooltip="([^"]*)")?[^>]*>[\s\S]*?alt="([^"]*)"[\s\S]*?<td><a href="\/cards\/[^\/"]+\/([^"]+)">([^<]*)<\/a><\/td>[\s\S]*?<td><a href="\/cards\/[^\/"]+\/[^"]+">([^<]*)<\/a><\/td>[\s\S]*?<\/tr>/g;
 
       let match;
-      while ((match = rowRegex.exec(html)) !== null && results.length < 40) {
+      while ((match = rowRegex.exec(html)) !== null && results.length < 60) {
         const setName = match[1] || match[2];
         const setCode = match[2];
         const cardNum = match[3];
@@ -2057,7 +2138,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           collector_number: cardNum,
           imageUrl: lgUrl,
           thumbnailUrl: smUrl,
-          dpi: 183,
+          dpi: 300,
           image_uris: {
             small: smUrl,
             normal: lgUrl,
@@ -2071,19 +2152,19 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       if (results.length === 0) {
         const gridRegex = /<a href="\/cards\/([^\/"]+)\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^">]+)"[^>]*>/g;
         let gm;
-        while ((gm = gridRegex.exec(html)) !== null && results.length < 40) {
+        while ((gm = gridRegex.exec(html)) !== null && results.length < 60) {
           const setCode = gm[1];
           const cardNum = gm[2];
           const smImg = gm[3];
           const lgImg = smImg.replace('_SM.', '_LG.');
           results.push({
             id: `${setCode}_${cardNum}`,
-            name: q,
+            name: q || 'Pokémon Card',
             set: setCode,
             collector_number: cardNum,
             imageUrl: lgImg,
             thumbnailUrl: smImg,
-            dpi: 183,
+            dpi: 300,
             image_uris: {
               small: smImg,
               normal: lgImg,

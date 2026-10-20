@@ -3049,6 +3049,17 @@ export default function App() {
     order: 'number'
   });
 
+  // Pokemon Filters
+  const [pokemonFilters, setPokemonFilters] = useState({
+    type: 'all',
+    energy: 'all',
+    stage: 'all',
+    rarity: 'all',
+    format: 'all',
+    order: 'set',
+    set: 'all'
+  });
+
   const [isArtPickerOpen, setIsArtPickerOpen] = useState(false);
   const [artQuery, setArtQuery] = useState('');
   const [artResults, setArtResults] = useState<any[]>([]);
@@ -3063,12 +3074,23 @@ export default function App() {
     setArtDownloadMsg(null);
     try {
       if (activeSource === 'limitless' || (currentPluginId === 'pokemon' && activeSource !== 'mpcfill')) {
-        const res = await fetch(`/api/limitless/search?q=${encodeURIComponent(queryTerm)}`);
+        const pf = customFilters || pokemonFilters;
+        const params = new URLSearchParams({
+          q: queryTerm,
+          type: pf.type || 'all',
+          energy: pf.energy || 'all',
+          stage: pf.stage || 'all',
+          rarity: pf.rarity || 'all',
+          format: pf.format || 'all',
+          order: pf.order || 'set',
+          set: pf.set === 'all' ? '' : (pf.set || '')
+        });
+        const res = await fetch(`/api/limitless/search?${params.toString()}`);
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
           setArtResults(data.data);
           if (data.data.length === 0) {
-            setArtDownloadMsg(`No matching Pokémon cards found for "${queryTerm}" on Limitless.`);
+            setArtDownloadMsg(`No matching Pokémon cards found for "${queryTerm || 'filters'}" on Limitless.`);
           }
         } else {
           setArtResults([]);
@@ -10000,6 +10022,188 @@ export default function App() {
                       />
                     </div>
                   </div>
+                ) : artSourceTab === 'limitless' ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 pt-1">
+                    {/* 1. Card Type */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Card Type</label>
+                      <select
+                        value={pokemonFilters.type}
+                        onChange={(e) => {
+                          const updated = { ...pokemonFilters, type: e.target.value };
+                          setPokemonFilters(updated);
+                          handleSearchArt(artQuery, updated, 'limitless');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Types</option>
+                        <option value="pokemon" className="bg-[#1a1a20]">Pokémon</option>
+                        <option value="trainer" className="bg-[#1a1a20]">Trainer (All)</option>
+                        <option value="supporter" className="bg-[#1a1a20]">Supporter</option>
+                        <option value="item" className="bg-[#1a1a20]">Item</option>
+                        <option value="tool" className="bg-[#1a1a20]">Pokémon Tool</option>
+                        <option value="stadium" className="bg-[#1a1a20]">Stadium</option>
+                        <option value="energy" className="bg-[#1a1a20]">Energy (Basic)</option>
+                        <option value="special" className="bg-[#1a1a20]">Special Energy</option>
+                      </select>
+                    </div>
+
+                    {/* 2. Energy / Element */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Energy / Element</label>
+                      <select
+                        value={pokemonFilters.energy}
+                        onChange={(e) => {
+                          const updated = { ...pokemonFilters, energy: e.target.value };
+                          setPokemonFilters(updated);
+                          handleSearchArt(artQuery, updated, 'limitless');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Elements</option>
+                        <option value="grass" className="bg-[#1a1a20]">Grass 🌿</option>
+                        <option value="fire" className="bg-[#1a1a20]">Fire 🔥</option>
+                        <option value="water" className="bg-[#1a1a20]">Water 💧</option>
+                        <option value="lightning" className="bg-[#1a1a20]">Lightning ⚡</option>
+                        <option value="psychic" className="bg-[#1a1a20]">Psychic 👁️</option>
+                        <option value="fighting" className="bg-[#1a1a20]">Fighting 🥊</option>
+                        <option value="darkness" className="bg-[#1a1a20]">Darkness 🌑</option>
+                        <option value="metal" className="bg-[#1a1a20]">Metal ⚙️</option>
+                        <option value="colorless" className="bg-[#1a1a20]">Colorless ⭐</option>
+                        <option value="dragon" className="bg-[#1a1a20]">Dragon 🐉</option>
+                      </select>
+                    </div>
+
+                    {/* 3. Stage / Mechanic */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Stage / Mechanic</label>
+                      <select
+                        value={pokemonFilters.stage}
+                        onChange={(e) => {
+                          const updated = { ...pokemonFilters, stage: e.target.value };
+                          setPokemonFilters(updated);
+                          handleSearchArt(artQuery, updated, 'limitless');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Stages</option>
+                        <option value="basic" className="bg-[#1a1a20]">Basic Pokémon</option>
+                        <option value="stage1" className="bg-[#1a1a20]">Stage 1</option>
+                        <option value="stage2" className="bg-[#1a1a20]">Stage 2</option>
+                        <option value="ex" className="bg-[#1a1a20]">Pokémon ex</option>
+                        <option value="v" className="bg-[#1a1a20]">Pokémon V / VMAX / VSTAR</option>
+                        <option value="radiant" className="bg-[#1a1a20]">Radiant Pokémon</option>
+                        <option value="ace" className="bg-[#1a1a20]">ACE SPEC</option>
+                      </select>
+                    </div>
+
+                    {/* 4. Rarity */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Rarity</label>
+                      <select
+                        value={pokemonFilters.rarity}
+                        onChange={(e) => {
+                          const updated = { ...pokemonFilters, rarity: e.target.value };
+                          setPokemonFilters(updated);
+                          handleSearchArt(artQuery, updated, 'limitless');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Rarities</option>
+                        <option value="c" className="bg-[#1a1a20]">Common (C)</option>
+                        <option value="u" className="bg-[#1a1a20]">Uncommon (U)</option>
+                        <option value="r" className="bg-[#1a1a20]">Rare (R)</option>
+                        <option value="rr" className="bg-[#1a1a20]">Double Rare (RR)</option>
+                        <option value="ur" className="bg-[#1a1a20]">Ultra Rare (UR)</option>
+                        <option value="ir" className="bg-[#1a1a20]">Illustration Rare (IR)</option>
+                        <option value="sir" className="bg-[#1a1a20]">Special Illustration Rare (SIR)</option>
+                        <option value="sr" className="bg-[#1a1a20]">Secret / Hyper Rare (Gold)</option>
+                      </select>
+                    </div>
+
+                    {/* 5. Format / Era */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Format / Era</label>
+                      <select
+                        value={pokemonFilters.format}
+                        onChange={(e) => {
+                          const updated = { ...pokemonFilters, format: e.target.value };
+                          setPokemonFilters(updated);
+                          handleSearchArt(artQuery, updated, 'limitless');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Formats & Eras</option>
+                        <option value="standard" className="bg-[#1a1a20]">Standard Format</option>
+                        <option value="expanded" className="bg-[#1a1a20]">Expanded Format</option>
+                        <option value="sv" className="bg-[#1a1a20]">Scarlet & Violet Era</option>
+                        <option value="ss" className="bg-[#1a1a20]">Sword & Shield Era</option>
+                        <option value="sm" className="bg-[#1a1a20]">Sun & Moon Era</option>
+                        <option value="xy" className="bg-[#1a1a20]">XY Era</option>
+                        <option value="bw" className="bg-[#1a1a20]">Black & White Era</option>
+                      </select>
+                    </div>
+
+                    {/* 6. Sort By */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
+                      <select
+                        value={pokemonFilters.order}
+                        onChange={(e) => {
+                          const updated = { ...pokemonFilters, order: e.target.value };
+                          setPokemonFilters(updated);
+                          handleSearchArt(artQuery, updated, 'limitless');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="set" className="bg-[#1a1a20]">Set & Number</option>
+                        <option value="name" className="bg-[#1a1a20]">Card Name (A-Z)</option>
+                        <option value="type" className="bg-[#1a1a20]">Card Type</option>
+                        <option value="pokedex" className="bg-[#1a1a20]">Pokédex Number</option>
+                        <option value="rarity" className="bg-[#1a1a20]">Rarity</option>
+                      </select>
+                    </div>
+
+                    {/* 7. Set Filter */}
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Set</label>
+                      <select
+                        value={pokemonFilters.set}
+                        onChange={(e) => {
+                          const updated = { ...pokemonFilters, set: e.target.value };
+                          setPokemonFilters(updated);
+                          handleSearchArt(artQuery, updated, 'limitless');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Sets</option>
+                        <option value="PRE" className="bg-[#1a1a20]">PRE - Prismatic Evolutions</option>
+                        <option value="SSP" className="bg-[#1a1a20]">SSP - Surging Sparks</option>
+                        <option value="SCR" className="bg-[#1a1a20]">SCR - Stellar Crown</option>
+                        <option value="SFA" className="bg-[#1a1a20]">SFA - Shrouded Fable</option>
+                        <option value="TWM" className="bg-[#1a1a20]">TWM - Twilight Masquerade</option>
+                        <option value="TEF" className="bg-[#1a1a20]">TEF - Temporal Forces</option>
+                        <option value="PAF" className="bg-[#1a1a20]">PAF - Paldean Fates</option>
+                        <option value="PAR" className="bg-[#1a1a20]">PAR - Paradox Rift</option>
+                        <option value="MEW" className="bg-[#1a1a20]">MEW - Pokémon 151</option>
+                        <option value="OBF" className="bg-[#1a1a20]">OBF - Obsidian Flames</option>
+                        <option value="PAL" className="bg-[#1a1a20]">PAL - Paldea Evolved</option>
+                        <option value="SVI" className="bg-[#1a1a20]">SVI - Scarlet & Violet Base</option>
+                        <option value="CRZ" className="bg-[#1a1a20]">CRZ - Crown Zenith</option>
+                        <option value="SIT" className="bg-[#1a1a20]">SIT - Silver Tempest</option>
+                        <option value="LOR" className="bg-[#1a1a20]">LOR - Lost Origin</option>
+                        <option value="ASR" className="bg-[#1a1a20]">ASR - Astral Radiance</option>
+                        <option value="BRS" className="bg-[#1a1a20]">BRS - Brilliant Stars</option>
+                        <option value="FST" className="bg-[#1a1a20]">FST - Fusion Strike</option>
+                        <option value="EVS" className="bg-[#1a1a20]">EVS - Evolving Skies</option>
+                        <option value="CRE" className="bg-[#1a1a20]">CRE - Chilling Reign</option>
+                        <option value="BST" className="bg-[#1a1a20]">BST - Battle Styles</option>
+                        <option value="VIV" className="bg-[#1a1a20]">VIV - Vivid Voltage</option>
+                        <option value="DAA" className="bg-[#1a1a20]">DAA - Darkness Ablaze</option>
+                        <option value="SSH" className="bg-[#1a1a20]">SSH - Sword & Shield Base</option>
+                      </select>
+                    </div>
+                  </div>
                 ) : null}
 
                 {artDownloadMsg && (
@@ -10037,6 +10241,17 @@ export default function App() {
                         const reset = { dpi: 'all', face: 'all', tag: 'all', set: '' };
                         setMpcFilters(reset);
                         handleSearchArt(artQuery, reset, 'mpcfill');
+                      }}
+                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Clear Filters
+                    </button>
+                  ) : artSourceTab === 'limitless' ? (
+                    <button
+                      onClick={() => {
+                        const reset = { type: 'all', energy: 'all', stage: 'all', rarity: 'all', format: 'all', order: 'set', set: 'all' };
+                        setPokemonFilters(reset);
+                        handleSearchArt(artQuery, reset, 'limitless');
                       }}
                       className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
                     >
