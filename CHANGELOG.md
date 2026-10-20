@@ -60,9 +60,13 @@ All notable changes to **SCMUI (Silhouette Card Maker UI)** are documented in th
 - **Removed Hardcoded MPCFill / Scryfall Prompts**: Removed the generic empty-state text *"Search MPCFill for 1200 DPI custom arts or Scryfall for all official printings"* and cleaned modal header text so every card selector plugin is clean and plugin-neutral.
 - **OneProxy Local Provider Tab**: Dedicated tab labelled **`OneProxy (Local)`** with custom search placeholder and clear local-only status feedback.
 
-### ⚡ Startup-Only Update Checks
-- **Removed Periodic Update Timer**: Eliminated the background interval timer that repeatedly checked GitHub for software updates.
-- SCMUI now checks for updates cleanly once upon application startup.
+### 🚀 Hands-Free Background Updates (`Download > Install > Restart`)
+- **Zero-Disruption Architecture**: Replaced the full-screen "CRITICAL UPDATE REQUIRED" blocking overlay and warning popups with a seamless, non-intrusive background updater that keeps users working uninterrupted.
+- **Fully Automated Pipeline (`Download > Install > Restart`)**: When an update is detected, SCMUI autonomously downloads the release package in the background, triggers installation upon completion, and relaunches the application without requiring any user clicks, confirmations, or manual interaction.
+- **Docked Floating Status Pill**: Replaced intrusive modal dialogs with a sleek bottom-right floating indicator that displays real-time progress (`Downloading vX.X.X (XX%)...`, `Installing update & restarting...`), providing transparent status while remaining completely out of the way.
+- **Automated Installer Hand-off & Relaunch**: Server automatically executes the downloaded OS installer (`start ""`, `open`, or `xdg-open`) and gracefully terminates the running host process to allow clean installation and relaunching.
+- **Unrestricted Outbound Connectivity**: Removed overly strict outbound network blocks, ensuring community APIs, asset downloads, and GitHub releases stream seamlessly.
+- **Startup-Only Update Detection**: Eliminated aggressive background polling timers in favor of clean checks on application startup.
 
 ### 🎴 Game Plugin Enhancements (Bushiroad & One Piece)
 - **Bushiroad Expansion**: Added Japanese DeckLog (`decklog.bushiroad.com`) fallback support alongside English DeckLog (`decklog-en.bushiroad.com`), expanding coverage for Cardfight!! Vanguard, Weiß Schwarz, Shadowverse: Evolve, Godzilla, and hololive.

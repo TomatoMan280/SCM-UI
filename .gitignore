@@ -14,3 +14,4 @@ __pycache__/
 *.pyc
 scratch/
 temp_release_*/
+temp-uploads/

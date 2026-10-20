@@ -7,6 +7,7 @@ import {
   Settings,
   Book,
   ShieldCheck,
+  ShieldAlert,
   Download,
   RefreshCw,
   Play,
@@ -98,9 +99,24 @@ export interface ReleaseInfo {
   assets: ReleaseAsset[];
 }
 
+export interface VersionPolicy {
+  minRequiredVersion: string;
+  latestVersion: string;
+  forceUpdate: boolean;
+  title: string;
+  message: string;
+  blockOutboundAPIs: boolean;
+  disabledPlugins: string[];
+  targetReleaseTag?: string;
+  lastUpdated?: string;
+}
+
 export interface UpdateCheckResponse {
   currentVersion: string;
   hasUpdate: boolean;
+  isUpdateRequired?: boolean;
+  requiredRelease?: ReleaseInfo | null;
+  policy?: VersionPolicy;
   latestVersion: string;
   latestRelease: ReleaseInfo | null;
   releases: ReleaseInfo[];
@@ -1952,7 +1968,7 @@ export default function App() {
     progress: number;
     downloadedBytes: number;
     totalBytes: number;
-    status: 'idle' | 'downloading' | 'completed' | 'error';
+    status: 'idle' | 'downloading' | 'installing' | 'restarting' | 'completed' | 'error';
     error: string | null;
   }>({
     isDownloading: false,
@@ -1965,6 +1981,14 @@ export default function App() {
     error: null
   });
   const [updateStatusToast, setUpdateStatusToast] = useState<string | null>(null);
+  const [forceUpdateBypassed, setForceUpdateBypassed] = useState<boolean>(false);
+  const [isUpdateWidgetDismissed, setIsUpdateWidgetDismissed] = useState<boolean>(false);
+  const [isForceUpdateNotesExpanded, setIsForceUpdateNotesExpanded] = useState<boolean>(false);
+
+  const forceTargetRelease = useMemo(() => {
+    if (!updateInfo) return null;
+    return updateInfo.requiredRelease || updateInfo.latestRelease || updateInfo.releases?.[0] || null;
+  }, [updateInfo]);
 
   const fetchUpdateSettings = useCallback(async () => {
     try {
@@ -1997,7 +2021,11 @@ export default function App() {
         const data: UpdateCheckResponse = await res.json();
         setUpdateInfo(data);
         setHasUserCheckedUpdates(true);
-        if (data.hasUpdate) {
+        if (data.isUpdateRequired) {
+          setForceUpdateBypassed(false);
+          setUpdateStatusToast(`Updating to ${data.policy?.minRequiredVersion || data.latestVersion} in background...`);
+          setTimeout(() => setUpdateStatusToast(null), 5000);
+        } else if (data.hasUpdate) {
           setUpdateStatusToast(`New update available: ${data.latestVersion}!`);
           setTimeout(() => setUpdateStatusToast(null), 6000);
         } else if (manual) {
@@ -2190,7 +2218,11 @@ export default function App() {
     if (isBrowsingDownloadPath) return;
     setIsBrowsingDownloadPath(true);
     try {
-      const resp = await fetch('/api/oneproxy/browse', { method: 'POST' });
+      const resp = await fetch('/api/oneproxy/browse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initialPath: oneProxyDownloadPath || oneProxyStatus?.defaultUserDir || '' })
+      });
       const data = await resp.json();
       const chosen = data.selectedPath || data.path;
       if (resp.ok && data.success && chosen) {
@@ -2207,7 +2239,11 @@ export default function App() {
     setIsBrowsingCachePath(true);
     setCacheConfigMsg(null);
     try {
-      const resp = await fetch('/api/oneproxy/browse', { method: 'POST' });
+      const resp = await fetch('/api/oneproxy/browse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initialPath: customCacheInput || oneProxyStatus?.defaultUserDir || '' })
+      });
       const data = await resp.json();
       const chosen = data.selectedPath || data.path;
       if (resp.ok && data.success && chosen) {
@@ -2274,6 +2310,38 @@ export default function App() {
     }
   };
 
+  const autoInstalledRef = useRef<boolean>(false);
+
+  const handleAutoInstallAndRestart = async (assetName: string) => {
+    try {
+      setDownloadState(prev => ({ ...prev, status: 'installing' }));
+      setUpdateStatusToast('Download complete. Installing update...');
+      const res = await fetch('/api/updates/launch-installer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assetName })
+      });
+      if (res.ok) {
+        setDownloadState(prev => ({ ...prev, status: 'restarting' }));
+        setUpdateStatusToast('Update installed! Restarting SCMUI...');
+        setTimeout(() => {
+          window.location.reload();
+        }, 2200);
+      } else {
+        const err = await res.json();
+        throw new Error(err?.error || 'Failed to launch installer');
+      }
+    } catch (e: any) {
+      setDownloadState(prev => ({
+        ...prev,
+        status: 'error',
+        error: e?.message || 'Automatic installation failed'
+      }));
+      setUpdateStatusToast(`Installation error: ${e?.message}`);
+      setTimeout(() => setUpdateStatusToast(null), 5000);
+    }
+  };
+
   useEffect(() => {
     if (!downloadState.isDownloading) return;
     const interval = setInterval(async () => {
@@ -2281,7 +2349,19 @@ export default function App() {
         const res = await fetch('/api/updates/download-progress');
         if (res.ok) {
           const state = await res.json();
-          setDownloadState(state);
+          if (state.status === 'completed') {
+            if (!autoInstalledRef.current) {
+              autoInstalledRef.current = true;
+              setDownloadState({
+                ...state,
+                isDownloading: false,
+                status: 'installing'
+              });
+              handleAutoInstallAndRestart(state.assetName);
+            }
+          } else {
+            setDownloadState(state);
+          }
         }
       } catch (e) {}
     }, 600);
@@ -2289,6 +2369,8 @@ export default function App() {
   }, [downloadState.isDownloading]);
 
   const handleStartDownloadVersion = async (release: ReleaseInfo, asset: ReleaseAsset) => {
+    autoInstalledRef.current = false;
+    setIsUpdateWidgetDismissed(false);
     setDownloadState({
       isDownloading: true,
       tag: release.tag,
@@ -2325,21 +2407,23 @@ export default function App() {
   };
 
   const handleLaunchInstaller = async (assetName: string) => {
-    try {
-      const res = await fetch('/api/updates/launch-installer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assetName })
-      });
-      if (res.ok) {
-        setUpdateStatusToast('Installer launched! Follow the prompts to finish installing.');
-        setTimeout(() => setUpdateStatusToast(null), 5000);
-      }
-    } catch (e: any) {
-      setUpdateStatusToast(`Failed to launch installer: ${e?.message}`);
-      setTimeout(() => setUpdateStatusToast(null), 4000);
-    }
+    handleAutoInstallAndRestart(assetName);
   };
+
+  // Automatically start download immediately when an update is required without modal warnings
+  const autoStartedUpdateRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!updateInfo?.isUpdateRequired) return;
+    const target = updateInfo.requiredRelease || updateInfo.latestRelease || updateInfo.releases?.[0];
+    const asset = target?.primaryAsset || target?.assets?.[0];
+    if (!target || !asset) return;
+
+    if (downloadState.isDownloading || downloadState.status === 'completed') return;
+    if (autoStartedUpdateRef.current === target.tag) return;
+
+    autoStartedUpdateRef.current = target.tag;
+    handleStartDownloadVersion(target, asset);
+  }, [updateInfo, downloadState.isDownloading, downloadState.status]);
   const [copiedPath, setCopiedPath] = useState(false);
   const [shortcuts, setShortcuts] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('scm_shortcuts');
@@ -3310,11 +3394,6 @@ export default function App() {
     handleSearchArt(initialQuery, undefined, defaultSource);
   };
 
-  useEffect(() => {
-    (window as any).__setOneProxyView = setOneProxyView;
-    (window as any).__openAddCardPicker = openAddCardPicker;
-    (window as any).__setOneProxyBulkProgress = setOneProxyBulkProgress;
-  }, []);
 
   const [pluginState, setPluginState] = useState(() => {
     const saved = localStorage.getItem('scm_plugin_state');
@@ -3375,6 +3454,19 @@ export default function App() {
   useEffect(() => {
     fetchCustomScripts();
   }, []);
+
+  useEffect(() => {
+    (window as any).__setOneProxyView = setOneProxyView;
+    (window as any).__openAddCardPicker = openAddCardPicker;
+    (window as any).__setOneProxyBulkProgress = setOneProxyBulkProgress;
+    (window as any).__setOneProxyFilters = setOneProxyFilters;
+    (window as any).__setIsArtPickerOpen = setIsArtPickerOpen;
+    (window as any).__handleSearchArt = handleSearchArt;
+    (window as any).__setActiveTab = setActiveTab;
+    (window as any).__setAssetViewMode = setAssetViewMode;
+    (window as any).__setPluginState = setPluginState;
+    (window as any).PLUGINS = PLUGINS;
+  });
 
   useEffect(() => {
     const stateToSave = {
@@ -8296,6 +8388,29 @@ export default function App() {
                       </div>
                     </div>
 
+                    {/* Seamless Required Update Card */}
+                    {updateInfo?.isUpdateRequired && !downloadState.isDownloading && downloadState.status !== 'completed' && (
+                      <div className="p-3.5 bg-primary-950/30 border border-primary-500/30 rounded-xl flex items-center justify-between gap-3">
+                        <div className="space-y-0.5 text-xs">
+                          <p className="font-bold text-primary-300 flex items-center gap-1.5">
+                            <RefreshCw size={13} className="animate-spin text-primary-400" />
+                            Update in Progress
+                          </p>
+                          <p className="text-white/60 text-[11px]">
+                            SCMUI is preparing the required update in the background.
+                          </p>
+                        </div>
+                        {forceTargetRelease?.primaryAsset && (
+                          <button
+                            onClick={() => handleStartDownloadVersion(forceTargetRelease, forceTargetRelease.primaryAsset!)}
+                            className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold transition-all shadow-md active:scale-95 cursor-pointer"
+                          >
+                            Update Now
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {/* Active Download Progress Card */}
                     {downloadState.isDownloading && (
                       <div className="p-3.5 bg-black/50 border border-primary-500/30 rounded-xl space-y-2">
@@ -8316,6 +8431,26 @@ export default function App() {
                         <div className="flex justify-between text-[10px] text-white/40 font-mono">
                           <span>{((downloadState.downloadedBytes || 0) / (1024 * 1024)).toFixed(1)} MB</span>
                           <span>{((downloadState.totalBytes || 0) / (1024 * 1024)).toFixed(1)} MB</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {downloadState.status === 'installing' && (
+                      <div className="p-3.5 bg-primary-950/40 border border-primary-500/30 rounded-xl flex items-center gap-3">
+                        <Loader2 size={16} className="text-primary-400 animate-spin shrink-0" />
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold text-white">Installing Update...</p>
+                          <p className="text-[10px] text-white/50">Applying update files automatically.</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {downloadState.status === 'restarting' && (
+                      <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl flex items-center gap-3">
+                        <RotateCcw size={16} className="text-emerald-400 animate-spin shrink-0" />
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-bold text-emerald-300">Restarting Application...</p>
+                          <p className="text-[10px] text-white/50">Reloading with the new version.</p>
                         </div>
                       </div>
                     )}
@@ -8519,9 +8654,21 @@ export default function App() {
 
                                       <div className="flex items-center gap-2 shrink-0">
                                         {release.isCurrent ? (
-                                          <span className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5">
-                                            <Check size={12} /> Installed
-                                          </span>
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                                              <Check size={12} /> Installed
+                                            </span>
+                                            {asset && (
+                                              <button
+                                                onClick={() => handleStartDownloadVersion(release, asset)}
+                                                disabled={downloadState.isDownloading}
+                                                className="px-2.5 py-1.5 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded-xl text-xs font-medium transition-all flex items-center gap-1 cursor-pointer active:scale-95"
+                                                title={`Force reinstall version ${release.tag}`}
+                                              >
+                                                <RotateCcw size={11} /> Reinstall
+                                              </button>
+                                            )}
+                                          </div>
                                         ) : isThisDownloaded ? (
                                           <button
                                             onClick={() => handleLaunchInstaller(downloadState.assetName)}
@@ -10516,6 +10663,180 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Background Seamless Update Indicator */}
+      <AnimatePresence>
+        {(downloadState.isDownloading || downloadState.status === 'installing' || downloadState.status === 'restarting' || (downloadState.status === 'completed' && !isUpdateWidgetDismissed) || (downloadState.status === 'error' && !isUpdateWidgetDismissed)) && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+            className="fixed bottom-6 right-6 z-[1000] w-88 max-w-[calc(100vw-3rem)] bg-[#111318]/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl shadow-black/70 text-left select-none ring-1 ring-white/5"
+          >
+            {downloadState.isDownloading && (
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-primary-500/15 border border-primary-500/30 flex items-center justify-center shrink-0">
+                      <Loader2 size={16} className="text-primary-400 animate-spin" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">
+                        Updating SCMUI {downloadState.tag ? `(${downloadState.tag})` : ''}
+                      </p>
+                      <p className="text-[11px] text-white/50 truncate">
+                        Downloading in background...
+                      </p>
+                    </div>
+                  </div>
+                  <span className="font-mono text-xs font-bold text-primary-400 shrink-0">
+                    {downloadState.progress}%
+                  </span>
+                </div>
+
+                <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-primary-500 to-indigo-500 h-full rounded-full transition-all duration-300 shadow-sm"
+                    style={{ width: `${downloadState.progress}%` }}
+                  />
+                </div>
+
+                <div className="flex justify-between items-center text-[10px] text-white/40 font-mono">
+                  <span>{((downloadState.downloadedBytes || 0) / (1024 * 1024)).toFixed(1)} MB</span>
+                  <span>{((downloadState.totalBytes || 0) / (1024 * 1024)).toFixed(1)} MB</span>
+                </div>
+              </div>
+            )}
+
+            {downloadState.status === 'installing' && (
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-primary-500/15 border border-primary-500/30 flex items-center justify-center shrink-0">
+                    <Loader2 size={16} className="text-primary-400 animate-spin" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white truncate">
+                      Installing SCMUI {downloadState.tag ? `(${downloadState.tag})` : ''}
+                    </p>
+                    <p className="text-[11px] text-white/50 truncate">
+                      Applying update automatically...
+                    </p>
+                  </div>
+                </div>
+
+                <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-gradient-to-r from-primary-500 via-indigo-500 to-emerald-500 h-full rounded-full animate-pulse w-full" />
+                </div>
+              </div>
+            )}
+
+            {downloadState.status === 'restarting' && (
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                    <RotateCcw size={16} className="text-emerald-400 animate-spin" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white truncate">
+                      Restarting SCMUI...
+                    </p>
+                    <p className="text-[11px] text-white/50 truncate">
+                      Relaunching with the new update...
+                    </p>
+                  </div>
+                </div>
+
+                <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full w-full" />
+                </div>
+              </div>
+            )}
+
+            {downloadState.status === 'completed' && (
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                      <CheckCircle size={16} className="text-emerald-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">
+                        Update Ready {downloadState.tag ? `(${downloadState.tag})` : ''}
+                      </p>
+                      <p className="text-[11px] text-white/50">
+                        Downloaded and ready to install.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsUpdateWidgetDismissed(true)}
+                    className="text-white/40 hover:text-white/80 p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                    title="Dismiss"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchInstaller(downloadState.assetName)}
+                    className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs transition-all shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <Play size={13} fill="currentColor" />
+                    Restart & Install Now
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsUpdateWidgetDismissed(true)}
+                    className="py-2 px-3 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-xl text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    Later
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {downloadState.status === 'error' && (
+              <div className="space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                      <RefreshCw size={14} className="text-amber-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">Update Download Paused</p>
+                      <p className="text-[11px] text-white/50 truncate max-w-[200px]">
+                        {downloadState.error || 'Connection issue'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsUpdateWidgetDismissed(true)}
+                    className="text-white/40 hover:text-white/80 p-1 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+
+                {forceTargetRelease?.primaryAsset && (
+                  <button
+                    type="button"
+                    onClick={() => handleStartDownloadVersion(forceTargetRelease, forceTargetRelease.primaryAsset!)}
+                    className="w-full py-1.5 px-3 bg-white/10 hover:bg-white/15 text-white rounded-xl text-xs font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw size={12} />
+                    Retry Download
+                  </button>
+                )}
+              </div>
+            )}
+          </motion.div>
         )}
       </AnimatePresence>
 

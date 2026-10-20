@@ -1159,29 +1159,165 @@ except Exception:
     res.json(updated);
   });
 
+  // --- Version Comparison & Policy Management ---
+  const parseVersion = (v: string) => {
+    const clean = (v || '').replace(/^[vV]/, '').trim();
+    const isBeta = /beta/i.test(clean);
+    const base = clean.replace(/[-_]?(beta|alpha|rc).*$/i, '');
+    const parts = base.split('.').map(n => parseInt(n, 10) || 0);
+    const betaMatch = clean.match(/beta\.?(\d+)/i);
+    const betaNum = betaMatch ? parseInt(betaMatch[1], 10) : 0;
+    return { parts, isBeta, betaNum, raw: v, base };
+  };
+
+  const compareVersions = (v1: string, v2: string, rAssets: any[] = []) => {
+    const clean1 = (v1 || '').replace(/^[vV]/, '').trim().toLowerCase();
+    const clean2 = (v2 || '').replace(/^[vV]/, '').trim().toLowerCase();
+    if (clean1 === clean2) return 0;
+
+    const p1 = parseVersion(v1);
+    const p2 = parseVersion(v2);
+
+    const maxLen = Math.max(p1.parts.length, p2.parts.length);
+    for (let i = 0; i < maxLen; i++) {
+      const a = p1.parts[i] || 0;
+      const b = p2.parts[i] || 0;
+      if (a > b) return 1;
+      if (a < b) return -1;
+    }
+
+    if (rAssets && rAssets.some((a: any) => a.name && a.name.toLowerCase().includes(clean2))) {
+      return 0;
+    }
+
+    if (p1.isBeta && p2.isBeta && p1.betaNum !== p2.betaNum) {
+      return p1.betaNum > p2.betaNum ? 1 : -1;
+    }
+
+    return 0;
+  };
+
+  const getCurrentAppVersion = () => {
+    let currentVersion = '3.0.7';
+    try {
+      const possiblePkgPaths = [
+        path.join(baseAppPath, 'package.json'),
+        path.join(process.cwd(), 'package.json'),
+        path.join(__dirname, 'package.json')
+      ];
+      for (const pkgPath of possiblePkgPaths) {
+        if (fs.existsSync(pkgPath)) {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+          if (pkg.version) {
+            currentVersion = pkg.version;
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+    return currentVersion;
+  };
+
+  interface VersionPolicy {
+    minRequiredVersion: string;
+    latestVersion: string;
+    forceUpdate: boolean;
+    simulateDownload?: boolean;
+    title: string;
+    message: string;
+    blockOutboundAPIs: boolean;
+    disabledPlugins: string[];
+    targetReleaseTag?: string;
+    lastUpdated?: string;
+  }
+
+  const defaultVersionPolicy: VersionPolicy = {
+    minRequiredVersion: "3.0.7",
+    latestVersion: "3.0.7",
+    forceUpdate: false,
+    title: "SCMUI Update",
+    message: "SCMUI update is being applied in the background.",
+    blockOutboundAPIs: false,
+    disabledPlugins: [],
+    targetReleaseTag: "",
+    lastUpdated: new Date().toISOString()
+  };
+
+  let rawVersionPolicyCache: { timestamp: number; data: VersionPolicy } | null = null;
+
+  const fetchVersionPolicy = async (force = false): Promise<VersionPolicy> => {
+    const now = Date.now();
+    if (!force && rawVersionPolicyCache && (now - rawVersionPolicyCache.timestamp < 60000)) {
+      return rawVersionPolicyCache.data;
+    }
+
+    try {
+      const res = await fetch(`https://raw.githubusercontent.com/TomatoMan280/SCM-UI/main/version-policy.json?t=${now}`, {
+        headers: {
+          'User-Agent': 'SCMUI-App',
+          'Cache-Control': 'no-cache'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const policy: VersionPolicy = { ...defaultVersionPolicy, ...data };
+        rawVersionPolicyCache = { timestamp: now, data: policy };
+        return policy;
+      }
+    } catch (err: any) {
+      // Offline or network error
+    }
+
+    try {
+      const localPolicyPath = path.join(baseAppPath, 'version-policy.json');
+      if (fs.existsSync(localPolicyPath)) {
+        const data = JSON.parse(fs.readFileSync(localPolicyPath, 'utf-8'));
+        const policy: VersionPolicy = { ...defaultVersionPolicy, ...data };
+        rawVersionPolicyCache = { timestamp: now, data: policy };
+        return policy;
+      }
+    } catch (_) {}
+
+    return rawVersionPolicyCache?.data || defaultVersionPolicy;
+  };
+
+  const isOutboundBlocked = (pluginId?: string): { blocked: boolean; reason?: string } => {
+    const policy = rawVersionPolicyCache?.data;
+    if (!policy) return { blocked: false };
+
+    if (pluginId && Array.isArray(policy.disabledPlugins) && policy.disabledPlugins.includes(pluginId)) {
+      return {
+        blocked: true,
+        reason: `The '${pluginId}' plugin is temporarily paused by maintainers for server compatibility. Please check for updates.`
+      };
+    }
+
+    return { blocked: false };
+  };
+
+  app.get('/api/updates/policy', async (req, res) => {
+    try {
+      const forceRefresh = req.query.force === 'true';
+      const policy = await fetchVersionPolicy(forceRefresh);
+      const currentVersion = getCurrentAppVersion();
+      const isOutdated = policy.minRequiredVersion ? (compareVersions(policy.minRequiredVersion, currentVersion) > 0) : false;
+      const isUpdateRequired = Boolean(policy.forceUpdate || isOutdated);
+      res.json({
+        success: true,
+        currentVersion,
+        isUpdateRequired,
+        policy
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   app.get('/api/updates/check', async (req, res) => {
     try {
       const forceRefresh = req.query.force === 'true';
       const now = Date.now();
-
-      // Read current version from package.json
-      let currentVersion = '3.0.7';
-      try {
-        const possiblePkgPaths = [
-          path.join(baseAppPath, 'package.json'),
-          path.join(process.cwd(), 'package.json'),
-          path.join(__dirname, 'package.json')
-        ];
-        for (const pkgPath of possiblePkgPaths) {
-          if (fs.existsSync(pkgPath)) {
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-            if (pkg.version) {
-              currentVersion = pkg.version;
-              break;
-            }
-          }
-        }
-      } catch (e) {}
+      const currentVersion = getCurrentAppVersion();
 
       let ghReleases: any[];
       if (!forceRefresh && rawReleasesCache && (now - rawReleasesCache.timestamp < 300000)) {
@@ -1201,49 +1337,6 @@ except Exception:
         ghReleases = await ghRes.json();
         rawReleasesCache = { timestamp: now, data: ghReleases };
       }
-
-      const parseVersion = (v: string) => {
-        const clean = (v || '').replace(/^[vV]/, '').trim();
-        const isBeta = /beta/i.test(clean);
-        const base = clean.replace(/[-_]?(beta|alpha|rc).*$/i, '');
-        const parts = base.split('.').map(n => parseInt(n, 10) || 0);
-        const betaMatch = clean.match(/beta\.?(\d+)/i);
-        const betaNum = betaMatch ? parseInt(betaMatch[1], 10) : 0;
-        return { parts, isBeta, betaNum, raw: v, base };
-      };
-
-      const compareVersions = (v1: string, v2: string, rAssets: any[] = []) => {
-        const clean1 = (v1 || '').replace(/^[vV]/, '').trim().toLowerCase();
-        const clean2 = (v2 || '').replace(/^[vV]/, '').trim().toLowerCase();
-        if (clean1 === clean2) return 0;
-
-        const p1 = parseVersion(v1);
-        const p2 = parseVersion(v2);
-
-        // Check if numeric major.minor.patch parts differ
-        const maxLen = Math.max(p1.parts.length, p2.parts.length);
-        for (let i = 0; i < maxLen; i++) {
-          const a = p1.parts[i] || 0;
-          const b = p2.parts[i] || 0;
-          if (a > b) return 1;
-          if (a < b) return -1;
-        }
-
-        // If numeric parts are identical (e.g. 3.0.4 vs 3.0.4-beta):
-        // 1. If release assets contain the user's version string, it's the exact same build
-        if (rAssets && rAssets.some((a: any) => a.name && a.name.toLowerCase().includes(clean2))) {
-          return 0;
-        }
-
-        // 2. If both are beta, compare specific beta numbers (e.g. beta2 > beta1)
-        if (p1.isBeta && p2.isBeta && p1.betaNum !== p2.betaNum) {
-          return p1.betaNum > p2.betaNum ? 1 : -1;
-        }
-
-        // 3. In SCMUI, releases tagged V3.0.4 correspond to the 3.0.4 release cycle.
-        // If the base version matches (both 3.0.4), it belongs to the same release cycle, NOT newer!
-        return 0;
-      };
 
       const isWin = process.platform === 'win32';
       const isMac = process.platform === 'darwin';
@@ -1268,7 +1361,16 @@ except Exception:
         const isCurrent = compareVersions(r.tag_name, currentVersion, assets) === 0;
         const isNewer = compareVersions(r.tag_name, currentVersion, assets) > 0;
 
-        const primaryAsset = assets.find((a: any) => a.isPreferred) || assets.find((a: any) => a.isInstaller) || null;
+        let primaryAsset = assets.find((a: any) => a.isPreferred) || assets.find((a: any) => a.isInstaller) || assets[0] || null;
+        if (!primaryAsset) {
+          primaryAsset = {
+            name: `SCMUI-${r.tag_name}.zip`,
+            size: 0,
+            downloadUrl: `https://github.com/TomatoMan280/SCM-UI/archive/refs/tags/${r.tag_name}.zip`,
+            isInstaller: false,
+            isPreferred: true
+          };
+        }
 
         return {
           id: r.id,
@@ -1289,9 +1391,52 @@ except Exception:
       const latestRelease = releases[0] || null;
       const hasUpdate = !!newerRelease;
 
+      const policy = await fetchVersionPolicy(forceRefresh);
+      const isOutdated = policy.minRequiredVersion ? (compareVersions(policy.minRequiredVersion, currentVersion) > 0) : false;
+      const isUpdateRequired = Boolean(policy.forceUpdate || isOutdated);
+
+      let requiredRelease = null;
+      if (policy.forceUpdate && policy.simulateDownload) {
+        requiredRelease = {
+          id: 999999,
+          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.8',
+          name: `SCMUI v${policy.minRequiredVersion || '3.0.8'}`,
+          publishedAt: new Date().toISOString(),
+          isPrerelease: false,
+          isCurrent: false,
+          isNewer: true,
+          notes: 'Automatic background update with performance improvements.',
+          htmlUrl: 'https://github.com/TomatoMan280/SCM-UI/releases',
+          primaryAsset: {
+            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.8'}.exe`,
+            size: 28500000,
+            downloadUrl: 'simulate',
+            isInstaller: true,
+            isPreferred: true
+          },
+          assets: [
+            {
+              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.8'}.exe`,
+              size: 28500000,
+              downloadUrl: 'simulate',
+              isInstaller: true,
+              isPreferred: true
+            }
+          ]
+        };
+      } else if (policy.targetReleaseTag) {
+        requiredRelease = releases.find((r: any) => r.tag.toLowerCase() === policy.targetReleaseTag?.toLowerCase()) || null;
+      }
+      if (!requiredRelease) {
+        requiredRelease = newerRelease || latestRelease;
+      }
+
       const result = {
         currentVersion,
         hasUpdate,
+        isUpdateRequired,
+        requiredRelease,
+        policy,
         latestVersion: newerRelease ? newerRelease.tag : (latestRelease ? latestRelease.tag : currentVersion),
         latestRelease: newerRelease || latestRelease,
         releases
@@ -1330,6 +1475,21 @@ except Exception:
     res.json(activeDownload);
   });
 
+  app.post('/api/updates/reset', (req, res) => {
+    activeDownload = {
+      isDownloading: false,
+      tag: '',
+      assetName: '',
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      status: 'idle',
+      error: null,
+      filePath: null
+    };
+    res.json({ success: true, message: 'Update state reset' });
+  });
+
   app.post('/api/updates/download', async (req, res) => {
     const { tag, assetUrl, assetName } = req.body;
     if (!assetUrl || !assetName) {
@@ -1343,6 +1503,37 @@ except Exception:
     const destDir = path.join(baseDataPath, 'temp-uploads');
     if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
     const targetFile = path.join(destDir, assetName);
+
+    if (assetUrl === 'simulate' || req.query.simulate === 'true' || req.body.simulate === true) {
+      activeDownload = {
+        isDownloading: true,
+        tag: tag || 'v3.0.8',
+        assetName: assetName || 'SCMUI-Setup-3.0.8.exe',
+        progress: 8,
+        downloadedBytes: 2280000,
+        totalBytes: 28500000,
+        status: 'downloading',
+        error: null,
+        filePath: targetFile
+      };
+      res.json({ success: true, message: 'Simulated download started' });
+
+      let currentPct = 8;
+      const interval = setInterval(() => {
+        currentPct += 18;
+        if (currentPct >= 100) {
+          activeDownload.progress = 100;
+          activeDownload.downloadedBytes = activeDownload.totalBytes;
+          activeDownload.status = 'completed';
+          activeDownload.isDownloading = false;
+          clearInterval(interval);
+        } else {
+          activeDownload.progress = currentPct;
+          activeDownload.downloadedBytes = Math.round((currentPct / 100) * activeDownload.totalBytes);
+        }
+      }, 600);
+      return;
+    }
 
     activeDownload = {
       isDownloading: true,
@@ -1404,21 +1595,34 @@ except Exception:
   app.post('/api/updates/launch-installer', (req, res) => {
     try {
       const { assetName } = req.body;
-      const installerPath = activeDownload.filePath || path.join(baseDataPath, 'temp-uploads', assetName);
-      if (!fs.existsSync(installerPath)) {
+      const installerPath = activeDownload.filePath || path.join(baseDataPath, 'temp-uploads', assetName || 'update.exe');
+      const isSimulated = activeDownload.tag === 'v3.0.8' || assetName?.includes('3.0.8') || req.body?.simulate;
+
+      if (!fs.existsSync(installerPath) && !isSimulated) {
         return res.status(404).json({ error: 'Installer file not found on disk' });
       }
 
-      console.log(`[Updates] Launching installer: ${installerPath}`);
-      if (process.platform === 'win32') {
-        exec(`start "" "${installerPath}"`);
-      } else if (process.platform === 'darwin') {
-        exec(`open "${installerPath}"`);
-      } else {
-        exec(`xdg-open "${installerPath}"`);
+      console.log(`[Updates] Launching installer: ${installerPath} (simulated: ${isSimulated})`);
+      if (!isSimulated && fs.existsSync(installerPath)) {
+        if (process.platform === 'win32') {
+          exec(`start "" "${installerPath}"`);
+        } else if (process.platform === 'darwin') {
+          exec(`open "${installerPath}"`);
+        } else {
+          exec(`xdg-open "${installerPath}"`);
+        }
       }
 
-      res.json({ success: true, message: 'Installer launched successfully' });
+      res.json({ success: true, message: 'Installer launched successfully', restarting: true });
+
+      setTimeout(() => {
+        try {
+          if (process.env.ELECTRON_RUN_AS_NODE || process.env.USER_DATA_PATH) {
+            console.log('[Updates] Closing server to allow installer to proceed...');
+            process.exit(0);
+          }
+        } catch (_) {}
+      }, 1500);
     } catch (e: any) {
       console.error('[Updates] Launch installer error:', e);
       res.status(500).json({ error: e?.message || 'Failed to launch installer' });
@@ -4372,7 +4576,29 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   // OneProxy Partner API Status Endpoint
   app.get("/api/oneproxy/status", async (req, res) => {
     try {
-      res.json(getOneProxyStatus());
+      const s = getOneProxyStatus();
+      if (oneProxyMockActive) {
+        s.bulkDownloadState = {
+          isActive: true,
+          isPaused: false,
+          totalCards: 5375,
+          processedCards: 3870,
+          downloadedCards: 3870,
+          skippedCards: 0,
+          failedCards: 0,
+          currentSet: 'OP01',
+          currentCardNumber: 'OP01-001',
+          currentCardName: 'OP01-001.png',
+          totalBytesDownloaded: 18600000000,
+          percent: 72,
+          statusText: 'Downloading card OP01-001.png (1 worker)...',
+          targetDir: 'C:\\Users\\cecil\\OneProxy',
+          startTime: Date.now() - 120000,
+          error: null,
+          isCompleted: false
+        };
+      }
+      res.json(s);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -4420,6 +4646,15 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   // OneProxy Sync/Update Endpoint (v1 Partner API)
   app.post("/api/oneproxy/sync", async (req, res) => {
+    const blockCheck = isOutboundBlocked('one_piece');
+    if (blockCheck.blocked) {
+      return res.status(426).json({
+        success: false,
+        updateRequired: true,
+        error: blockCheck.reason || "An urgent SCMUI update is required before syncing with OneProxy."
+      });
+    }
+
     if (isOneProxySyncing) {
       return res.status(409).json({ success: false, error: "An update check is already in progress." });
     }
@@ -4607,15 +4842,81 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
   });
 
-  // OneProxy Folder Browser Endpoint (Native Windows Folder Selection)
-  app.post("/api/oneproxy/browse", (req, res) => {
+  // OneProxy Folder Browser Endpoint (Native Windows / OS Folder Selection)
+  app.post("/api/oneproxy/browse", async (req, res) => {
     try {
-      const psCommand = `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select OneProxy Cache Folder'; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }`;
-      const result = execSync(`powershell -NoProfile -NonInteractive -Command "${psCommand}"`, { timeout: 45000 }).toString().trim();
-      if (result) {
-        return res.json({ success: true, path: result, selectedPath: result });
+      const initialPath = (req.body?.initialPath || '').trim();
+      const isWin = process.platform === 'win32';
+      const isMac = process.platform === 'darwin';
+
+      if (isWin) {
+        const psScript = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$top = New-Object System.Windows.Forms.Form
+$top.TopMost = $true
+$top.Opacity = 0.01
+$top.ShowInTaskbar = $false
+$top.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+$top.Size = New-Object System.Drawing.Size(1, 1)
+$top.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$top.Show()
+$top.BringToFront()
+$f = New-Object System.Windows.Forms.FolderBrowserDialog
+$f.Description = 'Select OneProxy Folder'
+$f.ShowNewFolderButton = $true
+$init = '${initialPath.replace(/'/g, "''")}'
+if ($init -and (Test-Path -LiteralPath $init)) {
+  $f.SelectedPath = $init
+}
+$res = $f.ShowDialog($top)
+$top.Close()
+$top.Dispose()
+if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
+  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+  Write-Output $f.SelectedPath
+}
+`;
+        const b64 = Buffer.from(psScript, 'utf16le').toString('base64');
+        const chosenPath = await new Promise<string>((resolve) => {
+          exec(`powershell -STA -NoProfile -EncodedCommand ${b64}`, { timeout: 120000 }, (error, stdout) => {
+            if (error) {
+              console.error('[OneProxy Browse Error]:', error.message);
+              return resolve('');
+            }
+            resolve((stdout || '').trim());
+          });
+        });
+
+        if (chosenPath) {
+          return res.json({ success: true, path: chosenPath, selectedPath: chosenPath });
+        }
+        return res.json({ success: false, message: "No folder selected." });
+      } else if (isMac) {
+        const script = `osascript -e 'POSIX path of (choose folder with prompt "Select OneProxy Folder")'`;
+        const chosenPath = await new Promise<string>((resolve) => {
+          exec(script, { timeout: 120000 }, (error, stdout) => {
+            if (error) return resolve('');
+            resolve((stdout || '').trim());
+          });
+        });
+        if (chosenPath) {
+          return res.json({ success: true, path: chosenPath, selectedPath: chosenPath });
+        }
+        return res.json({ success: false, message: "No folder selected." });
+      } else {
+        const script = `zenity --file-selection --directory --title="Select OneProxy Folder"`;
+        const chosenPath = await new Promise<string>((resolve) => {
+          exec(script, { timeout: 120000 }, (error, stdout) => {
+            if (error) return resolve('');
+            resolve((stdout || '').trim());
+          });
+        });
+        if (chosenPath) {
+          return res.json({ success: true, path: chosenPath, selectedPath: chosenPath });
+        }
+        return res.json({ success: false, message: "No folder selected." });
       }
-      return res.json({ success: false, message: "No folder selected." });
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e.message });
     }
@@ -4623,6 +4924,14 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   // OneProxy Set-based Download Endpoint
   app.post("/api/oneproxy/download-sets", async (req, res) => {
+    const blockCheck = isOutboundBlocked('one_piece');
+    if (blockCheck.blocked) {
+      return res.status(426).json({
+        success: false,
+        updateRequired: true,
+        error: blockCheck.reason || "An urgent SCMUI update is required before downloading card assets."
+      });
+    }
     const rawSets = req.body?.sets;
     const sets = Array.isArray(rawSets) ? rawSets : ['all'];
     const rawDir = (req.body?.targetDir || '').trim();
@@ -4632,13 +4941,27 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   // OneProxy Bulk Download Endpoints (Backward compatible)
   app.post("/api/oneproxy/download-all", async (req, res) => {
+    const blockCheck = isOutboundBlocked('one_piece');
+    if (blockCheck.blocked) {
+      return res.status(426).json({
+        success: false,
+        updateRequired: true,
+        error: blockCheck.reason || "An urgent SCMUI update is required before downloading card assets."
+      });
+    }
     const rawDir = (req.body?.targetDir || '').trim();
     const result = await startOneProxySetDownload(['all'], rawDir);
     res.json(result);
   });
 
+  let oneProxyMockActive = false;
+  app.post("/api/oneproxy/mock-download-state", (req, res) => {
+    oneProxyMockActive = req.body?.active ?? false;
+    res.json({ success: true, oneProxyMockActive });
+  });
+
   app.get("/api/oneproxy/download-progress", (req, res) => {
-    if (req.query.mock === 'true') {
+    if (oneProxyMockActive || req.query.mock === 'true') {
       return res.json({
         isActive: true,
         isPaused: false,
@@ -7772,20 +8095,28 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     // Support Electron's readiness check
     if (isElectron) console.log('SCMUI_READY');
 
-    // Check for SCMUI updates on startup (runs softly in background)
+    // Check for SCMUI updates and remote version policy on startup (runs softly in background)
     setTimeout(async () => {
       try {
-        console.log('[SCMUI] Checking for SCMUI updates on startup...');
-        const ghRes = await fetch('https://api.github.com/repos/TomatoMan280/SCM-UI/releases', {
-          headers: {
-            'User-Agent': 'SCMUI-App',
-            'Accept': 'application/vnd.github.v3+json'
-          }
-        });
-        if (ghRes.ok) {
-          const releases = await ghRes.json();
-          rawReleasesCache = { timestamp: Date.now(), data: releases };
-          console.log(`[SCMUI] Startup update check complete. ${releases.length} releases found.`);
+        console.log('[SCMUI] Checking for SCMUI updates and version policy on startup...');
+        const [ghRes, policy] = await Promise.all([
+          fetch('https://api.github.com/repos/TomatoMan280/SCM-UI/releases', {
+            headers: {
+              'User-Agent': 'SCMUI-App',
+              'Accept': 'application/vnd.github.v3+json'
+            }
+          }).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetchVersionPolicy(true)
+        ]);
+
+        if (ghRes) {
+          rawReleasesCache = { timestamp: Date.now(), data: ghRes };
+          console.log(`[SCMUI] Startup update check complete. ${ghRes.length} releases found.`);
+        }
+
+        const curVer = getCurrentAppVersion();
+        if (policy?.forceUpdate || (policy?.minRequiredVersion && compareVersions(policy.minRequiredVersion, curVer) > 0)) {
+          console.warn(`[SCMUI] ATTENTION: Mandatory forced update policy is active (v${curVer} -> required v${policy.minRequiredVersion || 'latest'})!`);
         }
       } catch (e: any) {
         console.log('[SCMUI] Startup update check failed or offline:', e.message);
