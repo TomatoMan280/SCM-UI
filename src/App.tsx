@@ -2154,7 +2154,7 @@ export default function App() {
           totalCards: 0,
           currentSet: chosenSets[0] || 'OP',
           currentCardNumber: '',
-          currentCardName: 'Initializing download queue (2 workers)...',
+          currentCardName: 'Initializing download queue (1 worker)...',
           statusText: 'Connecting to OneProxy v1 Partner API...'
         });
       } else {
@@ -6555,7 +6555,7 @@ export default function App() {
                                              <div className="flex items-center justify-between text-[10px] text-white/40 pt-1 border-t border-white/5 font-mono">
                                                <span className="truncate max-w-[220px]">To: {oneProxyBulkProgress?.targetDir || oneProxyDownloadPath || oneProxyStatus?.defaultUserDir}</span>
                                                <div className="flex items-center gap-2">
-                                                 <span className="text-primary-400 font-medium">25 MB/s allowance · 2 Workers</span>
+                                                 <span className="text-primary-400 font-medium">25 MB/s allowance · 1 Worker</span>
                                                  <span>·</span>
                                                  <span>{formatSize(oneProxyBulkProgress?.totalBytesDownloaded ?? 0)} downloaded</span>
                                                </div>

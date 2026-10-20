@@ -2998,32 +2998,55 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           const allAssetsQueue: any[] = [];
           const allCardsAccumulator: any[] = getOneProxyCardsDb();
           const cardIdSet = new Set(allCardsAccumulator.map((c: any) => c.cardNumber || c.cardId));
+          const failedManifestSets: string[] = [];
 
-          // 1. Fetch manifests for each set
+          // 1. Fetch manifests for each set (check disk cache first, retry on 429)
           for (const setCode of targetSets) {
             if (oneProxyBulkCancelRequested) break;
-            oneProxyBulkDownloadState.statusText = `Fetching manifest for set ${setCode}...`;
+            oneProxyBulkDownloadState.statusText = `Checking manifest for set ${setCode}...`;
             oneProxyBulkDownloadState.currentSet = setCode;
 
             const manifestFile = path.join(oneProxyManifestsDir, `manifest_${setCode}.json`);
             let manifestData: any = null;
 
-            try {
-              const mResp = await fetchOneProxyApi(`/sets/${encodeURIComponent(setCode)}/manifest`);
-              if (mResp.ok) {
-                manifestData = await mResp.json();
-                try {
-                  fs.writeFileSync(manifestFile, JSON.stringify(manifestData, null, 2), 'utf-8');
-                } catch (_) {}
-              }
-            } catch (err: any) {
-              console.warn(`[OneProxy] Failed to fetch manifest for ${setCode}:`, err.message);
+            // Check if valid manifest is already saved locally on disk
+            if (fs.existsSync(manifestFile)) {
+              try {
+                const parsed = JSON.parse(fs.readFileSync(manifestFile, 'utf-8'));
+                if (parsed && Array.isArray(parsed.cards) && Array.isArray(parsed.assets)) {
+                  manifestData = parsed;
+                }
+              } catch (_) {}
             }
 
-            if (!manifestData && fs.existsSync(manifestFile)) {
-              try {
-                manifestData = JSON.parse(fs.readFileSync(manifestFile, 'utf-8'));
-              } catch (_) {}
+            // If not cached, fetch from OneProxy API with retry & exponential backoff on 429/503
+            if (!manifestData) {
+              let attempts = 0;
+              while (attempts < 5 && !manifestData && !oneProxyBulkCancelRequested) {
+                attempts++;
+                try {
+                  const mResp = await fetchOneProxyApi(`/sets/${encodeURIComponent(setCode)}/manifest`);
+                  if (mResp.ok) {
+                    manifestData = await mResp.json();
+                    try {
+                      fs.writeFileSync(manifestFile, JSON.stringify(manifestData, null, 2), 'utf-8');
+                    } catch (_) {}
+                  } else if (mResp.status === 429 || mResp.status === 503) {
+                    const retrySec = Number(mResp.headers.get('Retry-After')) || (2 * attempts);
+                    oneProxyBulkDownloadState.statusText = `Rate limit on manifest ${setCode}. Waiting ${retrySec}s...`;
+                    await new Promise(r => setTimeout(r, (retrySec * 1000) + Math.random() * 500));
+                  } else {
+                    console.warn(`[OneProxy] Manifest fetch returned status ${mResp.status} for ${setCode}`);
+                    break;
+                  }
+                } catch (err: any) {
+                  console.warn(`[OneProxy] Failed to fetch manifest for ${setCode} (attempt ${attempts}):`, err.message);
+                  await new Promise(r => setTimeout(r, 1000 * attempts));
+                }
+              }
+
+              // Polite pause between remote manifest queries to avoid bursting rate limits
+              await new Promise(r => setTimeout(r, 150));
             }
 
             if (manifestData) {
@@ -3057,6 +3080,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   setCode
                 });
               }
+            } else {
+              failedManifestSets.push(setCode);
             }
           }
 
@@ -3067,50 +3092,56 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           } catch (_) {}
 
           oneProxyBulkDownloadState.totalCards = allAssetsQueue.length;
-          oneProxyBulkDownloadState.statusText = `Starting download of ${allAssetsQueue.length} assets across ${targetSets.length} sets...`;
+          oneProxyBulkDownloadState.statusText = `Starting download of ${allAssetsQueue.length} assets across ${targetSets.length} sets (1 worker)...`;
 
-          // 2. Controlled Worker Pool: exactly 2 workers (per integration specifications)
-          const concurrency = 2;
-          let currentIndex = 0;
+          // 2. Controlled Single Worker: exactly 1 worker per user specification for maximum stability
+          for (let i = 0; i < allAssetsQueue.length && !oneProxyBulkCancelRequested; i++) {
+            const asset = allAssetsQueue[i];
+            const setCode = asset.setCode || 'OP';
+            const relPath = asset.relativePath || `${setCode}/${asset.fileName}`;
+            const destFile = path.join(resolvedTarget, relPath);
+            const destDir = path.dirname(destFile);
 
-          const downloadWorker = async () => {
-            while (currentIndex < allAssetsQueue.length && !oneProxyBulkCancelRequested) {
-              const idx = currentIndex++;
-              const asset = allAssetsQueue[idx];
-              const setCode = asset.setCode || 'OP';
-              const relPath = asset.relativePath || `${setCode}/${asset.fileName}`;
-              const destFile = path.join(resolvedTarget, relPath);
-              const destDir = path.dirname(destFile);
+            oneProxyBulkDownloadState.currentSet = setCode;
+            oneProxyBulkDownloadState.currentCardNumber = asset.cardId || asset.fileName;
+            oneProxyBulkDownloadState.currentCardName = asset.fileName;
+            oneProxyBulkDownloadState.processedCards = i + 1;
+            oneProxyBulkDownloadState.percent = Math.min(100, Math.round(((i + 1) / allAssetsQueue.length) * 100));
 
-              oneProxyBulkDownloadState.currentSet = setCode;
-              oneProxyBulkDownloadState.currentCardNumber = asset.cardId || asset.fileName;
-              oneProxyBulkDownloadState.currentCardName = asset.fileName;
-              oneProxyBulkDownloadState.processedCards = idx + 1;
-              oneProxyBulkDownloadState.percent = Math.min(100, Math.round(((idx + 1) / allAssetsQueue.length) * 100));
+            try {
+              if (!fs.existsSync(destDir)) {
+                fs.mkdirSync(destDir, { recursive: true });
+              }
 
-              try {
-                if (!fs.existsSync(destDir)) {
-                  fs.mkdirSync(destDir, { recursive: true });
-                }
+              // Check if already completely downloaded and matches size
+              if (fs.existsSync(destFile)) {
+                try {
+                  const st = fs.statSync(destFile);
+                  if (st.size === asset.bytes && st.size > 0) {
+                    oneProxyBulkDownloadState.skippedCards++;
+                    continue;
+                  }
+                } catch (_) {}
+              }
 
-                // Check if already completely downloaded and matches size
-                if (fs.existsSync(destFile)) {
-                  try {
-                    const st = fs.statSync(destFile);
-                    if (st.size === asset.bytes && st.size > 0) {
-                      oneProxyBulkDownloadState.skippedCards++;
-                      continue;
-                    }
-                  } catch (_) {}
-                }
+              // Download with resume support using .part file
+              const partFile = `${destFile}.part`;
+              let existingPartBytes = 0;
+              if (fs.existsSync(partFile)) {
+                try { existingPartBytes = fs.statSync(partFile).size; } catch (_) {}
+              }
 
-                // Download with resume support using .part file
-                const partFile = `${destFile}.part`;
-                let existingPartBytes = 0;
-                if (fs.existsSync(partFile)) {
-                  try { existingPartBytes = fs.statSync(partFile).size; } catch (_) {}
-                }
+              const assetUrl = asset.downloadUrl.startsWith('http')
+                ? asset.downloadUrl
+                : asset.downloadUrl.startsWith('/api/v1')
+                  ? `${ONEPROXY_HOST}${asset.downloadUrl}`
+                  : `${ONEPROXY_BASE_URL}${asset.downloadUrl.startsWith('/') ? '' : '/'}${asset.downloadUrl}`;
 
+              let downloadSuccess = false;
+              let assetAttempts = 0;
+
+              while (assetAttempts < 5 && !downloadSuccess && !oneProxyBulkCancelRequested) {
+                assetAttempts++;
                 const fetchHeaders: any = {
                   'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
                   'User-Agent': ONEPROXY_USER_AGENT,
@@ -3122,66 +3153,62 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   fetchHeaders['If-Range'] = `"${asset.sha256}"`;
                 }
 
-                const assetUrl = asset.downloadUrl.startsWith('http')
-                  ? asset.downloadUrl
-                  : asset.downloadUrl.startsWith('/api/v1')
-                    ? `${ONEPROXY_HOST}${asset.downloadUrl}`
-                    : `${ONEPROXY_BASE_URL}${asset.downloadUrl.startsWith('/') ? '' : '/'}${asset.downloadUrl}`;
+                try {
+                  const resp: any = await fetch(assetUrl, { headers: fetchHeaders });
 
-                const resp: any = await fetch(assetUrl, { headers: fetchHeaders });
-
-                if (resp.status === 206) {
-                  // Append to existing part
-                  const chunkBuf = Buffer.from(await resp.arrayBuffer());
-                  fs.appendFileSync(partFile, chunkBuf);
-                } else if (resp.ok) {
-                  // Full download
-                  const chunkBuf = Buffer.from(await resp.arrayBuffer());
-                  fs.writeFileSync(partFile, chunkBuf);
-                } else if (resp.status === 429 || resp.status === 503) {
-                  // Rate limited / temporary error: retry with backoff
-                  const retryAfter = Number(resp.headers.get('Retry-After')) || 5;
-                  await new Promise(r => setTimeout(r, (retryAfter * 1000) + Math.random() * 500));
-                  currentIndex--; // Retry this asset
-                  continue;
-                } else {
-                  oneProxyBulkDownloadState.failedCards++;
-                  continue;
-                }
-
-                // Verify file integrity (SHA-256)
-                if (fs.existsSync(partFile)) {
-                  const partBytes = fs.readFileSync(partFile);
-                  const hash = crypto.createHash('sha256').update(partBytes).digest('hex');
-
-                  if (!asset.sha256 || hash.toLowerCase() === asset.sha256.toLowerCase()) {
-                    // Atomic rename
-                    fs.renameSync(partFile, destFile);
-                    oneProxyBulkDownloadState.downloadedCards++;
-                    oneProxyBulkDownloadState.totalBytesDownloaded += partBytes.length;
-
-                    // Delete legacy watermarked .webp with same base name if exists
-                    const oldWebp = path.join(destDir, `${path.parse(destFile).name}.webp`);
-                    if (fs.existsSync(oldWebp)) { try { fs.unlinkSync(oldWebp); } catch (_) {} }
+                  if (resp.status === 206) {
+                    const chunkBuf = Buffer.from(await resp.arrayBuffer());
+                    fs.appendFileSync(partFile, chunkBuf);
+                    downloadSuccess = true;
+                  } else if (resp.ok) {
+                    const chunkBuf = Buffer.from(await resp.arrayBuffer());
+                    fs.writeFileSync(partFile, chunkBuf);
+                    downloadSuccess = true;
+                  } else if (resp.status === 429 || resp.status === 503) {
+                    const retryAfter = Number(resp.headers.get('Retry-After')) || (3 * assetAttempts);
+                    oneProxyBulkDownloadState.statusText = `Rate limited on ${asset.fileName}. Waiting ${retryAfter}s...`;
+                    await new Promise(r => setTimeout(r, (retryAfter * 1000) + Math.random() * 500));
                   } else {
-                    try { fs.unlinkSync(partFile); } catch (_) {}
-                    oneProxyBulkDownloadState.failedCards++;
+                    console.warn(`[OneProxy] Download failed for ${asset.fileName} (Status ${resp.status})`);
+                    break;
                   }
+                } catch (netErr: any) {
+                  console.warn(`[OneProxy] Network error downloading ${asset.fileName}:`, netErr.message);
+                  await new Promise(r => setTimeout(r, 1000 * assetAttempts));
                 }
-              } catch (e: any) {
-                oneProxyBulkDownloadState.failedCards++;
               }
 
-              // Polite pause between downloads (50ms)
-              await new Promise(r => setTimeout(r, 50));
-            }
-          };
+              if (!downloadSuccess) {
+                oneProxyBulkDownloadState.failedCards++;
+                continue;
+              }
 
-          const workers = [];
-          for (let w = 0; w < concurrency; w++) {
-            workers.push(downloadWorker());
+              // Verify file integrity (SHA-256)
+              if (fs.existsSync(partFile)) {
+                const partBytes = fs.readFileSync(partFile);
+                const hash = crypto.createHash('sha256').update(partBytes).digest('hex');
+
+                if (!asset.sha256 || hash.toLowerCase() === asset.sha256.toLowerCase()) {
+                  // Atomic rename
+                  fs.renameSync(partFile, destFile);
+                  oneProxyBulkDownloadState.downloadedCards++;
+                  oneProxyBulkDownloadState.totalBytesDownloaded += partBytes.length;
+
+                  // Delete legacy watermarked .webp with same base name if exists
+                  const oldWebp = path.join(destDir, `${path.parse(destFile).name}.webp`);
+                  if (fs.existsSync(oldWebp)) { try { fs.unlinkSync(oldWebp); } catch (_) {} }
+                } else {
+                  try { fs.unlinkSync(partFile); } catch (_) {}
+                  oneProxyBulkDownloadState.failedCards++;
+                }
+              }
+            } catch (e: any) {
+              oneProxyBulkDownloadState.failedCards++;
+            }
+
+            // Polite pause between downloads (100ms) for single worker stability
+            await new Promise(r => setTimeout(r, 100));
           }
-          await Promise.all(workers);
 
           oneProxyBulkDownloadState.isActive = false;
           if (oneProxyBulkCancelRequested) {
@@ -3189,7 +3216,9 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           } else {
             oneProxyBulkDownloadState.isCompleted = true;
             oneProxyBulkDownloadState.percent = 100;
-            if (oneProxyBulkDownloadState.downloadedCards === 0 && oneProxyBulkDownloadState.skippedCards > 0) {
+            if (failedManifestSets.length > 0) {
+              oneProxyBulkDownloadState.statusText = `Finished with ${oneProxyBulkDownloadState.downloadedCards} cards downloaded (${failedManifestSets.length} sets failed to fetch manifests).`;
+            } else if (oneProxyBulkDownloadState.downloadedCards === 0 && oneProxyBulkDownloadState.skippedCards > 0) {
               oneProxyBulkDownloadState.statusText = `Download complete! All ${oneProxyBulkDownloadState.skippedCards} card(s) already up to date.`;
             } else {
               oneProxyBulkDownloadState.statusText = `Download complete! ${oneProxyBulkDownloadState.downloadedCards} cards downloaded, ${oneProxyBulkDownloadState.skippedCards} already up to date.`;
