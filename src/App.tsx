@@ -3198,11 +3198,16 @@ export default function App() {
       const setTag = (card.set || 'custom').toUpperCase();
       const numTag = card.collector_number || '1';
 
+      const cleanImgUrl = imgUrl.split('?')[0].toLowerCase();
+      let inferredExt = '.png';
+      if (cleanImgUrl.endsWith('.webp')) inferredExt = '.webp';
+      else if (cleanImgUrl.endsWith('.jpg') || cleanImgUrl.endsWith('.jpeg')) inferredExt = '.jpg';
+
       const fileList: string[] = Array.isArray(replaceOriginalFilename)
         ? replaceOriginalFilename
         : (replaceOriginalFilename ? [replaceOriginalFilename] : []);
 
-      const safeName = fileList.length > 0 ? fileList[0] : (type === 'back' ? `${cleanTitle}.png` : `${cleanTitle} (${setTag} ${numTag}).png`);
+      const safeName = fileList.length > 0 ? fileList[0] : (type === 'back' ? `${cleanTitle}${inferredExt}` : `${cleanTitle} (${setTag} ${numTag})${inferredExt}`);
 
       setArtDownloadMsg(fileList.length > 1 ? `Downloading art for ${fileList.length} cards...` : `Downloading ${card.name || safeName}...`);
 

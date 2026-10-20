@@ -487,6 +487,44 @@ async function startServer() {
       }
 
       // Fallback
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext === '.webp') {
+        const pythonExe = resolvePythonExecutable();
+        if (pythonExe) {
+          try {
+            const pyScript = `import sys
+from PIL import Image
+try:
+    with Image.open(sys.argv[1]) as img:
+        scale = float(sys.argv[3])
+        max_dim = int(sys.argv[4])
+        target_w = int(img.width * scale)
+        target_h = int(img.height * scale)
+        if target_w > max_dim or target_h > max_dim:
+            ratio = min(max_dim / target_w, max_dim / target_h)
+            target_w = int(target_w * ratio)
+            target_h = int(target_h * ratio)
+        res = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        res.save(sys.argv[2], 'WEBP', quality=95)
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+`;
+            const tempOut = path.join(os.tmpdir(), `upscale_${Date.now()}_${Math.random().toString(36).substring(7)}.webp`);
+            const res = spawnSync(pythonExe, ['-c', pyScript, inputPath, tempOut, scaleFactor.toString(), maxDimension.toString()], {
+              windowsHide: true,
+              timeout: 15000
+            });
+            if (res.status === 0 && fs.existsSync(tempOut) && fs.statSync(tempOut).size > 0) {
+              fs.copyFileSync(tempOut, filePath);
+              try { fs.unlinkSync(tempOut); } catch (_) {}
+              console.log(`[Upscale: WebP PIL fallback] ${path.basename(filePath)} (${scaleFactor}x)`);
+              return true;
+            }
+          } catch (_) {}
+        }
+      }
+
       const { Jimp } = await import('jimp');
       const image = await Jimp.read(inputPath);
       const curW = image.width;
@@ -879,6 +917,117 @@ async function startServer() {
 
   const thumbnailQueue = new Map<string, Promise<string>>();
 
+  // High-performance image thumbnail generator with native .webp & transparency support
+  const createThumbnailFile = async (srcPath: string, destPath: string, maxWidth: number = 360): Promise<boolean> => {
+    const ext = path.extname(srcPath).toLowerCase();
+    const tempPath = `${destPath}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp.jpg`;
+
+    // 1. For WebP, Jimp lacks native decoding; use Python PIL directly
+    if (ext === '.webp') {
+      const pythonExe = resolvePythonExecutable();
+      if (pythonExe) {
+        try {
+          const pyScript = `import sys
+from PIL import Image
+try:
+    with Image.open(sys.argv[1]) as img:
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            bg = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            bg.paste(img, mask=img.split()[3])
+            img = bg
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        max_w = int(sys.argv[3])
+        if img.width > max_w:
+            ratio = max_w / float(img.width)
+            new_h = int(float(img.height) * ratio)
+            img = img.resize((max_w, new_h), Image.Resampling.LANCZOS)
+        img.save(sys.argv[2], 'JPEG', quality=85)
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+`;
+          const res = spawnSync(pythonExe, ['-c', pyScript, srcPath, tempPath, maxWidth.toString()], {
+            windowsHide: true,
+            timeout: 5000
+          });
+          if (res.status === 0 && fs.existsSync(tempPath) && fs.statSync(tempPath).size > 0) {
+            try {
+              fs.renameSync(tempPath, destPath);
+            } catch (_) {
+              if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+            }
+            return true;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. Try Jimp for standard formats (PNG, JPG)
+    try {
+      const image = await Jimp.read(srcPath);
+      if (image.width > maxWidth) {
+        image.resize({ w: maxWidth });
+      }
+      await image.write(tempPath as any);
+      try {
+        fs.renameSync(tempPath, destPath);
+      } catch (_) {
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      }
+      return true;
+    } catch (jimpErr) {
+      // 3. Fallback to Python PIL for any problematic formats
+      const pythonExe = resolvePythonExecutable();
+      if (pythonExe) {
+        try {
+          const pyScript = `import sys
+from PIL import Image
+try:
+    with Image.open(sys.argv[1]) as img:
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            bg = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            bg.paste(img, mask=img.split()[3])
+            img = bg
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        max_w = int(sys.argv[3])
+        if img.width > max_w:
+            ratio = max_w / float(img.width)
+            new_h = int(float(img.height) * ratio)
+            img = img.resize((max_w, new_h), Image.Resampling.LANCZOS)
+        img.save(sys.argv[2], 'JPEG', quality=85)
+    sys.exit(0)
+except Exception:
+    sys.exit(1)
+`;
+          const res = spawnSync(pythonExe, ['-c', pyScript, srcPath, tempPath, maxWidth.toString()], {
+            windowsHide: true,
+            timeout: 5000
+          });
+          if (res.status === 0 && fs.existsSync(tempPath) && fs.statSync(tempPath).size > 0) {
+            try {
+              fs.renameSync(tempPath, destPath);
+            } catch (_) {
+              if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+            }
+            return true;
+          }
+        } catch (_) {}
+      }
+    } finally {
+      if (fs.existsSync(tempPath)) {
+        try { fs.unlinkSync(tempPath); } catch (_) {}
+      }
+    }
+
+    return false;
+  };
+
   // Ultra-fast Thumbnail Generator & Disk Cache
   app.get('/api/thumbnail', async (req: any, res: any) => {
     try {
@@ -955,17 +1104,9 @@ async function startServer() {
       let genPromise = thumbnailQueue.get(thumbPath);
       if (!genPromise) {
         genPromise = (async () => {
-          const image = await Jimp.read(realSourcePath);
-          if (image.width > 360) {
-            image.resize({ w: 360 });
-          }
-          const tempPath = `${thumbPath}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp.jpg`;
-          await image.write(tempPath as any);
-          try {
-            fs.renameSync(tempPath, thumbPath);
-          } catch (renErr) {
-            // In case target was already written by race condition
-            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+          const ok = await createThumbnailFile(realSourcePath, thumbPath, 360);
+          if (!ok) {
+            throw new Error(`Failed to generate thumbnail for ${realSourcePath}`);
           }
           return thumbPath;
         })();
@@ -1323,13 +1464,21 @@ async function startServer() {
       const ext = path.extname(req.file.originalname) || '.png';
       const createdFiles: string[] = [];
       for (const origName of replaceOriginalFilenames) {
-        const fileExt = path.extname(origName) || ext;
+        const fileExt = ext;
         const baseName = path.parse(origName).name;
         const fname = `${baseName}${fileExt}`;
         const oldPath = path.join(targetDir, origName);
         const newPath = path.join(targetDir, fname);
         if (fs.existsSync(oldPath) && oldPath !== newPath) {
           try { fs.unlinkSync(oldPath); } catch (e) {}
+        }
+        for (const oExt of ['.png', '.jpg', '.jpeg', '.webp']) {
+          if (oExt !== fileExt) {
+            const extraOld = path.join(targetDir, `${baseName}${oExt}`);
+            if (fs.existsSync(extraOld) && extraOld !== newPath) {
+              try { fs.unlinkSync(extraOld); } catch (e) {}
+            }
+          }
         }
         fs.copyFileSync(req.file.path, newPath);
         createdFiles.push(fname);
@@ -1354,6 +1503,14 @@ async function startServer() {
       const newPath = path.join(targetDir, finalFilename);
       if (fs.existsSync(oldPath) && oldPath !== newPath) {
         try { fs.unlinkSync(oldPath); } catch (e) {}
+      }
+      for (const oExt of ['.png', '.jpg', '.jpeg', '.webp']) {
+        if (oExt !== ext) {
+          const extraOld = path.join(targetDir, `${baseName}${oExt}`);
+          if (fs.existsSync(extraOld) && extraOld !== newPath) {
+            try { fs.unlinkSync(extraOld); } catch (e) {}
+          }
+        }
       }
     }
 
@@ -1932,10 +2089,33 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
+      // Detect image format from content-type or magic bytes
+      let detectedExt = '.png';
+      const cType = (response.headers.get('content-type') || '').toLowerCase();
+      if (cType.includes('webp') || (buffer.length >= 12 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP')) {
+        detectedExt = '.webp';
+      } else if (cType.includes('jpeg') || (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xD8)) {
+        detectedExt = '.jpg';
+      }
+
       const createdFiles: string[] = [];
       for (const fn of fileList) {
-        const safeFilename = fn.endsWith('.png') || fn.endsWith('.jpg') || fn.endsWith('.jpeg') || fn.endsWith('.webp') ? fn : `${fn}.png`;
+        const baseName = path.parse(fn).name;
+        const origExt = path.extname(fn).toLowerCase();
+        const safeExt = (origExt === detectedExt) ? origExt : detectedExt;
+        const safeFilename = `${baseName}${safeExt}`;
         const filePath = path.join(destDir, safeFilename);
+
+        // Clean up any existing file with same base name but different extension
+        for (const ext of ['.png', '.jpg', '.jpeg', '.webp']) {
+          if (ext !== safeExt) {
+            const oldFile = path.join(destDir, `${baseName}${ext}`);
+            if (fs.existsSync(oldFile)) {
+              try { fs.unlinkSync(oldFile); } catch (_) {}
+            }
+          }
+        }
+
         fs.writeFileSync(filePath, buffer);
         createdFiles.push(safeFilename);
       }
@@ -2986,12 +3166,12 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     return dpi;
   };
 
-  // Fast image DPI & dimension reader from binary header (supports PNG and JPEG)
+  // Fast image DPI & dimension reader from binary header (supports PNG, JPEG, and WebP)
   const getFastImageDpi = (filePath: string, plugin: string = 'oneproxy'): number => {
     try {
       const fd = fs.openSync(filePath, 'r');
-      const buffer = Buffer.alloc(32);
-      fs.readSync(fd, buffer, 0, 32, 0);
+      const buffer = Buffer.alloc(64);
+      fs.readSync(fd, buffer, 0, 64, 0);
       fs.closeSync(fd);
 
       let width = 0;
@@ -3021,6 +3201,25 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           }
           const length = jpgBuf.readUInt16BE(offset + 2);
           offset += 2 + length;
+        }
+      } else if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+        // WebP: RIFF ... WEBP (supports VP8X extended, VP8L lossless, and VP8 simple lossy)
+        const chunk = buffer.toString('ascii', 12, 16);
+        if (chunk === 'VP8X' && buffer.length >= 30) {
+          width = 1 + buffer.readUIntLE(24, 3);
+          height = 1 + buffer.readUIntLE(27, 3);
+        } else if (chunk === 'VP8L' && buffer.length >= 25 && buffer[20] === 0x2f) {
+          const b0 = buffer[21];
+          const b1 = buffer[22];
+          const b2 = buffer[23];
+          const b3 = buffer[24];
+          width = 1 + (((b1 & 0x3f) << 8) | b0);
+          height = 1 + (((b3 & 0x0f) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6));
+        } else if (chunk === 'VP8 ' && buffer.length >= 30) {
+          if (buffer[23] === 0x9d && buffer[24] === 0x01 && buffer[25] === 0x2a) {
+            width = buffer.readUInt16LE(26) & 0x3fff;
+            height = buffer.readUInt16LE(28) & 0x3fff;
+          }
         }
       }
 
@@ -4240,16 +4439,15 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       return res.status(404).send("Source image not found");
     }
 
-    // 3. Fast resize using Jimp and cache to disk
+    // 3. Fast resize using createThumbnailFile (supports WebP via Python PIL, JPEG/PNG via Jimp)
     try {
-      const img = await Jimp.read(sourcePath);
-      img.resize({ w: 240 });
-      const buf = await img.getBuffer('image/jpeg', { quality: 80 });
-      try { fs.writeFileSync(thumbFile, buf); } catch (_) {}
-
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
-      return res.send(buf);
+      const ok = await createThumbnailFile(sourcePath, thumbFile, 240);
+      if (ok && fs.existsSync(thumbFile)) {
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        return res.sendFile(thumbFile);
+      }
+      return res.sendFile(sourcePath);
     } catch (err: any) {
       console.warn(`[OneProxy] Fast thumb fallback for ${cleanBase}:`, err.message);
       return res.sendFile(sourcePath);
