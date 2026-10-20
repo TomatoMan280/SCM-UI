@@ -66,10 +66,7 @@
       "category": "Graphics",
       "icon": "build/icon.png",
       "artifactName": "SCMUI-${version}.${ext}",
-      "description": "Silhouette Card Maker UI",
-      "desktop": {
-        "StartupWMClass": "SCMUI"
-      }
+      "description": "Silhouette Card Maker UI"
     },
     "nsis": {
       "oneClick": false,
