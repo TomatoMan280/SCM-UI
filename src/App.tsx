@@ -10139,6 +10139,7 @@ export default function App() {
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
                       >
                         <option value="all" className="bg-[#1a1a20]">All Formats & Eras</option>
+                        <option value="pocket" className="bg-[#1a1a20]">Pokémon Pocket (WebP)</option>
                         <option value="standard" className="bg-[#1a1a20]">Standard Format</option>
                         <option value="expanded" className="bg-[#1a1a20]">Expanded Format</option>
                         <option value="sv" className="bg-[#1a1a20]">Scarlet & Violet Era</option>
@@ -10146,6 +10147,10 @@ export default function App() {
                         <option value="sm" className="bg-[#1a1a20]">Sun & Moon Era</option>
                         <option value="xy" className="bg-[#1a1a20]">XY Era</option>
                         <option value="bw" className="bg-[#1a1a20]">Black & White Era</option>
+                        <option value="hgss" className="bg-[#1a1a20]">HeartGold & SoulSilver Era</option>
+                        <option value="dp" className="bg-[#1a1a20]">Diamond & Pearl / Platinum Era</option>
+                        <option value="ex" className="bg-[#1a1a20]">EX Ruby & Sapphire Era</option>
+                        <option value="wotc" className="bg-[#1a1a20]">Classic / WotC (Base - Neo)</option>
                       </select>
                     </div>
 
@@ -10182,6 +10187,18 @@ export default function App() {
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
                       >
                         <option value="all" className="bg-[#1a1a20]">All Sets</option>
+                        <option disabled className="bg-[#12131a] text-primary-400 font-bold">── Pokémon Pocket (WebP) ──</option>
+                        <option value="A1" className="bg-[#1a1a20]">A1 - Genetic Apex</option>
+                        <option value="A1a" className="bg-[#1a1a20]">A1a - Mythical Island</option>
+                        <option value="A2" className="bg-[#1a1a20]">A2 - Space-Time Smackdown</option>
+                        <option value="A2a" className="bg-[#1a1a20]">A2a - Triumphant Light</option>
+                        <option value="B1" className="bg-[#1a1a20]">B1 - Pocket B1</option>
+                        <option value="B2b" className="bg-[#1a1a20]">B2b - Pocket B2b</option>
+                        <option value="B3a" className="bg-[#1a1a20]">B3a - Pocket B3a</option>
+                        <option value="B4b" className="bg-[#1a1a20]">B4b - Pocket B4b</option>
+                        <option value="P-A" className="bg-[#1a1a20]">P-A - Pocket Promo-A</option>
+                        <option value="P-B" className="bg-[#1a1a20]">P-B - Pocket Promo-B</option>
+                        <option disabled className="bg-[#12131a] text-primary-400 font-bold">── Modern TCG Sets ──</option>
                         <option value="PRE" className="bg-[#1a1a20]">PRE - Prismatic Evolutions</option>
                         <option value="SSP" className="bg-[#1a1a20]">SSP - Surging Sparks</option>
                         <option value="SCR" className="bg-[#1a1a20]">SCR - Stellar Crown</option>
@@ -10206,6 +10223,20 @@ export default function App() {
                         <option value="VIV" className="bg-[#1a1a20]">VIV - Vivid Voltage</option>
                         <option value="DAA" className="bg-[#1a1a20]">DAA - Darkness Ablaze</option>
                         <option value="SSH" className="bg-[#1a1a20]">SSH - Sword & Shield Base</option>
+                        <option disabled className="bg-[#12131a] text-primary-400 font-bold">── Classic & Vintage Sets ──</option>
+                        <option value="HGSS" className="bg-[#1a1a20]">HGSS - HeartGold SoulSilver</option>
+                        <option value="DP" className="bg-[#1a1a20]">DP - Diamond & Pearl</option>
+                        <option value="MT" className="bg-[#1a1a20]">MT - Mysterious Treasures</option>
+                        <option value="SW" className="bg-[#1a1a20]">SW - Secret Wonders</option>
+                        <option value="GE" className="bg-[#1a1a20]">GE - Great Encounters</option>
+                        <option value="MD" className="bg-[#1a1a20]">MD - Majestic Dawn</option>
+                        <option value="LA" className="bg-[#1a1a20]">LA - Legends Awakened</option>
+                        <option value="SF" className="bg-[#1a1a20]">SF - Stormfront</option>
+                        <option value="PL" className="bg-[#1a1a20]">PL - Platinum</option>
+                        <option value="BS" className="bg-[#1a1a20]">BS - Base Set</option>
+                        <option value="JU" className="bg-[#1a1a20]">JU - Jungle</option>
+                        <option value="FO" className="bg-[#1a1a20]">FO - Fossil</option>
+                        <option value="TR" className="bg-[#1a1a20]">TR - Team Rocket</option>
                       </select>
                     </div>
                   </div>
@@ -10318,6 +10349,14 @@ export default function App() {
                                     alt={card.name}
                                     loading="lazy"
                                     decoding="async"
+                                    onError={(e) => {
+                                      const target = e.currentTarget;
+                                      if (card.fallbackUrl && target.src !== card.fallbackUrl) {
+                                        target.src = card.fallbackUrl;
+                                      } else if (fullImg && target.src !== fullImg) {
+                                        target.src = fullImg;
+                                      }
+                                    }}
                                     className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
                                   />
                                 ) : (
@@ -10326,6 +10365,11 @@ export default function App() {
                                 <span className="absolute top-1.5 left-1.5 max-w-[85%] truncate px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none" title={`${String(card.set || '').toUpperCase()} #${card.collector_number}`}>
                                   {String(card.set || '').toUpperCase()} #{card.collector_number}
                                 </span>
+                                {card.isWebp && (
+                                  <span className="absolute top-1.5 right-1.5 px-1 py-0.5 rounded bg-emerald-500/80 backdrop-blur-md text-[8px] font-mono font-bold text-white shadow pointer-events-none">
+                                    WEBP
+                                  </span>
+                                )}
                               </div>
                               <h4 className="text-xs font-bold text-white truncate" title={card.name}>{card.name}</h4>
                               <p className="text-[10px] text-white/40 truncate" title={card.set_name || card.source}>

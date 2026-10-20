@@ -2189,7 +2189,29 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     });
   });
 
-  // Limitless TCG Card Search Proxy for Pokémon Direct Card Ingestion
+  const LIMITLESS_TO_POKEMONTCG_SET_ID: Record<string, string> = {
+    // WotC era
+    'BS': 'base1', 'JU': 'base2', 'FO': 'base3', 'BS2': 'base4',
+    'TR': 'base5', 'G1': 'gym1', 'G2': 'gym2',
+    'N1': 'neo1', 'N2': 'neo2', 'SI': 'si1', 'N3': 'neo3', 'N4': 'neo4',
+    'LC': 'base6', 'E1': 'ecard1', 'E2': 'ecard2', 'E3': 'ecard3',
+    'WP': 'basep', 'BG': 'bp',
+    // EX era
+    'RS': 'ex1', 'SS': 'ex2', 'DR': 'ex3', 'MA': 'ex4',
+    'HL': 'ex5', 'RG': 'ex6', 'TRR': 'ex7', 'DX': 'ex8',
+    'EM': 'ex9', 'UF': 'ex10', 'DS': 'ex11', 'LM': 'ex12',
+    'HP': 'ex13', 'CG': 'ex14', 'DF': 'ex15', 'PK': 'ex16',
+    'NP': 'np',
+    'P1': 'pop1', 'P2': 'pop2', 'P3': 'pop3', 'P4': 'pop4', 'P5': 'pop5',
+    // DP/Platinum era
+    'DP': 'dp1', 'MT': 'dp2', 'SW': 'dp3', 'GE': 'dp4',
+    'MD': 'dp5', 'LA': 'dp6', 'SF': 'dp7',
+    'PL': 'pl1', 'RR': 'pl2', 'SV': 'pl3', 'AR': 'pl4',
+    'RM': 'ru1',
+    'P6': 'pop6', 'P7': 'pop7', 'P8': 'pop8', 'P9': 'pop9',
+  };
+
+  // Limitless TCG Card Search Proxy for Pokémon Direct Card Ingestion (Supports TCG & Pokémon Pocket WebP)
   app.get("/api/limitless/search", async (req, res) => {
     const q = (req.query.q as string || '').trim();
     const filterType = (req.query.type as string || 'all').toLowerCase().trim();
@@ -2201,6 +2223,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const sortBy = (req.query.order as string || 'set').toLowerCase().trim();
 
     try {
+      const isPocketMode = filterFormat === 'pocket' || /^[AB]\d+/i.test(filterSet) || /^P-[AB]/i.test(filterSet);
+
       const queryTokens: string[] = [];
       if (q) {
         queryTokens.push(q);
@@ -2255,21 +2279,23 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       }
 
       // 5. Format / Era Filter
-      if (filterFormat && filterFormat !== 'all') {
+      if (filterFormat && filterFormat !== 'all' && filterFormat !== 'pocket') {
         if (['standard', 'expanded'].includes(filterFormat)) {
           queryTokens.push(`f:${filterFormat}`);
-        } else if (['sv', 'ss', 'sm', 'xy', 'bw'].includes(filterFormat)) {
+        } else if (filterFormat === 'hgss' || filterFormat === 'hs') {
+          queryTokens.push('series:hs');
+        } else if (['sv', 'ss', 'sm', 'xy', 'bw', 'dp', 'ex', 'wotc'].includes(filterFormat)) {
           queryTokens.push(`series:${filterFormat}`);
         }
       }
 
       // 6. Set Code Filter
-      if (filterSet) {
+      if (filterSet && filterSet !== 'ALL') {
         queryTokens.push(`!set:${filterSet}`);
       }
 
       let finalQuery = queryTokens.join('+');
-      if (!finalQuery) {
+      if (!finalQuery && !isPocketMode) {
         finalQuery = 'series:sv';
       }
 
@@ -2278,80 +2304,132 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         sortParam = `&sort=${encodeURIComponent(sortBy)}`;
       }
 
-      const url = `https://limitlesstcg.com/cards?q=${encodeURIComponent(finalQuery).replace(/%2B/g, '+')}&display=list${sortParam}`;
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        }
-      });
+      const headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+      };
 
-      if (!response.ok) {
-        throw new Error(`Limitless responded with HTTP ${response.status}`);
-      }
+      const parseHtmlCards = (html: string, isPocketDomain: boolean) => {
+        const list: any[] = [];
+        const rowRegex = /<tr[^>]*>[\s\S]*?<td[^>]*>[\s\S]*?<span[^>]*data-tooltip="([^"]*)"[^>]*>[\s\S]*?alt="([^"]*)"[\s\S]*?<td><a href="\/cards\/([^\/"]+)\/([^"]+)">([^<]*)<\/a><\/td>[\s\S]*?<td><a href="\/cards\/[^\/"]+\/[^"]+">([^<]*)<\/a><\/td>[\s\S]*?<\/tr>/g;
+        let match;
+        while ((match = rowRegex.exec(html)) !== null && list.length < 60) {
+          const setName = (match[1] || match[2] || '').replace(/&amp;/g, '&');
+          const setCode = match[3];
+          const cardNum = match[4];
+          const cardName = match[6].replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
 
-      const html = await response.text();
-      const results: any[] = [];
-
-      const rowRegex = /<tr[^>]*>[\s\S]*?<span class="card-set"(?: data-tooltip="([^"]*)")?[^>]*>[\s\S]*?alt="([^"]*)"[\s\S]*?<td><a href="\/cards\/[^\/"]+\/([^"]+)">([^<]*)<\/a><\/td>[\s\S]*?<td><a href="\/cards\/[^\/"]+\/[^"]+">([^<]*)<\/a><\/td>[\s\S]*?<\/tr>/g;
-
-      let match;
-      while ((match = rowRegex.exec(html)) !== null && results.length < 60) {
-        const setName = match[1] || match[2];
-        const setCode = match[2];
-        const cardNum = match[3];
-        const cardName = match[5].replace(/&#039;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
-
-        let paddedNum = cardNum;
-        if (/^\d+$/.test(cardNum)) {
-          paddedNum = cardNum.padStart(3, '0');
-        }
-
-        const smUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/${setCode}/${setCode}_${paddedNum}_R_EN_SM.png`;
-        const lgUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/${setCode}/${setCode}_${paddedNum}_R_EN_LG.png`;
-
-        results.push({
-          id: `${setCode}_${cardNum}`,
-          name: cardName,
-          set: setCode,
-          set_name: setName,
-          collector_number: cardNum,
-          imageUrl: lgUrl,
-          thumbnailUrl: smUrl,
-          dpi: 300,
-          image_uris: {
-            small: smUrl,
-            normal: lgUrl,
-            large: lgUrl,
-            png: lgUrl
+          let paddedNum = cardNum;
+          if (/^\d+$/.test(cardNum)) {
+            paddedNum = cardNum.padStart(3, '0');
           }
-        });
-      }
+          const cleanNum = cardNum.replace(/^0+/, '') || '1';
+          const upperSet = (setCode || '').toUpperCase();
 
-      // Fallback: grid regex if list had 0 matches
-      if (results.length === 0) {
-        const gridRegex = /<a href="\/cards\/([^\/"]+)\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^">]+)"[^>]*>/g;
-        let gm;
-        while ((gm = gridRegex.exec(html)) !== null && results.length < 60) {
-          const setCode = gm[1];
-          const cardNum = gm[2];
-          const smImg = gm[3];
-          const lgImg = smImg.replace('_SM.', '_LG.');
-          results.push({
+          let smUrl = '';
+          let lgUrl = '';
+          let isWebp = false;
+          let fallbackUrl = '';
+
+          // 1. Pokémon Pocket (.webp format)
+          if (isPocketDomain || /^[AB]\d+/i.test(setCode) || /^P-[AB]/i.test(setCode)) {
+            smUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/pocket/${setCode}/${setCode}_${paddedNum}_EN_SM.webp`;
+            lgUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/pocket/${setCode}/${setCode}_${paddedNum}_EN.webp`;
+            isWebp = true;
+          } else if (LIMITLESS_TO_POKEMONTCG_SET_ID[upperSet]) {
+            // 2. Pre-HGSS sets (DP, Platinum, EX, Neo, Base) -> pokemontcg.io
+            const pokemontcgSet = LIMITLESS_TO_POKEMONTCG_SET_ID[upperSet];
+            smUrl = `https://images.pokemontcg.io/${pokemontcgSet}/${cleanNum}.png`;
+            lgUrl = `https://images.pokemontcg.io/${pokemontcgSet}/${cleanNum}_hires.png`;
+            fallbackUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/${setCode}/${setCode}_${paddedNum}_R_EN_SM.png`;
+          } else {
+            // 3. Modern TCG sets (HGSS, BW, XY, SM, SSH, SV) -> Limitless TPCI CDN
+            smUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/${setCode}/${setCode}_${paddedNum}_R_EN_SM.png`;
+            lgUrl = `https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpci/${setCode}/${setCode}_${paddedNum}_R_EN_LG.png`;
+            fallbackUrl = `https://images.pokemontcg.io/${setCode.toLowerCase()}/${cleanNum}.png`;
+          }
+
+          list.push({
             id: `${setCode}_${cardNum}`,
-            name: q || 'Pokémon Card',
+            name: cardName,
             set: setCode,
+            set_name: setName || setCode,
             collector_number: cardNum,
-            imageUrl: lgImg,
-            thumbnailUrl: smImg,
+            imageUrl: lgUrl,
+            thumbnailUrl: smUrl,
+            fallbackUrl,
             dpi: 300,
+            isWebp,
+            tags: isWebp ? ['Pocket', 'WebP'] : [setName || setCode],
             image_uris: {
-              small: smImg,
-              normal: lgImg,
-              large: lgImg,
-              png: lgImg
+              small: smUrl,
+              normal: lgUrl,
+              large: lgUrl,
+              png: lgUrl
             }
           });
+        }
+
+        // Fallback grid regex if list had 0 matches
+        if (list.length === 0) {
+          const gridRegex = /<a href="\/cards\/([^\/"]+)\/([^"]+)"[^>]*>[\s\S]*?<img[^>]+src="([^">]+)"[^>]*>/g;
+          let gm;
+          while ((gm = gridRegex.exec(html)) !== null && list.length < 60) {
+            const setCode = gm[1];
+            const cardNum = gm[2];
+            const smImg = gm[3];
+            const isWebp = smImg.includes('.webp') || isPocketDomain;
+            const lgImg = isWebp ? smImg.replace('_SM.webp', '.webp') : (smImg.includes('_SM.') ? smImg.replace('_SM.', '_LG.') : (smImg.includes('.png') ? smImg.replace('.png', '_hires.png') : smImg));
+            list.push({
+              id: `${setCode}_${cardNum}`,
+              name: q || 'Pokémon Card',
+              set: setCode,
+              collector_number: cardNum,
+              imageUrl: lgImg,
+              thumbnailUrl: smImg,
+              dpi: 300,
+              isWebp,
+              tags: isWebp ? ['Pocket', 'WebP'] : [setCode],
+              image_uris: {
+                small: smImg,
+                normal: lgImg,
+                large: lgImg,
+                png: lgImg
+              }
+            });
+          }
+        }
+        return list;
+      };
+
+      let results: any[] = [];
+
+      if (isPocketMode) {
+        // Query Pocket Limitless
+        const pocketUrl = `https://pocket.limitlesstcg.com/cards?q=${encodeURIComponent(finalQuery).replace(/%2B/g, '+')}&display=list${sortParam}`;
+        const pResp = await fetch(pocketUrl, { headers });
+        if (pResp.ok) {
+          const html = await pResp.text();
+          results = parseHtmlCards(html, true);
+        }
+      } else if (filterFormat === 'all' && q) {
+        // Query BOTH Limitless TCG and Pocket in parallel for seamless omni-search
+        const tcgUrl = `https://limitlesstcg.com/cards?q=${encodeURIComponent(finalQuery).replace(/%2B/g, '+')}&display=list${sortParam}`;
+        const pocketUrl = `https://pocket.limitlesstcg.com/cards?q=${encodeURIComponent(q)}&display=list`;
+        const [tcgRes, pocketRes] = await Promise.all([
+          fetch(tcgUrl, { headers }).then(r => r.ok ? r.text() : '').catch(() => ''),
+          fetch(pocketUrl, { headers }).then(r => r.ok ? r.text() : '').catch(() => '')
+        ]);
+        const tcgCards = tcgRes ? parseHtmlCards(tcgRes, false) : [];
+        const pocketCards = pocketRes ? parseHtmlCards(pocketRes, true) : [];
+        results = [...tcgCards, ...pocketCards];
+      } else {
+        // Standard physical TCG Limitless
+        const tcgUrl = `https://limitlesstcg.com/cards?q=${encodeURIComponent(finalQuery).replace(/%2B/g, '+')}&display=list${sortParam}`;
+        const tResp = await fetch(tcgUrl, { headers });
+        if (tResp.ok) {
+          const html = await tResp.text();
+          results = parseHtmlCards(html, false);
         }
       }
 
