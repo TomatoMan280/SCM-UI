@@ -9829,8 +9829,8 @@ export default function App() {
                     {artResults
                       .slice()
                       .sort((a, b) => {
-                        const dpiA = a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 250);
-                        const dpiB = b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 250);
+                        const dpiA = a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 300);
+                        const dpiB = b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 300);
                         if (scryfallFilters.order === 'dpi_desc') return dpiB - dpiA;
                         if (scryfallFilters.order === 'dpi_asc') return dpiA - dpiB;
                         return 0;
@@ -9838,7 +9838,7 @@ export default function App() {
                       .map((card) => {
                         const img = card.imageUrl || card.image_uris?.normal || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.normal;
                         const frameEffects = card.frame_effects?.join(', ') || card.tags?.join(', ');
-                        const cardDpi = card.dpi || (card.image_uris?.png ? 300 : card.highres_image ? 300 : 250);
+                        const cardDpi = card.dpi || (card.image_uris?.png ? 300 : card.highres_image ? 300 : 300);
 
                         return (
                           <div key={card.id} className="bg-white/[0.03] border border-white/10 hover:border-primary-500/40 rounded-2xl p-2.5 flex flex-col justify-between transition-all group">
@@ -9853,7 +9853,7 @@ export default function App() {
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center text-xs text-white/30">No Image</div>
                                 )}
-                                <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none">
+                                <span className="absolute top-1.5 left-1.5 max-w-[58%] truncate px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none" title={`${String(card.set || '').toUpperCase()} #${card.collector_number}`}>
                                   {String(card.set || '').toUpperCase()} #{card.collector_number}
                                 </span>
                                 <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-primary-600/80 backdrop-blur-md text-[8px] font-mono font-bold text-white border border-white/10 pointer-events-none">

@@ -2857,6 +2857,53 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   const inFlightDownloads = new Map<string, Promise<{ buffer: Buffer; contentType: string } | null>>();
   let lastRemoteDownloadTime = 0;
 
+  // Fast image DPI & dimension reader from binary header (supports PNG and JPEG)
+  const getFastImageDpi = (filePath: string): number => {
+    try {
+      const fd = fs.openSync(filePath, 'r');
+      const buffer = Buffer.alloc(32);
+      fs.readSync(fd, buffer, 0, 32, 0);
+      fs.closeSync(fd);
+
+      // PNG: IHDR chunk (height at byte 20)
+      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+        const height = buffer.readUInt32BE(20);
+        const dpi = Math.round(height / 3.46);
+        if (dpi >= 1000) return 1200;
+        if (dpi >= 700) return 800;
+        if (dpi >= 500) return 600;
+        return 300;
+      }
+
+      // JPEG: SOF marker search (height at offset + 5)
+      if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
+        const fd2 = fs.openSync(filePath, 'r');
+        const stat = fs.statSync(filePath);
+        const readSize = Math.min(stat.size, 65536);
+        const jpgBuf = Buffer.alloc(readSize);
+        fs.readSync(fd2, jpgBuf, 0, readSize, 0);
+        fs.closeSync(fd2);
+
+        let offset = 2;
+        while (offset < jpgBuf.length - 8) {
+          if (jpgBuf[offset] !== 0xFF) { offset++; continue; }
+          const marker = jpgBuf[offset + 1];
+          if (marker >= 0xC0 && marker <= 0xC3 && marker !== 0xC4) {
+            const height = jpgBuf.readUInt16BE(offset + 5);
+            const dpi = Math.round(height / 3.46);
+            if (dpi >= 1000) return 1200;
+            if (dpi >= 700) return 800;
+            if (dpi >= 500) return 600;
+            return 300;
+          }
+          const length = jpgBuf.readUInt16BE(offset + 2);
+          offset += 2 + length;
+        }
+      }
+    } catch (_) {}
+    return 300;
+  };
+
   app.get("/api/plugin/cards/search", async (req, res) => {
     const plugin = (req.query.plugin as string || '').trim().toLowerCase();
     const q = (req.query.q as string || '').trim();
@@ -2985,7 +3032,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           }
 
           // OneProxy card selection is strictly LOCAL ONLY - index local image files recursively
-          const localCardsMap = new Map<string, { originalName: string; mtime: number; filePath: string }>();
+          const localCardsMap = new Map<string, { originalName: string; mtime: number; filePath: string; dpi?: number }>();
           const checkDirs = getOneProxySearchDirs();
 
           const scanDirRecursive = (currentDir: string) => {
@@ -3007,7 +3054,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                     if (!localCardsMap.has(cleanKey)) {
                       let mtime = 0;
                       try { mtime = Math.round(fs.statSync(fullP).mtimeMs); } catch (_) {}
-                      localCardsMap.set(cleanKey, { originalName: baseName, mtime, filePath: fullP });
+                      const dpi = getFastImageDpi(fullP);
+                      localCardsMap.set(cleanKey, { originalName: baseName, mtime, filePath: fullP, dpi });
                     }
                   }
                 }
@@ -3055,6 +3103,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   rarity: dbCard.rarity,
                   color: dbCard.color,
                   cardType: dbCard.cardType,
+                  dpi: meta.dpi || 300,
                   cached: true
                 });
               } else {
@@ -3069,6 +3118,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   imageUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
                   thumbnailUrl: `/api/oneproxy/image/${encodeURIComponent(meta.originalName)}${vParam}`,
                   cardType: isBack ? 'Back' : 'Card',
+                  dpi: meta.dpi || 300,
                   cached: true
                 });
               }
