@@ -2770,8 +2770,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       for (const d of checkDirs) {
         if (fs.existsSync(d)) {
           const stats = getDirectoryImageStats(d);
-          if (stats.cleanCount > downloadedCount) {
-            downloadedCount = stats.cleanCount;
+          if (stats.fileCount > downloadedCount) {
+            downloadedCount = stats.fileCount;
             downloadedBytes = stats.totalBytes;
           }
         }
@@ -3194,9 +3194,11 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   oneProxyBulkDownloadState.downloadedCards++;
                   oneProxyBulkDownloadState.totalBytesDownloaded += partBytes.length;
 
-                  // Delete legacy watermarked .webp with same base name if exists
-                  const oldWebp = path.join(destDir, `${path.parse(destFile).name}.webp`);
-                  if (fs.existsSync(oldWebp)) { try { fs.unlinkSync(oldWebp); } catch (_) {} }
+                  // Delete legacy watermarked .webp with same base name only if we just downloaded a clean PNG
+                  if (path.extname(destFile).toLowerCase() !== '.webp') {
+                    const oldWebp = path.join(destDir, `${path.parse(destFile).name}.webp`);
+                    if (fs.existsSync(oldWebp)) { try { fs.unlinkSync(oldWebp); } catch (_) {} }
+                  }
                 } else {
                   try { fs.unlinkSync(partFile); } catch (_) {}
                   oneProxyBulkDownloadState.failedCards++;
