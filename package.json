@@ -2,7 +2,7 @@
   "name": "silhouette-ui",
   "productName": "SCMUI",
   "description": "Silhouette Card Maker UI",
-  "author": "SCMUI",
+  "author": "SCMUI <Cecilcarnes28@gmail.com>",
   "private": true,
   "version": "3.0.8",
   "type": "module",
@@ -63,6 +63,7 @@
         "AppImage",
         "deb"
       ],
+      "maintainer": "SCMUI <Cecilcarnes28@gmail.com>",
       "category": "Graphics",
       "icon": "build/icon.png",
       "artifactName": "SCMUI-${version}.${ext}",
