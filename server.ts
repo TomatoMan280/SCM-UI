@@ -2137,16 +2137,26 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   let cachedFabCards: any[] | null = null;
 
   // ==========================================
-  // OneProxy Polite Offline Cache & Rate Limiting System
+  // OneProxy Official Partner API v1 Integration
   // ==========================================
+  const ONEPROXY_HOST = 'https://oneproxy.torforge.dev';
+  const ONEPROXY_BASE_URL = 'https://oneproxy.torforge.dev/api/v1';
+  const ONEPROXY_BEARER_TOKEN = 'op_scmui_QCCTA2FAWJN7k7pWk08DiHf66xqZxmNzjkt88WYYBIE';
+  const ONEPROXY_CREDIT_URL = 'https://oneproxy.torforge.dev/?utm_source=scmui&utm_medium=desktop_app&utm_campaign=scmui_integration';
+  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.7 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
+
   const defaultOneProxyCacheDir = path.join(os.homedir(), '.cache', 'oneproxy');
   const defaultUserOneProxyDir = path.join(os.homedir(), 'OneProxy');
   const oneProxyConfigFile = path.join(defaultOneProxyCacheDir, 'config.json');
 
   let oneProxyCacheDir = defaultOneProxyCacheDir;
   let oneProxyImagesDir = path.join(oneProxyCacheDir, 'images');
+  let oneProxyManifestsDir = path.join(oneProxyCacheDir, 'manifests');
   let oneProxyDbPath = path.join(oneProxyCacheDir, 'all_cards.json');
+  let oneProxySetsPath = path.join(oneProxyCacheDir, 'sets.json');
+  let oneProxyStatusPath = path.join(oneProxyCacheDir, 'status.json');
   let oneProxySyncStatusPath = path.join(oneProxyCacheDir, 'sync_status.json');
+  let oneProxyBadgePath = path.join(oneProxyCacheDir, 'badge.png');
 
   const resolveOneProxyPaths = (dir: string) => {
     oneProxyCacheDir = path.resolve(dir);
@@ -2157,33 +2167,20 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       oneProxyImagesDir = oneProxyCacheDir;
     }
 
-    const localDb = path.join(oneProxyCacheDir, 'all_cards.json');
-    if (fs.existsSync(localDb)) {
-      oneProxyDbPath = localDb;
-    } else if (fs.existsSync(path.join(defaultOneProxyCacheDir, 'all_cards.json'))) {
-      oneProxyDbPath = path.join(defaultOneProxyCacheDir, 'all_cards.json');
-    } else {
-      oneProxyDbPath = localDb;
-    }
-
+    oneProxyManifestsDir = path.join(oneProxyCacheDir, 'manifests');
+    oneProxyDbPath = path.join(oneProxyCacheDir, 'all_cards.json');
+    oneProxySetsPath = path.join(oneProxyCacheDir, 'sets.json');
+    oneProxyStatusPath = path.join(oneProxyCacheDir, 'status.json');
     oneProxySyncStatusPath = path.join(oneProxyCacheDir, 'sync_status.json');
+    oneProxyBadgePath = path.join(oneProxyCacheDir, 'badge.png');
+
+    try {
+      if (!fs.existsSync(oneProxyImagesDir)) fs.mkdirSync(oneProxyImagesDir, { recursive: true });
+      if (!fs.existsSync(oneProxyManifestsDir)) fs.mkdirSync(oneProxyManifestsDir, { recursive: true });
+    } catch (_) {}
+
     oneProxyDbMemoryCache = null;
     oneProxyDbMtime = 0;
-  };
-
-  const getOneProxySearchDirs = (): string[] => {
-    const dirs: string[] = [];
-    const addDir = (d: string) => {
-      if (d && fs.existsSync(d) && !dirs.includes(d)) {
-        dirs.push(d);
-      }
-    };
-    addDir(oneProxyImagesDir);
-    addDir(path.join(oneProxyCacheDir, 'images'));
-    addDir(oneProxyCacheDir);
-    addDir(path.join(defaultOneProxyCacheDir, 'images'));
-    addDir(defaultOneProxyCacheDir);
-    return dirs;
   };
 
   // Initialize paths from config if present
@@ -2196,9 +2193,27 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     } catch (_) {}
   }
 
-  if (!fs.existsSync(oneProxyImagesDir)) {
-    try { fs.mkdirSync(oneProxyImagesDir, { recursive: true }); } catch (_) {}
-  }
+  try {
+    if (!fs.existsSync(oneProxyImagesDir)) fs.mkdirSync(oneProxyImagesDir, { recursive: true });
+    if (!fs.existsSync(oneProxyManifestsDir)) fs.mkdirSync(oneProxyManifestsDir, { recursive: true });
+  } catch (_) {}
+
+  const getOneProxySearchDirs = (): string[] => {
+    const dirs: string[] = [];
+    const addDir = (d: string) => {
+      if (d && fs.existsSync(d) && !dirs.includes(d)) {
+        dirs.push(d);
+      }
+    };
+    addDir(oneProxyImagesDir);
+    addDir(path.join(oneProxyCacheDir, 'images'));
+    addDir(oneProxyCacheDir);
+    addDir(defaultUserOneProxyDir);
+    addDir(path.join(defaultUserOneProxyDir, 'images'));
+    addDir(path.join(defaultOneProxyCacheDir, 'images'));
+    addDir(defaultOneProxyCacheDir);
+    return dirs;
+  };
 
   const formatBytes = (bytes: number): string => {
     if (!bytes || bytes <= 0) return '0 B';
@@ -2208,49 +2223,236 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
+  // Recursive image stats scanner
   const getDirectoryImageStats = (dirPath: string): { totalBytes: number; fileCount: number; webpCount: number; cleanCount: number } => {
     let totalBytes = 0;
     let fileCount = 0;
     let webpCount = 0;
     let cleanCount = 0;
     if (!fs.existsSync(dirPath)) return { totalBytes, fileCount, webpCount, cleanCount };
+
+    const scan = (current: string) => {
+      try {
+        const entries = fs.readdirSync(current, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(current, entry.name);
+          if (entry.isDirectory()) {
+            if (entry.name !== 'manifests' && entry.name !== '.git') {
+              scan(fullPath);
+            }
+          } else if (entry.isFile()) {
+            if (entry.name.toLowerCase() === 'badge.png' || entry.name.toLowerCase() === 'icon.png') continue;
+            const ext = path.extname(entry.name).toLowerCase();
+            if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+              try {
+                const stat = fs.statSync(fullPath);
+                if (stat.size > 0) {
+                  totalBytes += stat.size;
+                  fileCount++;
+                  if (ext === '.webp') webpCount++;
+                  else cleanCount++;
+                }
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+    };
+
+    scan(dirPath);
+    return { totalBytes, fileCount, webpCount, cleanCount };
+  };
+
+  // Helper for authorized OneProxy v1 API calls
+  const fetchOneProxyApi = async (endpoint: string, options: any = {}) => {
+    const url = endpoint.startsWith('http')
+      ? endpoint
+      : endpoint.startsWith('/api/v1')
+        ? `${ONEPROXY_HOST}${endpoint}`
+        : `${ONEPROXY_BASE_URL}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+    const headers = {
+      'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
+      'User-Agent': ONEPROXY_USER_AGENT,
+      'X-SCMUI-Version': '3.0.7',
+      'Accept': 'application/json',
+      ...(options.headers || {})
+    };
+    return fetch(url, { ...options, headers });
+  };
+
+  // In-memory status & donation cache
+  let oneProxyRemoteStatus: any = {
+    ready: true,
+    badgeUrl: '/api/oneproxy/badge',
+    websiteUrl: ONEPROXY_CREDIT_URL,
+    limits: { bandwidthMBps: 25, maxDownloads: 4, metadataPerMinute: 120 },
+    donation: {
+      enabled: true,
+      url: 'https://www.paypal.com/donate/?hosted_button_id=ZGM2UKJNVGE84',
+      message: 'OneProxy is built and maintained by a single developer, and it takes significant time and ongoing costs to keep running.\n\nIf it’s useful to you, please consider supporting the project.'
+    }
+  };
+
+  // Load cached status if exists
+  if (fs.existsSync(oneProxyStatusPath)) {
     try {
-      const files = fs.readdirSync(dirPath);
-      for (const file of files) {
-        const ext = path.extname(file).toLowerCase();
-        if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+      const saved = JSON.parse(fs.readFileSync(oneProxyStatusPath, 'utf-8'));
+      if (saved && typeof saved === 'object') {
+        oneProxyRemoteStatus = { ...oneProxyRemoteStatus, ...saved };
+      }
+    } catch (_) {}
+  }
+
+  const syncOneProxyRemoteStatus = async () => {
+    try {
+      const resp = await fetchOneProxyApi('/status');
+      if (resp.ok) {
+        const data = await resp.json();
+        oneProxyRemoteStatus = {
+          ...data,
+          badgeUrl: '/api/oneproxy/badge',
+          websiteUrl: data.websiteUrl || ONEPROXY_CREDIT_URL,
+          donation: data.donation || oneProxyRemoteStatus.donation,
+          lastChecked: Date.now()
+        };
+        try {
+          fs.writeFileSync(oneProxyStatusPath, JSON.stringify(oneProxyRemoteStatus, null, 2), 'utf-8');
+        } catch (_) {}
+
+        // Pre-fetch badge if not cached locally
+        if (!fs.existsSync(oneProxyBadgePath) && data.badgeUrl) {
+          const rawBadgeUrl = data.badgeUrl.startsWith('http') ? data.badgeUrl : `https://oneproxy.torforge.dev${data.badgeUrl}`;
           try {
-            const filePath = path.join(dirPath, file);
-            const stat = fs.statSync(filePath);
-            if (stat.isFile() && stat.size > 0) {
-              totalBytes += stat.size;
-              fileCount++;
-              if (ext === '.webp') {
-                webpCount++;
-              } else {
-                cleanCount++;
-              }
+            const bResp = await fetch(rawBadgeUrl, { headers: { 'User-Agent': ONEPROXY_USER_AGENT } });
+            if (bResp.ok) {
+              const bBuf = Buffer.from(await bResp.arrayBuffer());
+              fs.writeFileSync(oneProxyBadgePath, bBuf);
             }
           } catch (_) {}
         }
       }
-    } catch (_) {}
-    return { totalBytes, fileCount, webpCount, cleanCount };
+    } catch (e: any) {
+      console.warn("[OneProxy] Could not sync remote status:", e.message);
+    }
+    return oneProxyRemoteStatus;
   };
+
+  // Initial status check in background
+  setTimeout(() => {
+    syncOneProxyRemoteStatus().catch(() => {});
+  }, 2000);
 
   let oneProxyDbMemoryCache: any[] | null = null;
   let oneProxyDbMtime = 0;
   let isOneProxySyncing = false;
 
+  const getOneProxyCardsDb = (): any[] => {
+    if (!fs.existsSync(oneProxyDbPath)) return [];
+    try {
+      const stat = fs.statSync(oneProxyDbPath);
+      if (oneProxyDbMemoryCache && stat.mtimeMs === oneProxyDbMtime) {
+        return oneProxyDbMemoryCache;
+      }
+      const raw = JSON.parse(fs.readFileSync(oneProxyDbPath, 'utf-8'));
+      oneProxyDbMemoryCache = Array.isArray(raw) ? raw : (raw.cards || raw.products || []);
+      oneProxyDbMtime = stat.mtimeMs;
+      return oneProxyDbMemoryCache || [];
+    } catch (e) {
+      console.error("[OneProxy] Error reading local cards DB:", e);
+      return [];
+    }
+  };
+
+  // Scan local disk to get set completion status
+  const getOneProxySetsStatus = async () => {
+    let setsList: any[] = [];
+    if (fs.existsSync(oneProxySetsPath)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(oneProxySetsPath, 'utf-8'));
+        setsList = Array.isArray(raw) ? raw : (raw.sets || []);
+      } catch (_) {}
+    }
+
+    if (setsList.length === 0) {
+      try {
+        const resp = await fetchOneProxyApi('/sets');
+        if (resp.ok) {
+          const data: any = await resp.json();
+          setsList = data.sets || [];
+          fs.writeFileSync(oneProxySetsPath, JSON.stringify(data, null, 2), 'utf-8');
+        }
+      } catch (e: any) {
+        console.warn("[OneProxy] Could not fetch sets:", e.message);
+      }
+    }
+
+    let totalCompletedSets = 0;
+    let totalCatalogAssets = 0;
+    let totalDownloadedAssets = 0;
+
+    const enrichedSets = setsList.map(s => {
+      const setCode = s.setCode;
+      const assetCount = Number(s.assetCount) || 0;
+      const cardCount = Number(s.cardCount) || 0;
+      const totalBytes = Number(s.bytes) || 0;
+      totalCatalogAssets += assetCount;
+
+      let downloadedCount = 0;
+      let downloadedBytes = 0;
+
+      // Scan directory on disk for this set
+      const checkDirs = [
+        path.join(oneProxyImagesDir, setCode),
+        path.join(oneProxyCacheDir, setCode),
+        path.join(defaultOneProxyCacheDir, 'images', setCode)
+      ];
+
+      for (const d of checkDirs) {
+        if (fs.existsSync(d)) {
+          const stats = getDirectoryImageStats(d);
+          if (stats.cleanCount > downloadedCount) {
+            downloadedCount = stats.cleanCount;
+            downloadedBytes = stats.totalBytes;
+          }
+        }
+      }
+
+      totalDownloadedAssets += downloadedCount;
+      const isComplete = assetCount > 0 && downloadedCount >= assetCount;
+      if (isComplete) totalCompletedSets++;
+
+      return {
+        setCode,
+        cardCount,
+        assetCount,
+        bytes: totalBytes,
+        bytesFormatted: formatBytes(totalBytes),
+        downloadedCount,
+        downloadedBytes,
+        downloadedBytesFormatted: formatBytes(downloadedBytes),
+        isComplete,
+        percent: assetCount > 0 ? Math.min(100, Math.round((downloadedCount / assetCount) * 100)) : 0
+      };
+    });
+
+    return {
+      sets: enrichedSets,
+      totalSets: setsList.length,
+      completedSets: totalCompletedSets,
+      totalCatalogAssets,
+      totalDownloadedAssets
+    };
+  };
+
   const getOneProxyStatus = () => {
     const hasDb = fs.existsSync(oneProxyDbPath);
     let cardCount = 0;
-    let lastChecked = 0;
+    let lastChecked = oneProxyRemoteStatus?.lastChecked || 0;
 
     if (fs.existsSync(oneProxySyncStatusPath)) {
       try {
         const status = JSON.parse(fs.readFileSync(oneProxySyncStatusPath, 'utf-8'));
-        lastChecked = Number(status.lastChecked) || 0;
+        lastChecked = Number(status.lastChecked) || lastChecked;
         cardCount = Number(status.cardCount) || 0;
       } catch (_) {}
     }
@@ -2261,67 +2463,37 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         if (!lastChecked || stat.mtimeMs > lastChecked) {
           lastChecked = stat.mtimeMs;
         }
-        if (!oneProxyDbMemoryCache || stat.mtimeMs !== oneProxyDbMtime) {
-          const raw = JSON.parse(fs.readFileSync(oneProxyDbPath, 'utf-8'));
-          oneProxyDbMemoryCache = Array.isArray(raw) ? raw : (raw.products || []);
-          oneProxyDbMtime = stat.mtimeMs;
-        }
-        if (oneProxyDbMemoryCache && oneProxyDbMemoryCache.length > 0) {
-          cardCount = oneProxyDbMemoryCache.length;
+        const cards = getOneProxyCardsDb();
+        if (cards && cards.length > 0) {
+          cardCount = cards.length;
         }
       } catch (_) {}
     }
 
-    // Measure disk sizes
     let dbSizeBytes = 0;
     if (fs.existsSync(oneProxyDbPath)) {
       try { dbSizeBytes = fs.statSync(oneProxyDbPath).size; } catch (_) {}
     }
     const dbSizeFormatted = formatBytes(dbSizeBytes);
 
-    let imagesSizeBytes = 0;
-    let cachedImagesCount = 0;
-    let totalWebpCount = 0;
-    let totalCleanCount = 0;
-
     const imgStats = getDirectoryImageStats(oneProxyImagesDir);
-    imagesSizeBytes += imgStats.totalBytes;
-    cachedImagesCount += imgStats.fileCount;
-    totalWebpCount += imgStats.webpCount;
-    totalCleanCount += imgStats.cleanCount;
+    let imagesSizeBytes = imgStats.totalBytes;
+    let cachedImagesCount = imgStats.fileCount;
+    let totalWebpCount = imgStats.webpCount;
+    let totalCleanCount = imgStats.cleanCount;
 
     if (oneProxyImagesDir !== oneProxyCacheDir && fs.existsSync(oneProxyCacheDir)) {
       const rootStats = getDirectoryImageStats(oneProxyCacheDir);
-      if (rootStats.fileCount > 0) {
-        imagesSizeBytes += rootStats.totalBytes;
-        cachedImagesCount += rootStats.fileCount;
-        totalWebpCount += rootStats.webpCount;
-        totalCleanCount += rootStats.cleanCount;
+      if (rootStats.fileCount > 0 && rootStats.totalBytes > imagesSizeBytes) {
+        imagesSizeBytes = rootStats.totalBytes;
+        cachedImagesCount = rootStats.fileCount;
+        totalWebpCount = rootStats.webpCount;
+        totalCleanCount = rootStats.cleanCount;
       }
     }
     const imagesSizeFormatted = formatBytes(imagesSizeBytes);
     const totalSizeBytes = dbSizeBytes + imagesSizeBytes;
     const totalSizeFormatted = formatBytes(totalSizeBytes);
-
-    // Dynamic library estimation
-    const totalCatalogCards = cardCount || oneProxyDbMemoryCache?.length || 5035;
-
-    // Calibrate average card size based on actual clean cached images on disk if available
-    let averageCardSizeBytes = 750 * 1024; // Default ~750 KB per high-resolution print card artwork
-    if (totalCleanCount >= 5 && imagesSizeBytes > 0) {
-      const measuredAvg = Math.round(imagesSizeBytes / cachedImagesCount);
-      if (measuredAvg >= 100 * 1024 && measuredAvg <= 4 * 1024 * 1024) {
-        averageCardSizeBytes = measuredAvg;
-      }
-    }
-    const averageCardSizeFormatted = formatBytes(averageCardSizeBytes);
-
-    // Remaining cards needing clean download
-    const remainingCardsCount = Math.max(0, totalCatalogCards - totalCleanCount);
-    const estimatedFullSizeBytes = totalCatalogCards * averageCardSizeBytes;
-    const estimatedFullSizeFormatted = formatBytes(estimatedFullSizeBytes);
-    const estimatedRemainingSizeBytes = remainingCardsCount * averageCardSizeBytes;
-    const estimatedRemainingSizeFormatted = formatBytes(estimatedRemainingSizeBytes);
 
     // Free disk space
     let freeDiskSpaceBytes = 0;
@@ -2333,18 +2505,18 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       freeDiskSpaceFormatted = formatBytes(freeDiskSpaceBytes);
     } catch (_) {}
 
-    const hasEnoughDiskSpace = freeDiskSpaceBytes > 0 ? (freeDiskSpaceBytes > (estimatedRemainingSizeBytes || estimatedFullSizeBytes)) : true;
-
-    const now = Date.now();
-    const timeSinceLastCheckMs = lastChecked ? (now - lastChecked) : 0;
     const isDefaultDir = path.resolve(oneProxyCacheDir).toLowerCase() === path.resolve(defaultOneProxyCacheDir).toLowerCase();
     let hasCustomFolderConfigured = false;
     let isBulkDownloaded = false;
     if (fs.existsSync(oneProxyConfigFile)) {
       try {
         const cfg = JSON.parse(fs.readFileSync(oneProxyConfigFile, 'utf-8'));
-        if (cfg.cacheDir) hasCustomFolderConfigured = true;
-        if (cfg.bulkDownloaded) isBulkDownloaded = true;
+        if (cfg.cacheDir && cfg.cacheDir !== defaultUserOneProxyDir && fs.existsSync(cfg.cacheDir) && cachedImagesCount > 20) {
+          hasCustomFolderConfigured = true;
+        }
+        if (cfg.bulkDownloaded && cachedImagesCount > 500) {
+          isBulkDownloaded = true;
+        }
       } catch (_) {}
     }
 
@@ -2356,37 +2528,34 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       hasCustomFolderConfigured,
       isBulkDownloaded,
       hasCache: hasDb,
-      cardCount: totalCatalogCards,
-      remainingCardsCount,
+      cardCount: cardCount || 5200,
       cachedImagesCount,
       hasLegacyWebp: totalWebpCount > 0,
       legacyWebpCount: totalWebpCount,
       cleanImagesCount: totalCleanCount,
-      averageCardSizeBytes,
-      averageCardSizeFormatted,
       dbSizeBytes,
       dbSizeFormatted,
       imagesSizeBytes,
       imagesSizeFormatted,
       totalSizeBytes,
       totalSizeFormatted,
-      estimatedFullSizeBytes,
-      estimatedFullSizeFormatted,
-      estimatedRemainingSizeBytes,
-      estimatedRemainingSizeFormatted,
       freeDiskSpaceBytes,
       freeDiskSpaceFormatted,
-      hasEnoughDiskSpace,
       lastChecked,
-      timeSinceLastCheckMs,
-      canCheckUpdate: true,
-      hoursRemaining: 0,
+      badgeUrl: '/api/oneproxy/badge',
+      websiteUrl: oneProxyRemoteStatus?.websiteUrl || ONEPROXY_CREDIT_URL,
+      donation: oneProxyRemoteStatus?.donation || {
+        enabled: true,
+        url: 'https://www.paypal.com/donate/?hosted_button_id=ZGM2UKJNVGE84',
+        message: 'OneProxy is built and maintained by a single developer. If it’s useful to you, please consider supporting the project.'
+      },
+      limits: oneProxyRemoteStatus?.limits || { bandwidthMBps: 25, maxDownloads: 4, metadataPerMinute: 120 },
       isSyncing: isOneProxySyncing,
       bulkDownloadState: oneProxyBulkDownloadState
     };
   };
 
-  // OneProxy Bulk Downloader State
+  // OneProxy Set-based Download State
   let oneProxyBulkDownloadState = {
     isActive: false,
     isPaused: false,
@@ -2395,6 +2564,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     downloadedCards: 0,
     skippedCards: 0,
     failedCards: 0,
+    currentSet: '',
     currentCardNumber: '',
     currentCardName: '',
     totalBytesDownloaded: 0,
@@ -2408,7 +2578,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   let oneProxyBulkCancelRequested = false;
 
-  const startOneProxyBulkDownload = async (targetDirectory?: string) => {
+  // Start download for selected sets using OneProxy v1 API manifests
+  const startOneProxySetDownload = async (setCodes: string[], targetDirectory?: string) => {
     if (oneProxyBulkDownloadState.isActive) {
       return { success: false, message: "Download is already in progress" };
     }
@@ -2425,228 +2596,255 @@ app.get("/api/moxfield-proxy", async (req, res) => {
         fs.mkdirSync(targetImagesDir, { recursive: true });
       }
 
-      // Save initial config
-      if (!fs.existsSync(defaultOneProxyCacheDir)) {
-        fs.mkdirSync(defaultOneProxyCacheDir, { recursive: true });
-      }
       fs.writeFileSync(oneProxyConfigFile, JSON.stringify({ cacheDir: resolvedTarget, bulkDownloaded: false }, null, 2), 'utf-8');
       resolveOneProxyPaths(resolvedTarget);
 
-      // Copy database if exists or fetch
-      let cards = getOneProxyCardsDb();
-      if (!cards || cards.length === 0) {
+      // If 'all' or empty, fetch all sets
+      let targetSets = setCodes && setCodes.length > 0 ? setCodes : ['all'];
+      if (targetSets.includes('all')) {
         try {
-          const resp = await fetch("https://oneproxy.torforge.dev/api/all-cards", {
-            headers: {
-              "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
-              "Accept": "application/json"
-            }
-          });
-          if (resp.ok) {
-            const data: any = await resp.json();
-            const products = Array.isArray(data) ? data : (data.products || []);
-            fs.writeFileSync(oneProxyDbPath, JSON.stringify(data), 'utf-8');
-            oneProxyDbMemoryCache = products;
-            cards = products;
+          const setsResp = await fetchOneProxyApi('/sets');
+          if (setsResp.ok) {
+            const data: any = await setsResp.json();
+            targetSets = (data.sets || []).map((s: any) => s.setCode);
           }
-        } catch (e: any) {
-          console.error("[OneProxy Bulk] Failed to fetch card DB:", e.message);
-        }
+        } catch (_) {}
       }
-
-      // Deduplicate cards by cardNumber
-      const uniqueCardsMap = new Map<string, any>();
-      for (const c of cards) {
-        const num = (c.cardNumber || '').trim();
-        if (num && !uniqueCardsMap.has(num)) {
-          uniqueCardsMap.set(num, c);
-        }
-      }
-      const cardList = Array.from(uniqueCardsMap.values());
 
       oneProxyBulkCancelRequested = false;
       oneProxyBulkDownloadState = {
         isActive: true,
         isPaused: false,
-        totalCards: cardList.length,
+        totalCards: 0,
         processedCards: 0,
         downloadedCards: 0,
         skippedCards: 0,
         failedCards: 0,
+        currentSet: 'Fetching manifests...',
         currentCardNumber: '',
         currentCardName: '',
         totalBytesDownloaded: 0,
         percent: 0,
-        statusText: 'Starting download...',
+        statusText: 'Preparing manifests for selected sets...',
         targetDir: resolvedTarget,
         startTime: Date.now(),
         error: null,
         isCompleted: false
       };
 
-      // Asynchronous background download worker loop
+      // Asynchronous background downloader
       (async () => {
-        const concurrency = 6;
-        let currentIndex = 0;
+        try {
+          const allAssetsQueue: any[] = [];
+          const allCardsAccumulator: any[] = getOneProxyCardsDb();
+          const cardIdSet = new Set(allCardsAccumulator.map((c: any) => c.cardNumber || c.cardId));
 
-        const downloadWorker = async () => {
-          while (currentIndex < cardList.length && !oneProxyBulkCancelRequested) {
-            const idx = currentIndex++;
-            const card = cardList[idx];
-            const rawId = (card.cardNumber || '').trim();
-            const cleanId = rawId.replace(/[\/\\]/g, '_').trim();
-            const cardName = card.name || cleanId;
+          // 1. Fetch manifests for each set
+          for (const setCode of targetSets) {
+            if (oneProxyBulkCancelRequested) break;
+            oneProxyBulkDownloadState.statusText = `Fetching manifest for set ${setCode}...`;
+            oneProxyBulkDownloadState.currentSet = setCode;
 
-            oneProxyBulkDownloadState.currentCardNumber = rawId;
-            oneProxyBulkDownloadState.currentCardName = cardName;
-            oneProxyBulkDownloadState.processedCards = idx + 1;
-            oneProxyBulkDownloadState.percent = Math.min(100, Math.round(((idx + 1) / cardList.length) * 100));
+            const manifestFile = path.join(oneProxyManifestsDir, `manifest_${setCode}.json`);
+            let manifestData: any = null;
 
-            // Check if clean high-resolution card art is already cached (>15KB .png or .jpg)
-            let existsClean = false;
-            for (const ext of ['.png', '.jpg', '.jpeg']) {
-              const p1 = path.join(targetImagesDir, `${cleanId}${ext}`);
-              const p2 = path.join(resolvedTarget, `${cleanId}${ext}`);
+            try {
+              const mResp = await fetchOneProxyApi(`/sets/${encodeURIComponent(setCode)}/manifest`);
+              if (mResp.ok) {
+                manifestData = await mResp.json();
+                try {
+                  fs.writeFileSync(manifestFile, JSON.stringify(manifestData, null, 2), 'utf-8');
+                } catch (_) {}
+              }
+            } catch (err: any) {
+              console.warn(`[OneProxy] Failed to fetch manifest for ${setCode}:`, err.message);
+            }
+
+            if (!manifestData && fs.existsSync(manifestFile)) {
               try {
-                if ((fs.existsSync(p1) && fs.statSync(p1).size > 15360) || (fs.existsSync(p2) && fs.statSync(p2).size > 15360)) {
-                  existsClean = true;
-                  break;
-                }
+                manifestData = JSON.parse(fs.readFileSync(manifestFile, 'utf-8'));
               } catch (_) {}
             }
 
-            if (existsClean) {
-              // Delete legacy watermarked .webp if present
-              const oldW1 = path.join(targetImagesDir, `${cleanId}.webp`);
-              const oldW2 = path.join(resolvedTarget, `${cleanId}.webp`);
-              if (fs.existsSync(oldW1)) { try { fs.unlinkSync(oldW1); } catch (_) {} }
-              if (fs.existsSync(oldW2)) { try { fs.unlinkSync(oldW2); } catch (_) {} }
-
-              oneProxyBulkDownloadState.skippedCards++;
-              continue;
-            }
-
-            // Resolve authentic clean print image from OneProxy official API
-            let targetDownloadUrl: string | null = null;
-            try {
-              const metaResp = await fetch(`https://oneproxy.torforge.dev/api/card-image?v=2&id=${encodeURIComponent(rawId)}`, {
-                headers: {
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                  "Accept": "application/json"
-                }
-              });
-              if (metaResp.ok) {
-                const metaJson: any = await metaResp.json();
-                if (metaJson.hasImage && metaJson.imageUrl) {
-                  targetDownloadUrl = metaJson.imageUrl.startsWith('/')
-                    ? `https://oneproxy.torforge.dev${metaJson.imageUrl}&size=full`
-                    : metaJson.imageUrl;
+            if (manifestData) {
+              // Merge cards metadata
+              for (const c of (manifestData.cards || [])) {
+                const meta = c.metadata || {};
+                const cNum = meta.cardNumber || c.cardId;
+                if (cNum && !cardIdSet.has(cNum)) {
+                  cardIdSet.add(cNum);
+                  allCardsAccumulator.push({
+                    cardId: c.cardId,
+                    cardNumber: cNum,
+                    name: meta.name || cNum,
+                    rarity: meta.rarity,
+                    cardType: meta.cardType,
+                    color: meta.color,
+                    cost: meta.cost,
+                    life: meta.life,
+                    power: meta.power,
+                    set: setCode,
+                    artVariant: meta.artVariant,
+                    assetId: c.assetId
+                  });
                 }
               }
-            } catch (_) {}
 
-            // Fallback to official Bandai high-res print card if not on OneProxy
-            if (!targetDownloadUrl) {
-              targetDownloadUrl = `https://en.onepiece-cardgame.com/images/cardlist/card/${cleanId}.png`;
+              // Enqueue assets
+              for (const a of (manifestData.assets || [])) {
+                allAssetsQueue.push({
+                  ...a,
+                  setCode
+                });
+              }
             }
+          }
 
-            try {
-              const resp = await fetch(targetDownloadUrl, {
-                headers: {
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                  "Accept": "image/png, image/jpeg, image/*, */*"
+          // Save merged card database for offline searching
+          try {
+            fs.writeFileSync(oneProxyDbPath, JSON.stringify(allCardsAccumulator), 'utf-8');
+            oneProxyDbMemoryCache = allCardsAccumulator;
+          } catch (_) {}
+
+          oneProxyBulkDownloadState.totalCards = allAssetsQueue.length;
+          oneProxyBulkDownloadState.statusText = `Starting download of ${allAssetsQueue.length} assets across ${targetSets.length} sets...`;
+
+          // 2. Controlled Worker Pool: exactly 2 workers (per integration specifications)
+          const concurrency = 2;
+          let currentIndex = 0;
+
+          const downloadWorker = async () => {
+            while (currentIndex < allAssetsQueue.length && !oneProxyBulkCancelRequested) {
+              const idx = currentIndex++;
+              const asset = allAssetsQueue[idx];
+              const setCode = asset.setCode || 'OP';
+              const relPath = asset.relativePath || `${setCode}/${asset.fileName}`;
+              const destFile = path.join(resolvedTarget, relPath);
+              const destDir = path.dirname(destFile);
+
+              oneProxyBulkDownloadState.currentSet = setCode;
+              oneProxyBulkDownloadState.currentCardNumber = asset.cardId || asset.fileName;
+              oneProxyBulkDownloadState.currentCardName = asset.fileName;
+              oneProxyBulkDownloadState.processedCards = idx + 1;
+              oneProxyBulkDownloadState.percent = Math.min(100, Math.round(((idx + 1) / allAssetsQueue.length) * 100));
+
+              try {
+                if (!fs.existsSync(destDir)) {
+                  fs.mkdirSync(destDir, { recursive: true });
                 }
-              });
 
-              if (resp.ok) {
-                const arrayBuf = await resp.arrayBuffer();
-                const buf = Buffer.from(arrayBuf);
-                const ct = resp.headers.get('content-type') || '';
-                let ext = '.png';
-                if (targetDownloadUrl.toLowerCase().includes('.jpg') || targetDownloadUrl.toLowerCase().includes('.jpeg') || ct.includes('jpeg')) {
-                  ext = '.jpg';
-                }
-                const destFile = path.join(targetImagesDir, `${cleanId}${ext}`);
-                fs.writeFileSync(destFile, buf);
-
-                // Purge any obsolete watermarked webp
-                const oldW = path.join(targetImagesDir, `${cleanId}.webp`);
-                if (fs.existsSync(oldW)) { try { fs.unlinkSync(oldW); } catch (_) {} }
-
-                oneProxyBulkDownloadState.downloadedCards++;
-                oneProxyBulkDownloadState.totalBytesDownloaded += buf.length;
-              } else {
-                // Secondary fallback if OneProxy custom URL failed
-                if (!targetDownloadUrl.includes('onepiece-cardgame.com')) {
-                  const bUrl = `https://en.onepiece-cardgame.com/images/cardlist/card/${cleanId}.png`;
-                  const bResp = await fetch(bUrl, {
-                    headers: {
-                      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                // Check if already completely downloaded and matches size
+                if (fs.existsSync(destFile)) {
+                  try {
+                    const st = fs.statSync(destFile);
+                    if (st.size === asset.bytes && st.size > 0) {
+                      oneProxyBulkDownloadState.skippedCards++;
+                      continue;
                     }
-                  });
-                  if (bResp.ok) {
-                    const bBuf = Buffer.from(await bResp.arrayBuffer());
-                    fs.writeFileSync(path.join(targetImagesDir, `${cleanId}.png`), bBuf);
-                    const oldW = path.join(targetImagesDir, `${cleanId}.webp`);
-                    if (fs.existsSync(oldW)) { try { fs.unlinkSync(oldW); } catch (_) {} }
-                    oneProxyBulkDownloadState.downloadedCards++;
-                    oneProxyBulkDownloadState.totalBytesDownloaded += bBuf.length;
-                  } else {
-                    oneProxyBulkDownloadState.failedCards++;
-                  }
+                  } catch (_) {}
+                }
+
+                // Download with resume support using .part file
+                const partFile = `${destFile}.part`;
+                let existingPartBytes = 0;
+                if (fs.existsSync(partFile)) {
+                  try { existingPartBytes = fs.statSync(partFile).size; } catch (_) {}
+                }
+
+                const fetchHeaders: any = {
+                  'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
+                  'User-Agent': ONEPROXY_USER_AGENT,
+                  'X-SCMUI-Version': '3.0.7'
+                };
+
+                if (existingPartBytes > 0 && asset.sha256) {
+                  fetchHeaders['Range'] = `bytes=${existingPartBytes}-`;
+                  fetchHeaders['If-Range'] = `"${asset.sha256}"`;
+                }
+
+                const assetUrl = asset.downloadUrl.startsWith('http')
+                  ? asset.downloadUrl
+                  : asset.downloadUrl.startsWith('/api/v1')
+                    ? `${ONEPROXY_HOST}${asset.downloadUrl}`
+                    : `${ONEPROXY_BASE_URL}${asset.downloadUrl.startsWith('/') ? '' : '/'}${asset.downloadUrl}`;
+
+                const resp: any = await fetch(assetUrl, { headers: fetchHeaders });
+
+                if (resp.status === 206) {
+                  // Append to existing part
+                  const chunkBuf = Buffer.from(await resp.arrayBuffer());
+                  fs.appendFileSync(partFile, chunkBuf);
+                } else if (resp.ok) {
+                  // Full download
+                  const chunkBuf = Buffer.from(await resp.arrayBuffer());
+                  fs.writeFileSync(partFile, chunkBuf);
+                } else if (resp.status === 429 || resp.status === 503) {
+                  // Rate limited / temporary error: retry with backoff
+                  const retryAfter = Number(resp.headers.get('Retry-After')) || 5;
+                  await new Promise(r => setTimeout(r, (retryAfter * 1000) + Math.random() * 500));
+                  currentIndex--; // Retry this asset
+                  continue;
                 } else {
                   oneProxyBulkDownloadState.failedCards++;
+                  continue;
                 }
+
+                // Verify file integrity (SHA-256)
+                if (fs.existsSync(partFile)) {
+                  const partBytes = fs.readFileSync(partFile);
+                  const hash = crypto.createHash('sha256').update(partBytes).digest('hex');
+
+                  if (!asset.sha256 || hash.toLowerCase() === asset.sha256.toLowerCase()) {
+                    // Atomic rename
+                    fs.renameSync(partFile, destFile);
+                    oneProxyBulkDownloadState.downloadedCards++;
+                    oneProxyBulkDownloadState.totalBytesDownloaded += partBytes.length;
+
+                    // Delete legacy watermarked .webp with same base name if exists
+                    const oldWebp = path.join(destDir, `${path.parse(destFile).name}.webp`);
+                    if (fs.existsSync(oldWebp)) { try { fs.unlinkSync(oldWebp); } catch (_) {} }
+                  } else {
+                    try { fs.unlinkSync(partFile); } catch (_) {}
+                    oneProxyBulkDownloadState.failedCards++;
+                  }
+                }
+              } catch (e: any) {
+                oneProxyBulkDownloadState.failedCards++;
               }
-            } catch (e: any) {
-              oneProxyBulkDownloadState.failedCards++;
+
+              // Polite pause between downloads (50ms)
+              await new Promise(r => setTimeout(r, 50));
             }
+          };
 
-            // Polite pause
-            await new Promise(r => setTimeout(r, 25));
+          const workers = [];
+          for (let w = 0; w < concurrency; w++) {
+            workers.push(downloadWorker());
           }
-        };
+          await Promise.all(workers);
 
-        const workers = [];
-        for (let w = 0; w < concurrency; w++) {
-          workers.push(downloadWorker());
-        }
-        await Promise.all(workers);
-
-        oneProxyBulkDownloadState.isActive = false;
-        if (oneProxyBulkCancelRequested) {
-          oneProxyBulkDownloadState.statusText = 'Download cancelled by user.';
-        } else {
-          oneProxyBulkDownloadState.isCompleted = true;
-          oneProxyBulkDownloadState.percent = 100;
-          oneProxyBulkDownloadState.statusText = `Download complete! ${oneProxyBulkDownloadState.downloadedCards} cards downloaded, ${oneProxyBulkDownloadState.skippedCards} already present.`;
-          try {
-            fs.writeFileSync(oneProxyConfigFile, JSON.stringify({ cacheDir: resolvedTarget, bulkDownloaded: true }, null, 2), 'utf-8');
-          } catch (_) {}
+          oneProxyBulkDownloadState.isActive = false;
+          if (oneProxyBulkCancelRequested) {
+            oneProxyBulkDownloadState.statusText = 'Download cancelled by user.';
+          } else {
+            oneProxyBulkDownloadState.isCompleted = true;
+            oneProxyBulkDownloadState.percent = 100;
+            oneProxyBulkDownloadState.statusText = `Download complete! ${oneProxyBulkDownloadState.downloadedCards} cards downloaded, ${oneProxyBulkDownloadState.skippedCards} already up to date.`;
+            try {
+              fs.writeFileSync(oneProxyConfigFile, JSON.stringify({ cacheDir: resolvedTarget, bulkDownloaded: true }, null, 2), 'utf-8');
+            } catch (_) {}
+          }
+        } catch (err: any) {
+          oneProxyBulkDownloadState.isActive = false;
+          oneProxyBulkDownloadState.error = err.message;
+          oneProxyBulkDownloadState.statusText = `Error: ${err.message}`;
         }
       })();
 
-      return { success: true, message: "Download started", targetDir: resolvedTarget, totalCards: cardList.length };
+      return { success: true, message: "Download started", targetDir: resolvedTarget };
     } catch (err: any) {
       oneProxyBulkDownloadState.isActive = false;
       return { success: false, error: err.message };
-    }
-  };
-
-  const getOneProxyCardsDb = (): any[] => {
-    if (!fs.existsSync(oneProxyDbPath)) return [];
-    try {
-      const stat = fs.statSync(oneProxyDbPath);
-      if (oneProxyDbMemoryCache && stat.mtimeMs === oneProxyDbMtime) {
-        return oneProxyDbMemoryCache;
-      }
-      const raw = JSON.parse(fs.readFileSync(oneProxyDbPath, 'utf-8'));
-      oneProxyDbMemoryCache = Array.isArray(raw) ? raw : (raw.products || []);
-      oneProxyDbMtime = stat.mtimeMs;
-      return oneProxyDbMemoryCache || [];
-    } catch (e) {
-      console.error("[OneProxy] Error reading local cards DB:", e);
-      return [];
     }
   };
 
@@ -2769,27 +2967,38 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           const db = getOneProxyCardsDb();
           const queryLower = q.toLowerCase().trim();
 
-          // OneProxy card selection is strictly LOCAL ONLY - index local image files
-          const localCardsMap = new Map<string, { originalName: string; mtime: number }>(); // cleanNo lower -> meta
+          // OneProxy card selection is strictly LOCAL ONLY - index local image files recursively
+          const localCardsMap = new Map<string, { originalName: string; mtime: number; filePath: string }>(); // cleanNo lower -> meta
           const checkDirs = getOneProxySearchDirs();
-          for (const dir of checkDirs) {
-            if (fs.existsSync(dir)) {
-              try {
-                const files = fs.readdirSync(dir);
-                for (const f of files) {
-                  const ext = path.extname(f).toLowerCase();
+
+          const scanDirRecursive = (currentDir: string) => {
+            if (!fs.existsSync(currentDir)) return;
+            try {
+              const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+              for (const entry of entries) {
+                const fullP = path.join(currentDir, entry.name);
+                if (entry.isDirectory()) {
+                  if (entry.name !== 'manifests' && entry.name !== '.git') {
+                    scanDirRecursive(fullP);
+                  }
+                } else if (entry.isFile()) {
+                  const ext = path.extname(entry.name).toLowerCase();
                   if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
-                    const baseName = path.parse(f).name;
+                    const baseName = path.parse(entry.name).name;
                     const cleanKey = baseName.toLowerCase();
                     if (!localCardsMap.has(cleanKey)) {
                       let mtime = 0;
-                      try { mtime = Math.round(fs.statSync(path.join(dir, f)).mtimeMs); } catch (_) {}
-                      localCardsMap.set(cleanKey, { originalName: baseName, mtime });
+                      try { mtime = Math.round(fs.statSync(fullP).mtimeMs); } catch (_) {}
+                      localCardsMap.set(cleanKey, { originalName: baseName, mtime, filePath: fullP });
                     }
                   }
                 }
-              } catch (_) {}
-            }
+              }
+            } catch (_) {}
+          };
+
+          for (const dir of checkDirs) {
+            scanDirRecursive(dir);
           }
 
           // Filter cards from DB that are ACTUALLY downloaded on local disk
@@ -3573,12 +3782,56 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
   });
 
-  // OneProxy Polite Cache Status Endpoint
-  app.get("/api/oneproxy/status", (req, res) => {
-    res.json(getOneProxyStatus());
+  // OneProxy Partner API Status Endpoint
+  app.get("/api/oneproxy/status", async (req, res) => {
+    try {
+      res.json(getOneProxyStatus());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // OneProxy Sync/Update Endpoint
+  // OneProxy Badge Endpoint (Locally cached or remote proxy)
+  app.get("/api/oneproxy/badge", async (req, res) => {
+    try {
+      if (fs.existsSync(oneProxyBadgePath)) {
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.sendFile(oneProxyBadgePath);
+      }
+
+      const remoteBadgeUrl = oneProxyRemoteStatus?.badgeUrl?.startsWith('http')
+        ? oneProxyRemoteStatus.badgeUrl
+        : `https://oneproxy.torforge.dev/img/logo.png`;
+
+      const bResp = await fetch(remoteBadgeUrl, {
+        headers: { 'User-Agent': ONEPROXY_USER_AGENT }
+      });
+
+      if (bResp.ok) {
+        const bBuf = Buffer.from(await bResp.arrayBuffer());
+        try { fs.writeFileSync(oneProxyBadgePath, bBuf); } catch (_) {}
+        res.setHeader('Content-Type', bResp.headers.get('content-type') || 'image/png');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.send(bBuf);
+      }
+      return res.status(404).send("Badge not found");
+    } catch (e: any) {
+      return res.status(500).send("Error fetching badge");
+    }
+  });
+
+  // OneProxy Sets List & Download Status
+  app.get("/api/oneproxy/sets", async (req, res) => {
+    try {
+      const data = await getOneProxySetsStatus();
+      res.json({ success: true, ...data });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message, sets: [] });
+    }
+  });
+
+  // OneProxy Sync/Update Endpoint (v1 Partner API)
   app.post("/api/oneproxy/sync", async (req, res) => {
     if (isOneProxySyncing) {
       return res.status(409).json({ success: false, error: "An update check is already in progress." });
@@ -3586,38 +3839,28 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
     isOneProxySyncing = true;
     try {
-      console.log("[OneProxy] Checking for card database update...");
-      const resp = await fetch("https://oneproxy.torforge.dev/api/all-cards", {
-        headers: {
-          "User-Agent": "silhouette-card-maker/3.0.0 (OneProxy Plugin; +https://oneproxy.torforge.dev)",
-          "Accept": "application/json"
+      console.log("[OneProxy] Synchronizing status and sets from OneProxy v1 Partner API...");
+      await syncOneProxyRemoteStatus();
+
+      // Refresh sets index
+      try {
+        const setsResp = await fetchOneProxyApi('/sets');
+        if (setsResp.ok) {
+          const sData = await setsResp.json();
+          fs.writeFileSync(oneProxySetsPath, JSON.stringify(sData, null, 2), 'utf-8');
         }
-      });
-      if (!resp.ok) {
-        throw new Error(`OneProxy server returned HTTP ${resp.status}`);
+      } catch (err: any) {
+        console.warn("[OneProxy] Sets sync warning:", err.message);
       }
-      const data: any = await resp.json();
-      const products = Array.isArray(data) ? data : (data.products || []);
-      if (!fs.existsSync(oneProxyCacheDir)) {
-        fs.mkdirSync(oneProxyCacheDir, { recursive: true });
-      }
-      fs.writeFileSync(oneProxyDbPath, JSON.stringify(data), 'utf-8');
 
-      const now = Date.now();
-      const syncInfo = { lastChecked: now, cardCount: products.length };
-      fs.writeFileSync(oneProxySyncStatusPath, JSON.stringify(syncInfo, null, 2), 'utf-8');
-
-      oneProxyDbMemoryCache = products;
-      oneProxyDbMtime = fs.statSync(oneProxyDbPath).mtimeMs;
-
-      console.log(`[OneProxy] Update check complete. ${products.length} cards saved to local cache.`);
+      const setsStatus = await getOneProxySetsStatus();
       const updatedStatus = getOneProxyStatus();
+
       return res.json({
         success: true,
-        cardCount: products.length,
-        lastChecked: now,
-        message: `Successfully synchronized ${products.length} cards to local cache.`,
-        status: updatedStatus
+        message: `Successfully synchronized with OneProxy v1. Found ${setsStatus.totalSets} sets (${setsStatus.completedSets} completed locally).`,
+        status: updatedStatus,
+        sets: setsStatus.sets
       });
     } catch (err: any) {
       console.error("[OneProxy] Update check failed:", err.message);
@@ -3629,35 +3872,80 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
   // OneProxy High-Resolution Image Resolver (Local Assets Only - ZERO individual remote fetches)
   app.get("/api/oneproxy/image/:cardId", async (req, res) => {
-    const rawCardId = (req.params.cardId || '').trim();
+    const rawCardId = decodeURIComponent((req.params.cardId || '').trim());
     if (!rawCardId) {
       return res.status(400).send("Card ID is required");
     }
     const cleanId = rawCardId.replace(/[\/\\]/g, '_').trim();
+    const cleanIdLower = cleanId.toLowerCase();
+    const baseIdLower = path.parse(cleanIdLower).name;
 
-    // Check local disk cache (ZERO remote traffic - local only)
-    // Prioritize clean .png and .jpg ahead of legacy watermarked .webp
+    // Check direct relative path if cardId contains folder separators
     const checkDirs = getOneProxySearchDirs();
     for (const dir of checkDirs) {
+      // 1. Direct path check (e.g. OP01/OP01-001.png or BACK/Card-Back.png)
+      const directCandidate = path.join(dir, rawCardId);
+      if (fs.existsSync(directCandidate) && fs.statSync(directCandidate).isFile()) {
+        const stat = fs.statSync(directCandidate);
+        const ext = path.extname(directCandidate).toLowerCase();
+        const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
+        res.setHeader('Content-Type', mime);
+        res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+        res.setHeader('X-OneProxy-Source', 'local-disk-cache');
+        return res.sendFile(directCandidate);
+      }
+
+      // 2. Direct candidate with extension
       for (const ext of ['.png', '.jpg', '.jpeg', '.webp']) {
-        const localFile = path.join(dir, `${cleanId}${ext}`);
-        if (fs.existsSync(localFile)) {
-          try {
-            const stat = fs.statSync(localFile);
-            if (stat.size > 0) {
-              const etag = `W/"${stat.size}-${Math.round(stat.mtimeMs)}"`;
-              if (req.headers['if-none-match'] === etag) {
-                return res.status(304).end();
-              }
-              const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
-              res.setHeader('Content-Type', mime);
-              res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
-              res.setHeader('ETag', etag);
-              res.setHeader('X-OneProxy-Source', 'local-disk-cache');
-              return res.sendFile(localFile);
-            }
-          } catch (_) {}
+        const fileWithExt = path.join(dir, `${baseIdLower}${ext}`);
+        if (fs.existsSync(fileWithExt) && fs.statSync(fileWithExt).isFile()) {
+          const stat = fs.statSync(fileWithExt);
+          const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
+          res.setHeader('Content-Type', mime);
+          res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+          res.setHeader('X-OneProxy-Source', 'local-disk-cache');
+          return res.sendFile(fileWithExt);
         }
+      }
+    }
+
+    // 3. Recursive directory scan for matching filename
+    for (const dir of checkDirs) {
+      if (!fs.existsSync(dir)) continue;
+      const searchRecursive = (currentDir: string): string | null => {
+        try {
+          const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullP = path.join(currentDir, entry.name);
+            if (entry.isDirectory()) {
+              if (entry.name !== 'manifests' && entry.name !== '.git') {
+                const found = searchRecursive(fullP);
+                if (found) return found;
+              }
+            } else if (entry.isFile()) {
+              const entryNameLower = entry.name.toLowerCase();
+              const entryBaseLower = path.parse(entry.name).name.toLowerCase();
+              if (
+                entryNameLower === cleanIdLower ||
+                entryBaseLower === baseIdLower ||
+                entryBaseLower.replace(/_/g, '-') === baseIdLower.replace(/_/g, '-')
+              ) {
+                return fullP;
+              }
+            }
+          }
+        } catch (_) {}
+        return null;
+      };
+
+      const matchedFile = searchRecursive(dir);
+      if (matchedFile && fs.existsSync(matchedFile)) {
+        const ext = path.extname(matchedFile).toLowerCase();
+        const mime = ext === '.webp' ? 'image/webp' : (ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png');
+        res.setHeader('Content-Type', mime);
+        res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+        res.setHeader('X-OneProxy-Source', 'local-disk-cache');
+        return res.sendFile(matchedFile);
       }
     }
 
@@ -3723,10 +4011,19 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     }
   });
 
-  // OneProxy Bulk Download Endpoints
+  // OneProxy Set-based Download Endpoint
+  app.post("/api/oneproxy/download-sets", async (req, res) => {
+    const rawSets = req.body?.sets;
+    const sets = Array.isArray(rawSets) ? rawSets : ['all'];
+    const rawDir = (req.body?.targetDir || '').trim();
+    const result = await startOneProxySetDownload(sets, rawDir);
+    res.json(result);
+  });
+
+  // OneProxy Bulk Download Endpoints (Backward compatible)
   app.post("/api/oneproxy/download-all", async (req, res) => {
     const rawDir = (req.body?.targetDir || '').trim();
-    const result = await startOneProxyBulkDownload(rawDir);
+    const result = await startOneProxySetDownload(['all'], rawDir);
     res.json(result);
   });
 

@@ -47,7 +47,9 @@ import {
   FolderOutput,
   Cpu,
   AlertTriangle,
-  Sparkles
+  Sparkles,
+  Heart,
+  Square
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
@@ -443,7 +445,7 @@ const PLUGINS: PluginConfig[] = [
   {
     id: 'one_piece',
     name: 'One Piece',
-    formats: ['optcgsim', 'oneproxy', 'egman'],
+    formats: ['oneproxy', 'optcgsim', 'egman'],
     options: [],
     websites: [
       { name: 'OneProxy', url: 'https://oneproxy.torforge.dev' },
@@ -2012,12 +2014,34 @@ export default function App() {
   const [isBrowsingDownloadPath, setIsBrowsingDownloadPath] = useState(false);
   const [cacheConfigMsg, setCacheConfigMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // OneProxy v1 Sets & Category Filtering
+  const [oneProxySets, setOneProxySets] = useState<any[]>([]);
+  const [selectedOneProxySets, setSelectedOneProxySets] = useState<string[]>([]);
+  const [oneProxySetTab, setOneProxySetTab] = useState<'all' | 'boosters' | 'starters' | 'extra' | 'specials'>('all');
+  const [isLoadingSets, setIsLoadingSets] = useState(false);
+
   const formatSize = (bytes: number): string => {
     if (!bytes || bytes <= 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  };
+
+  const fetchOneProxySets = async () => {
+    setIsLoadingSets(true);
+    try {
+      const resp = await fetch('/api/oneproxy/sets');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.sets && Array.isArray(data.sets)) {
+          setOneProxySets(data.sets);
+        }
+      }
+    } catch (_) {}
+    finally {
+      setIsLoadingSets(false);
+    }
   };
 
   const fetchOneProxyStatus = async () => {
@@ -2035,12 +2059,18 @@ export default function App() {
         if (data.bulkDownloadState?.isActive) {
           setOneProxyBulkProgress(data.bulkDownloadState);
           setOneProxyView('downloading');
-        } else if (data.isBulkDownloaded || (data.hasCustomFolderConfigured && data.cachedImagesCount > 50)) {
+        } else if (data.isBulkDownloaded || (data.cachedImagesCount ?? 0) >= 15) {
           setOneProxyView(prev => (prev === 'options' ? 'ready' : prev));
+        } else {
+          setOneProxyView('options');
         }
       }
     } catch (_) {}
   };
+
+  useEffect(() => {
+    fetchOneProxySets();
+  }, []);
 
   useEffect(() => {
     if (oneProxyView !== 'downloading' && !oneProxyBulkProgress?.isActive) return;
@@ -2053,10 +2083,12 @@ export default function App() {
           setOneProxyBulkProgress(prog);
           if (prog.isCompleted) {
             fetchOneProxyStatus();
+            fetchOneProxySets();
             setOneProxyView('ready');
             addLog(`[OneProxy] Download complete! ${prog.downloadedCards} cards downloaded.`);
           } else if (!prog.isActive && prog.statusText?.includes('cancelled')) {
             fetchOneProxyStatus();
+            fetchOneProxySets();
             setOneProxyView('download_prompt');
             addLog(`[OneProxy] Download cancelled.`);
           }
@@ -2067,17 +2099,18 @@ export default function App() {
     return () => clearInterval(interval);
   }, [oneProxyView, oneProxyBulkProgress?.isActive]);
 
-  const handleStartBulkDownload = async () => {
+  const handleStartSetDownload = async (setsToDownload?: string[]) => {
     if (isStartingBulkDownload) return;
     setIsStartingBulkDownload(true);
     setCacheConfigMsg(null);
     try {
       const target = (oneProxyDownloadPath || oneProxyStatus?.defaultUserDir || '').trim();
-      addLog(`[OneProxy] Starting asset library download to: ${target}...`);
-      const resp = await fetch('/api/oneproxy/download-all', {
+      const chosenSets = setsToDownload || (selectedOneProxySets.length > 0 ? selectedOneProxySets : ['all']);
+      addLog(`[OneProxy] Starting asset download for ${chosenSets.length} set(s) to: ${target}...`);
+      const resp = await fetch('/api/oneproxy/download-sets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetDir: target })
+        body: JSON.stringify({ sets: chosenSets, targetDir: target })
       });
       const data = await resp.json();
       if (resp.ok && data.success) {
@@ -2086,10 +2119,11 @@ export default function App() {
           isActive: true,
           percent: 0,
           processedCards: 0,
-          totalCards: data.totalCards || oneProxyStatus?.cardCount || 5035,
+          totalCards: 0,
+          currentSet: chosenSets[0] || 'OP',
           currentCardNumber: '',
-          currentCardName: 'Initializing download...',
-          statusText: 'Connecting to OneProxy...'
+          currentCardName: 'Initializing download queue (2 workers)...',
+          statusText: 'Connecting to OneProxy v1 Partner API...'
         });
       } else {
         setCacheConfigMsg({ type: 'error', text: data.error || 'Failed to start download' });
@@ -2101,6 +2135,10 @@ export default function App() {
     }
   };
 
+  const handleStartBulkDownload = async () => {
+    return handleStartSetDownload(['all']);
+  };
+
   const handleCancelBulkDownload = async () => {
     if (isCancellingBulkDownload) return;
     setIsCancellingBulkDownload(true);
@@ -2108,6 +2146,7 @@ export default function App() {
       await fetch('/api/oneproxy/download-cancel', { method: 'POST' });
       setOneProxyView('download_prompt');
       fetchOneProxyStatus();
+      fetchOneProxySets();
     } catch (_) {}
     finally {
       setIsCancellingBulkDownload(false);
@@ -2164,6 +2203,7 @@ export default function App() {
         setCacheConfigMsg({ type: 'success', text: data.message });
         setCustomCacheInput(data.cacheDir);
         fetchOneProxyStatus();
+        fetchOneProxySets();
         setOneProxyView('ready');
         addLog(`[OneProxy] Cache directory updated: ${data.cacheDir}`);
       } else {
@@ -2181,19 +2221,19 @@ export default function App() {
   const handleSyncOneProxy = async () => {
     if (isSyncingOneProxy) return;
     setIsSyncingOneProxy(true);
-    addLog("[OneProxy] Checking for card database updates...");
+    addLog("[OneProxy] Checking for card updates from OneProxy Partner API...");
     try {
       const resp = await fetch('/api/oneproxy/sync', { method: 'POST' });
       const data = await resp.json();
       if (resp.ok && data.success) {
-        if (data.status) {
-          setOneProxyStatus(data.status);
-        }
-        addLog(`[OneProxy] Success: Synchronized ${data.cardCount} cards into local offline cache.`);
+        if (data.status) setOneProxyStatus(data.status);
+        if (data.sets) setOneProxySets(data.sets);
+        addLog(`[OneProxy] ${data.message || 'Synchronized cards into local offline cache.'}`);
       } else {
         addLog(`[OneProxy] ${data.error || 'Update check failed'}`);
       }
       fetchOneProxyStatus();
+      fetchOneProxySets();
     } catch (err: any) {
       addLog(`[OneProxy] Network error: ${err.message}`);
     } finally {
@@ -6096,389 +6136,453 @@ export default function App() {
                                     />
                                   )}
 
-                                  {/* OneProxy Polite Offline Cache & Asset Manager (Visible ONLY when OneProxy format is selected) */}
-                                  {pluginState.selectedPlugin.id === 'one_piece' && pluginState.format === 'oneproxy' && (
-                                    <div className="mt-3 p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
-                                      {/* State 1: Two Initial Options */}
-                                      {oneProxyView === 'options' && (
-                                        <div className="space-y-2.5">
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-1.5">
-                                              <div className="w-2 h-2 rounded-full bg-primary-400" />
-                                              <span className="text-xs font-bold text-white/90">OneProxy Asset Setup</span>
-                                            </div>
-                                            {oneProxyStatus?.cachedImagesCount > 0 && (
-                                              <button
-                                                type="button"
-                                                onClick={() => setOneProxyView('ready')}
-                                                className="text-[11px] text-primary-400 hover:text-primary-300 transition-colors underline cursor-pointer"
+                                   {/* OneProxy Partner API & Asset Manager (Visible ONLY when OneProxy format is selected) */}
+                                   {pluginState.selectedPlugin.id === 'one_piece' && pluginState.format === 'oneproxy' && (() => {
+                                     const selectedSetsObjects = oneProxySets.filter(s => selectedOneProxySets.includes(s.setCode));
+                                     const selectedRemainingBytes = selectedSetsObjects.reduce((acc, s) => {
+                                       if (s.isComplete) return acc;
+                                       const rem = (s.bytes || 0) - (s.downloadedBytes || 0);
+                                       return acc + (rem > 0 ? rem : (s.bytes || 0));
+                                     }, 0);
+
+                                     const completedSetsCount = oneProxySets.filter(s => s.isComplete).length;
+                                      const hasDownloads = (oneProxyStatus?.cachedImagesCount ?? 0) >= 15 || completedSetsCount > 0 || !!oneProxyStatus?.isBulkDownloaded;
+
+                                     return (
+                                       <div className="mt-3 p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-3">
+                                         {/* OneProxy Partner Attribution & Support Bar */}
+                                         <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-white/10">
+                                            <div className="flex items-center gap-2.5">
+                                              <a
+                                                href="https://oneproxy.torforge.dev/?utm_source=scmui&utm_medium=desktop_app&utm_campaign=scmui_integration"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-2 group cursor-pointer"
+                                                title="Visit OneProxy website"
                                               >
-                                                View Active Cache ({oneProxyStatus.cachedImagesCount} cards) →
-                                              </button>
-                                            )}
-                                          </div>
-
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                            {/* Option A: Download OneProxy Assets */}
-                                            <button
-                                              type="button"
-                                              onClick={() => setOneProxyView('download_prompt')}
-                                              className="group relative text-left p-3.5 rounded-xl bg-gradient-to-br from-primary-500/10 via-primary-600/5 to-transparent border border-primary-500/30 hover:border-primary-400 hover:from-primary-500/20 transition-all cursor-pointer shadow-sm active:scale-[0.99] flex flex-col justify-between"
-                                            >
-                                              <div>
-                                                <div className="flex items-center gap-2 mb-1.5">
-                                                  <div className="w-7 h-7 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-all shrink-0">
-                                                    <Download size={14} />
-                                                  </div>
-                                                  <span className="text-xs font-bold text-white group-hover:text-primary-200">
-                                                    Download OneProxy Assets
-                                                  </span>
-                                                </div>
-                                                <p className="text-[11px] text-white/60 leading-relaxed">
-                                                  Download high-res card art (~{oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.estimatedRemainingSizeFormatted ? `${oneProxyStatus.estimatedRemainingSizeFormatted} remaining` : (oneProxyStatus?.estimatedFullSizeFormatted || "3.6 GB")}) locally for instant offline deck rendering with zero rate limits.
-                                                </p>
-                                              </div>
-                                              <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-primary-400 group-hover:text-primary-300">
-                                                <span>Select Folder & Download</span>
-                                                <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
-                                              </div>
-                                            </button>
-
-                                            {/* Option B: I Already Have Assets */}
-                                            <button
-                                              type="button"
-                                              onClick={() => setOneProxyView('link_prompt')}
-                                              className="group relative text-left p-3.5 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/20 hover:bg-white/[0.06] transition-all cursor-pointer shadow-sm active:scale-[0.99] flex flex-col justify-between"
-                                            >
-                                              <div>
-                                                <div className="flex items-center gap-2 mb-1.5">
-                                                  <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white/80 group-hover:bg-white/20 group-hover:text-white transition-all shrink-0">
-                                                    <FolderOpen size={14} />
-                                                  </div>
-                                                  <span className="text-xs font-bold text-white">
-                                                    I Already Have Assets
-                                                  </span>
-                                                </div>
-                                                <p className="text-[11px] text-white/60 leading-relaxed">
-                                                  Already have the OneProxy cards downloaded? Link your existing folder to use your saved library immediately.
-                                                </p>
-                                              </div>
-                                              <div className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-white/70 group-hover:text-white">
-                                                <span>Link Existing Folder</span>
-                                                <ChevronRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
-                                              </div>
-                                            </button>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* State 2: Download Prompt (Space Requirement & Path Setup) */}
-                                      {oneProxyView === 'download_prompt' && (
-                                        <div className="space-y-3">
-                                          <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
-                                            <button
-                                              type="button"
-                                              onClick={() => setOneProxyView('options')}
-                                              className="flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors cursor-pointer"
-                                            >
-                                              <ChevronLeft size={13} />
-                                              <span>Back to Options</span>
-                                            </button>
-                                            <span className="text-xs font-bold text-white">Download OneProxy Assets</span>
-                                          </div>
-
-                                          {/* Space Requirement Notice */}
-                                          <div className="p-3 rounded-lg bg-primary-950/40 border border-primary-500/25 space-y-1.5">
-                                            <div className="flex items-center justify-between">
-                                              <div className="flex items-center gap-1.5 text-primary-300 font-semibold text-xs">
-                                                <Info size={13} />
-                                                <span>Storage & Space Requirement</span>
-                                              </div>
-                                              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary-500/20 text-primary-200 border border-primary-500/30 font-bold">
-                                                ~{oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.estimatedRemainingSizeFormatted ? `${oneProxyStatus.estimatedRemainingSizeFormatted} Remaining` : `${oneProxyStatus?.estimatedFullSizeFormatted || "3.6 GB"} Required`}
-                                              </span>
-                                            </div>
-                                            <p className="text-[11px] text-white/70 leading-relaxed">
-                                              {oneProxyStatus?.hasLegacyWebp ? (
-                                                <>This will upgrade {oneProxyStatus.legacyWebpCount?.toLocaleString()} watermarked preview cards to crystal clear, full-resolution print artwork directly from OneProxy with zero watermarks.</>
-                                              ) : oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.remainingCardsCount !== undefined ? (
-                                                <>This will download {oneProxyStatus.remainingCardsCount.toLocaleString()} remaining high-resolution card artworks ({oneProxyStatus.cachedImagesCount.toLocaleString()} already saved of {oneProxyStatus.cardCount ? oneProxyStatus.cardCount.toLocaleString() : 'all'}).</>
-                                              ) : (
-                                                <>This will download ~{oneProxyStatus?.cardCount ? oneProxyStatus.cardCount.toLocaleString() : '5,000+'} high-resolution print card artworks (~3.6 GB) directly from OneProxy.</>
-                                              )}
-                                              {oneProxyStatus?.freeDiskSpaceFormatted && (
-                                                <span className="text-emerald-400 font-medium"> ({oneProxyStatus.freeDiskSpaceFormatted} free on drive)</span>
-                                              )}
-                                            </p>
-                                          </div>
-
-                                          {/* Destination Folder Selector */}
-                                          <div className="space-y-1.5">
-                                            <div className="flex items-center justify-between text-[11px]">
-                                              <label className="text-white/80 font-medium">Download Destination Folder</label>
-                                              <span className="text-[10px] text-white/40 font-mono">
-                                                Default: {oneProxyStatus?.defaultUserDir || 'C:\\Users\\OneProxy'}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                              <input
-                                                type="text"
-                                                value={oneProxyDownloadPath || oneProxyStatus?.defaultUserDir || ''}
-                                                onChange={(e) => setOneProxyDownloadPath(e.target.value)}
-                                                placeholder={oneProxyStatus?.defaultUserDir || "C:\\Users\\<Username>\\OneProxy"}
-                                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono"
-                                              />
-                                              <button
-                                                type="button"
-                                                onClick={handleBrowseDownloadDir}
-                                                disabled={isBrowsingDownloadPath}
-                                                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/15 text-white/80 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
-                                              >
-                                                {isBrowsingDownloadPath ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
-                                                <span>Browse</span>
-                                              </button>
-                                            </div>
-                                            <p className="text-[10px] text-white/40">
-                                              If no path is selected, files will download to <code className="text-primary-300 font-mono">{oneProxyStatus?.defaultUserDir || 'C:\\Users\\OneProxy'}</code>.
-                                            </p>
-                                          </div>
-
-                                          {/* Start Download Button */}
-                                          <button
-                                            type="button"
-                                            onClick={handleStartBulkDownload}
-                                            disabled={isStartingBulkDownload}
-                                            className="w-full py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-[0.99] disabled:opacity-50"
-                                          >
-                                            {isStartingBulkDownload ? (
-                                              <>
-                                                <Loader2 size={13} className="animate-spin" />
-                                                <span>Starting Download...</span>
-                                              </>
-                                            ) : oneProxyStatus?.hasLegacyWebp ? (
-                                              <>
-                                                <Sparkles size={13} />
-                                                <span>Upgrade to Clean High-Res Art ({oneProxyStatus.legacyWebpCount?.toLocaleString()} cards)</span>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <Download size={13} />
-                                                <span>Start Downloading Assets (~{oneProxyStatus?.cachedImagesCount > 0 && oneProxyStatus?.estimatedRemainingSizeFormatted ? oneProxyStatus.estimatedRemainingSizeFormatted : (oneProxyStatus?.estimatedFullSizeFormatted || "3.6 GB")})</span>
-                                              </>
-                                            )}
-                                          </button>
-                                        </div>
-                                      )}
-
-                                      {/* State 3: Downloading Progress Bar */}
-                                      {oneProxyView === 'downloading' && (
-                                        <div className="space-y-2.5 py-1">
-                                          {/* Progress Header */}
-                                          <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                              <div className="w-2.5 h-2.5 rounded-full bg-primary-400 animate-ping" />
-                                              <span className="text-xs font-bold text-white">Downloading OneProxy Assets</span>
-                                              <span className="text-[10px] bg-primary-500/20 text-primary-300 border border-primary-500/30 px-2 py-0.5 rounded-full font-bold">
-                                                {oneProxyBulkProgress?.percent ?? 0}%
-                                              </span>
-                                            </div>
-                                            <button
-                                              type="button"
-                                              onClick={handleCancelBulkDownload}
-                                              disabled={isCancellingBulkDownload}
-                                              className="text-[10px] text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-2 py-0.5 rounded-md cursor-pointer transition-colors"
-                                            >
-                                              {isCancellingBulkDownload ? "Cancelling..." : "Cancel Download"}
-                                            </button>
-                                          </div>
-
-                                          {/* Progress Bar Track */}
-                                          <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden p-0.5 border border-white/10 relative">
-                                            <div
-                                              className="h-full rounded-full bg-gradient-to-r from-primary-500 via-indigo-500 to-emerald-400 transition-all duration-300 ease-out"
-                                              style={{ width: `${Math.max(2, oneProxyBulkProgress?.percent ?? 0)}%` }}
-                                            />
-                                          </div>
-
-                                          {/* Progress Status Details */}
-                                          <div className="flex items-center justify-between text-[11px] text-white/60">
-                                            <span className="truncate max-w-[260px] text-white/80 font-medium">
-                                              {oneProxyBulkProgress?.currentCardNumber ? (
-                                                <>Card {oneProxyBulkProgress.currentCardNumber}: <span className="text-white/60">{oneProxyBulkProgress.currentCardName}</span></>
-                                              ) : (
-                                                oneProxyBulkProgress?.statusText || "Downloading cards..."
-                                              )}
-                                            </span>
-                                            <span className="font-mono text-white/70 shrink-0">
-                                              {oneProxyBulkProgress?.processedCards ?? 0} / {oneProxyBulkProgress?.totalCards || oneProxyStatus?.cardCount || 5035} cards
-                                            </span>
-                                          </div>
-
-                                          {/* Downloaded stats */}
-                                          <div className="flex items-center justify-between text-[10px] text-white/40 pt-1 border-t border-white/5 font-mono">
-                                            <span className="truncate max-w-[240px]">Destination: {oneProxyBulkProgress?.targetDir || oneProxyDownloadPath || oneProxyStatus?.defaultUserDir}</span>
-                                            <span>{formatSize(oneProxyBulkProgress?.totalBytesDownloaded ?? 0)} downloaded</span>
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* State 4: Link Existing Folder */}
-                                      {oneProxyView === 'link_prompt' && (
-                                        <div className="space-y-3">
-                                          <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
-                                            <button
-                                              type="button"
-                                              onClick={() => setOneProxyView('options')}
-                                              className="flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors cursor-pointer"
-                                            >
-                                              <ChevronLeft size={13} />
-                                              <span>Back to Options</span>
-                                            </button>
-                                            <span className="text-xs font-bold text-white">Link Existing OneProxy Folder</span>
-                                          </div>
-
-                                          <div className="space-y-1.5">
-                                            <label className="text-[11px] text-white/80 font-medium block">Folder Location on Your PC</label>
-                                            <div className="flex items-center gap-2">
-                                              <input
-                                                type="text"
-                                                value={customCacheInput}
-                                                onChange={(e) => setCustomCacheInput(e.target.value)}
-                                                placeholder="Folder path..."
-                                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono"
-                                              />
-                                              <button
-                                                type="button"
-                                                onClick={handleBrowseCacheDir}
-                                                disabled={isBrowsingCachePath}
-                                                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/15 text-white/80 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
-                                              >
-                                                {isBrowsingCachePath ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
-                                                <span>Browse</span>
-                                              </button>
-                                              <button
-                                                type="button"
-                                                onClick={() => handleSaveCacheDir()}
-                                                disabled={isSavingCachePath}
-                                                className="px-2.5 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
-                                              >
-                                                {isSavingCachePath ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                                                <span>Link Folder</span>
-                                              </button>
-                                            </div>
-                                            {cacheConfigMsg && (
-                                              <div className={cn(
-                                                "text-[10px] p-1.5 rounded-md flex items-center gap-1.5",
-                                                cacheConfigMsg.type === 'success' ? "text-emerald-300 bg-emerald-500/10" : "text-rose-300 bg-rose-500/10"
-                                              )}>
-                                                {cacheConfigMsg.type === 'success' ? <CheckCircle size={11} /> : <AlertCircle size={11} />}
-                                                <span>{cacheConfigMsg.text}</span>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )}
-
-                                      {/* State 5: Ready / Configured Cache View */}
-                                      {oneProxyView === 'ready' && (
-                                        <div className="space-y-2.5">
-                                          {/* Header row with count, storage, and action buttons */}
-                                          <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <div className="flex items-center gap-2">
-                                              <div className={cn("w-2 h-2 rounded-full", oneProxyStatus?.hasLegacyWebp ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse")} />
-                                              <span className="text-xs font-bold text-white/90">OneProxy Cache</span>
-                                              <span className="text-[10px] bg-white/5 text-white/50 border border-white/10 px-2 py-0.5 rounded-md">
-                                                {oneProxyStatus?.hasLegacyWebp
-                                                  ? `${oneProxyStatus?.cleanImagesCount ?? 0} clean / ${oneProxyStatus?.legacyWebpCount ?? 0} sample previews (${oneProxyStatus?.totalSizeFormatted || '0 B'})`
-                                                  : `${oneProxyStatus?.cachedImagesCount ?? 0} cards (${oneProxyStatus?.totalSizeFormatted || '0 B'})`
-                                                }
-                                              </span>
-                                            </div>
-
-                                            <div className="flex items-center gap-2">
-                                              {oneProxyStatus?.hasLegacyWebp ? (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setOneProxyView('download_prompt')}
-                                                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-                                                  title="Upgrade cards to clean, watermark-free high-resolution artwork"
-                                                >
-                                                  <Sparkles size={11} />
-                                                  <span>Upgrade Art</span>
-                                                </button>
-                                              ) : (oneProxyStatus?.remainingCardsCount ?? 0) > 0 ? (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setOneProxyView('download_prompt')}
-                                                  className="px-2 py-1 bg-primary-600/30 hover:bg-primary-600/50 text-primary-200 border border-primary-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-                                                  title="Download remaining missing cards"
-                                                >
-                                                  <Download size={11} />
-                                                  <span>Download Remaining ({oneProxyStatus.remainingCardsCount})</span>
-                                                </button>
-                                              ) : null}
-
-                                              <button
-                                                type="button"
-                                                onClick={() => setOneProxyView('options')}
-                                                className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors cursor-pointer py-1 px-2 rounded-md hover:bg-white/5"
-                                                title="Change cache folder or link existing library"
-                                              >
-                                                <FolderOpen size={12} />
-                                                <span>Change Folder</span>
-                                              </button>
-
-                                              <button
-                                                type="button"
-                                                onClick={handleSyncOneProxy}
-                                                disabled={isSyncingOneProxy}
-                                                className="px-2.5 py-1 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
-                                                title="Check for newly released One Piece cards"
-                                              >
-                                                {isSyncingOneProxy ? (
-                                                  <>
-                                                    <Loader2 size={11} className="animate-spin text-primary-400" />
-                                                    <span>Checking...</span>
-                                                  </>
-                                                ) : (
-                                                  <>
-                                                    <RefreshCw size={11} />
-                                                    <span>Check Updates</span>
-                                                  </>
-                                                )}
-                                              </button>
-                                            </div>
-                                          </div>
-
-                                          {/* Legacy WebP Sample Watermark Banner */}
-                                          {oneProxyStatus?.hasLegacyWebp && (
-                                            <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between gap-2">
-                                              <div className="flex items-center gap-2 min-w-0">
-                                                <AlertCircle size={13} className="text-amber-400 shrink-0" />
-                                                <span className="text-[11px] text-amber-200/90 truncate">
-                                                  {oneProxyStatus.legacyWebpCount?.toLocaleString()} preview cards have "SAMPLE" watermarks.
+                                                {/* Bigger OneProxy Logo */}
+                                                <img
+                                                  src="/api/oneproxy/badge"
+                                                  alt="OneProxy"
+                                                  className="h-12 w-auto max-h-12 object-contain rounded drop-shadow-sm group-hover:brightness-110 transition-all"
+                                                  onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                                                />
+                                                <span className="text-xs text-white/50 group-hover:text-white/80 transition-colors flex items-center gap-1 font-semibold">
+                                                  Partner API
+                                                  <ExternalLink size={11} className="text-white/40 group-hover:text-primary-400 transition-colors" />
                                                 </span>
-                                              </div>
+                                              </a>
+                                            </div>
+                                           <div className="flex items-center gap-2">
+                                             {/* Support OneProxy Link (Per partner spec: only display when enabled & url available) */}
+                                             {oneProxyStatus?.donation?.enabled && oneProxyStatus?.donation?.url && (
+                                               <a
+                                                 href={oneProxyStatus.donation.url}
+                                                 target="_blank"
+                                                 rel="noopener noreferrer"
+                                                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-[11px] font-semibold transition-all shadow-sm cursor-pointer group"
+                                                 title={oneProxyStatus.donation.message || "Support OneProxy hosting and bandwidth"}
+                                               >
+                                                 <Heart size={12} className="text-rose-400 fill-rose-400/40 group-hover:scale-110 transition-transform" />
+                                                 <span>Support OneProxy</span>
+                                               </a>
+                                             )}
+
+                                             {/* Discreet yet noticeable Check Updates button */}
+                                             <button
+                                               type="button"
+                                               onClick={handleSyncOneProxy}
+                                               disabled={isSyncingOneProxy}
+                                               className="px-2.5 py-1 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 hover:border-white/20 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                               title="Check for newly released One Piece cards and updates"
+                                             >
+                                               <RefreshCw size={11} className={cn("text-white/50", isSyncingOneProxy && "animate-spin text-primary-400")} />
+                                               <span>Check Updates</span>
+                                             </button>
+                                           </div>
+                                         </div>
+
+                                          {/* State 1: Options (Shown when user has no downloaded sets) */}
+                                          {oneProxyView === 'options' && (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                               <button
                                                 type="button"
-                                                onClick={() => setOneProxyView('download_prompt')}
-                                                className="text-[11px] text-amber-300 font-bold hover:underline shrink-0 cursor-pointer"
+                                                onClick={() => {
+                                                  setSelectedOneProxySets([]);
+                                                  fetchOneProxySets();
+                                                  setOneProxyView('download_prompt');
+                                                }}
+                                                className="group p-3 rounded-xl bg-gradient-to-br from-primary-500/10 via-primary-600/5 to-transparent border border-primary-500/30 hover:border-primary-400 hover:from-primary-500/20 transition-all cursor-pointer shadow-sm active:scale-[0.99] flex items-center justify-between"
                                               >
-                                                Upgrade Now &rarr;
+                                                <div className="flex items-center gap-2.5">
+                                                  <div className="w-8 h-8 rounded-lg bg-primary-500/20 flex items-center justify-center text-primary-400 group-hover:bg-primary-500 group-hover:text-white transition-all shrink-0">
+                                                    <Download size={15} />
+                                                  </div>
+                                                  <div className="text-left">
+                                                    <span className="text-xs font-bold text-white group-hover:text-primary-200 block">
+                                                      Download Card Sets
+                                                    </span>
+                                                    <span className="text-[11px] text-white/50">
+                                                      Download official OneProxy sets to your computer
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                                <ChevronRight size={14} className="text-white/30 group-hover:text-primary-400 group-hover:translate-x-0.5 transition-all shrink-0" />
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                onClick={() => setOneProxyView('link_prompt')}
+                                                className="group p-3 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/20 hover:bg-white/[0.06] transition-all cursor-pointer shadow-sm active:scale-[0.99] flex items-center justify-between"
+                                              >
+                                                <div className="flex items-center gap-2.5">
+                                                  <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white/80 group-hover:bg-white/20 group-hover:text-white transition-all shrink-0">
+                                                    <FolderOpen size={15} />
+                                                  </div>
+                                                  <div className="text-left">
+                                                    <span className="text-xs font-bold text-white block">
+                                                      Link Existing Folder
+                                                    </span>
+                                                    <span className="text-[11px] text-white/50">
+                                                      Already have a OneProxy folder? Link it to skip downloading
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                                <ChevronRight size={14} className="text-white/30 group-hover:text-white/80 group-hover:translate-x-0.5 transition-all shrink-0" />
                                               </button>
                                             </div>
                                           )}
 
-                                          {/* Folder Location Footnote (Clean with NO bottom right text!) */}
-                                          <div className="flex items-center text-[10px] text-white/40 pt-1 border-t border-white/5">
-                                            <span className="truncate max-w-full font-mono text-white/50" title={oneProxyStatus?.cacheDir}>
-                                              📁 {oneProxyStatus?.cacheDir || '~/.cache/oneproxy'}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
+                                         {/* State 2: Download / Set Selection View */}
+                                         {oneProxyView === 'download_prompt' && (
+                                           <div className="space-y-3">
+                                             <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
+                                               <button
+                                                 type="button"
+                                                 onClick={() => setOneProxyView(hasDownloads ? 'ready' : 'options')}
+                                                 className="flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors cursor-pointer"
+                                               >
+                                                 <ChevronLeft size={13} />
+                                                 <span>{hasDownloads ? 'Back to Library' : 'Back to Options'}</span>
+                                               </button>
+                                               <span className="text-xs font-bold text-white">Select Sets to Download</span>
+                                             </div>
+
+                                             {/* Destination Folder Selector */}
+                                             <div className="space-y-1.5">
+                                               <div className="flex items-center justify-between text-[11px]">
+                                                 <label className="text-white/80 font-medium">Download Destination Folder</label>
+                                                 <span className="text-[10px] text-white/40 font-mono">
+                                                   Default: {oneProxyStatus?.defaultUserDir || 'C:\\Users\\OneProxy'}
+                                                 </span>
+                                               </div>
+                                               <div className="flex items-center gap-2">
+                                                 <input
+                                                   type="text"
+                                                   value={oneProxyDownloadPath || oneProxyStatus?.defaultUserDir || ''}
+                                                   onChange={(e) => setOneProxyDownloadPath(e.target.value)}
+                                                   placeholder={oneProxyStatus?.defaultUserDir || "C:\\Users\\<Username>\\OneProxy"}
+                                                   className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono"
+                                                 />
+                                                 <button
+                                                   type="button"
+                                                   onClick={handleBrowseDownloadDir}
+                                                   disabled={isBrowsingDownloadPath}
+                                                   className="px-2.5 py-1.5 bg-white/10 hover:bg-white/15 text-white/80 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                                                 >
+                                                   {isBrowsingDownloadPath ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
+                                                   <span>Browse</span>
+                                                 </button>
+                                               </div>
+                                             </div>
+
+                                             {/* Selection Toolbar (Select All / Select Missing / Clear) */}
+                                             <div className="flex items-center justify-between text-xs text-white/60 pt-1">
+                                               <div className="flex items-center gap-1.5">
+                                                 <button
+                                                   type="button"
+                                                   onClick={() => setSelectedOneProxySets(oneProxySets.map(s => s.setCode))}
+                                                   className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 transition-colors cursor-pointer font-medium text-[11px]"
+                                                 >
+                                                   Select All
+                                                 </button>
+                                                 <button
+                                                   type="button"
+                                                   onClick={() => {
+                                                     const missing = oneProxySets.filter(s => !s.isComplete).map(s => s.setCode);
+                                                     setSelectedOneProxySets(missing.length > 0 ? missing : oneProxySets.map(s => s.setCode));
+                                                   }}
+                                                   className="px-2 py-0.5 rounded bg-primary-500/10 hover:bg-primary-500/20 text-primary-300 border border-primary-500/20 transition-colors cursor-pointer font-medium text-[11px]"
+                                                 >
+                                                   Select Missing
+                                                 </button>
+                                                 <button
+                                                   type="button"
+                                                   onClick={() => setSelectedOneProxySets([])}
+                                                   className="px-2 py-0.5 rounded hover:bg-white/5 text-white/50 hover:text-white transition-colors cursor-pointer text-[11px]"
+                                                 >
+                                                   Clear
+                                                 </button>
+                                               </div>
+                                               <span className="font-mono text-white/80 text-[11px]">
+                                                 {selectedOneProxySets.length} / {oneProxySets.length} selected
+                                               </span>
+                                             </div>
+
+                                             {/* Sets Grid */}
+                                             <div className="max-h-56 overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 gap-2 custom-scrollbar">
+                                               {oneProxySets.map((s) => {
+                                                 const isSelected = selectedOneProxySets.includes(s.setCode);
+                                                 return (
+                                                   <div
+                                                     key={s.setCode}
+                                                     onClick={() => {
+                                                       setSelectedOneProxySets(prev =>
+                                                         prev.includes(s.setCode)
+                                                           ? prev.filter(c => c !== s.setCode)
+                                                           : [...prev, s.setCode]
+                                                       );
+                                                     }}
+                                                     className={cn(
+                                                       "p-2.5 rounded-lg border text-left cursor-pointer transition-all select-none flex flex-col justify-between",
+                                                       isSelected
+                                                         ? "bg-primary-500/15 border-primary-500/50 shadow-sm"
+                                                         : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
+                                                     )}
+                                                   >
+                                                     <div className="flex items-start justify-between gap-1.5">
+                                                       <div className="flex items-center gap-1.5 min-w-0">
+                                                         <div className={cn(
+                                                           "w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 transition-colors",
+                                                           isSelected ? "bg-primary-500 border-primary-500 text-white" : "border-white/30 bg-white/5"
+                                                         )}>
+                                                           {isSelected && <Check size={10} strokeWidth={3} />}
+                                                         </div>
+                                                         <span className="text-xs font-bold text-white truncate">{s.setCode}</span>
+                                                       </div>
+                                                       {s.isComplete ? (
+                                                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                                                           Done
+                                                         </span>
+                                                       ) : s.downloadedCount > 0 ? (
+                                                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                                                           {s.percent}%
+                                                         </span>
+                                                       ) : null}
+                                                     </div>
+
+                                                     <div className="mt-2 flex items-center justify-between text-[10px] text-white/50">
+                                                       <span>{s.cardCount > 0 ? `${s.cardCount} cards` : `${s.assetCount || 8} card backs`}</span>
+                                                       <span>{s.bytesFormatted || '~120 MB'}</span>
+                                                     </div>
+                                                   </div>
+                                                 );
+                                               })}
+                                             </div>
+
+                                             {/* Download Action Bar (Properly bounded & responsive) */}
+                                             <div className="pt-2.5 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
+                                               <div className="text-[11px] text-white/60 min-w-[120px]">
+                                                 <span>Selected: </span>
+                                                 <strong className="text-white">{selectedOneProxySets.length} sets</strong>
+                                                 {selectedRemainingBytes > 0 && (
+                                                   <span className="text-primary-300 font-mono font-medium"> (~{formatSize(selectedRemainingBytes)})</span>
+                                                 )}
+                                               </div>
+
+                                               <div className="flex flex-wrap items-center gap-2">
+
+
+                                                 {/* Download Button (Only says Download per request) */}
+                                                 <button
+                                                   type="button"
+                                                   onClick={() => handleStartSetDownload(selectedOneProxySets)}
+                                                   disabled={isStartingBulkDownload || selectedOneProxySets.length === 0}
+                                                   className="px-4 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md active:scale-[0.99] disabled:opacity-50 shrink-0"
+                                                 >
+                                                   {isStartingBulkDownload ? (
+                                                     <>
+                                                       <Loader2 size={13} className="animate-spin" />
+                                                       <span>Starting...</span>
+                                                     </>
+                                                   ) : (
+                                                     <>
+                                                       <Download size={13} />
+                                                       <span>Download</span>
+                                                     </>
+                                                   )}
+                                                 </button>
+                                               </div>
+                                             </div>
+                                           </div>
+                                         )}
+
+                                         {/* State 3: Downloading Progress (Shows 25 MB/s allowance here only) */}
+                                         {oneProxyView === 'downloading' && (
+                                           <div className="space-y-3 py-1">
+                                             <div className="flex items-center justify-between">
+                                               <div className="flex items-center gap-2">
+                                                 <div className="w-2.5 h-2.5 rounded-full bg-primary-400 animate-ping" />
+                                                 <span className="text-xs font-bold text-white">Downloading OneProxy Assets</span>
+                                                 <span className="text-[10px] bg-primary-500/20 text-primary-300 border border-primary-500/30 px-2 py-0.5 rounded-full font-bold">
+                                                   {oneProxyBulkProgress?.percent ?? 0}%
+                                                 </span>
+                                               </div>
+                                               <button
+                                                 type="button"
+                                                 onClick={handleCancelBulkDownload}
+                                                 disabled={isCancellingBulkDownload}
+                                                 className="text-[10px] text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 px-2.5 py-1 rounded-md cursor-pointer transition-colors"
+                                               >
+                                                 {isCancellingBulkDownload ? "Cancelling..." : "Cancel Download"}
+                                               </button>
+                                             </div>
+
+                                             <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden p-0.5 border border-white/10 relative">
+                                               <div
+                                                 className="h-full rounded-full bg-gradient-to-r from-primary-500 via-indigo-500 to-emerald-400 transition-all duration-300 ease-out"
+                                                 style={{ width: `${Math.max(2, oneProxyBulkProgress?.percent ?? 0)}%` }}
+                                               />
+                                             </div>
+
+                                             <div className="flex items-center justify-between text-[11px] text-white/60">
+                                               <div className="flex items-center gap-1.5 truncate max-w-[280px]">
+                                                 {oneProxyBulkProgress?.currentSet && (
+                                                   <span className="px-1.5 py-0.5 bg-primary-500/20 text-primary-300 rounded font-mono font-bold text-[10px]">
+                                                     {oneProxyBulkProgress.currentSet}
+                                                   </span>
+                                                 )}
+                                                 <span className="truncate text-white/80 font-medium">
+                                                   {oneProxyBulkProgress?.currentCardNumber ? (
+                                                     <>Card {oneProxyBulkProgress.currentCardNumber}: <span className="text-white/60">{oneProxyBulkProgress.currentCardName}</span></>
+                                                   ) : (
+                                                     oneProxyBulkProgress?.statusText || "Downloading cards..."
+                                                   )}
+                                                 </span>
+                                               </div>
+                                               <span className="font-mono text-white/70 shrink-0">
+                                                 {oneProxyBulkProgress?.processedCards ?? 0} / {oneProxyBulkProgress?.totalCards || 0} cards
+                                               </span>
+                                             </div>
+
+                                             <div className="flex items-center justify-between text-[10px] text-white/40 pt-1 border-t border-white/5 font-mono">
+                                               <span className="truncate max-w-[220px]">To: {oneProxyBulkProgress?.targetDir || oneProxyDownloadPath || oneProxyStatus?.defaultUserDir}</span>
+                                               <div className="flex items-center gap-2">
+                                                 <span className="text-primary-400 font-medium">25 MB/s allowance · 2 Workers</span>
+                                                 <span>·</span>
+                                                 <span>{formatSize(oneProxyBulkProgress?.totalBytesDownloaded ?? 0)} downloaded</span>
+                                               </div>
+                                             </div>
+                                           </div>
+                                         )}
+
+                                         {/* State 4: Link Existing Folder */}
+                                         {oneProxyView === 'link_prompt' && (
+                                           <div className="space-y-3">
+                                             <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
+                                               <button
+                                                 type="button"
+                                                 onClick={() => setOneProxyView(hasDownloads ? 'ready' : 'options')}
+                                                 className="flex items-center gap-1 text-xs text-white/60 hover:text-white transition-colors cursor-pointer"
+                                               >
+                                                 <ChevronLeft size={13} />
+                                                 <span>{hasDownloads ? 'Back to Library' : 'Back to Options'}</span>
+                                               </button>
+                                               <span className="text-xs font-bold text-white">Link Existing OneProxy Folder</span>
+                                             </div>
+
+                                             <div className="space-y-1.5">
+                                               <label className="text-[11px] text-white/80 font-medium block">Folder Location on Your PC</label>
+                                               <div className="flex items-center gap-2">
+                                                 <input
+                                                   type="text"
+                                                   value={customCacheInput}
+                                                   onChange={(e) => setCustomCacheInput(e.target.value)}
+                                                   placeholder="Folder path..."
+                                                   className="flex-1 bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/90 placeholder:text-white/20 focus:outline-none focus:border-primary-500 font-mono"
+                                                 />
+                                                 <button
+                                                   type="button"
+                                                   onClick={handleBrowseCacheDir}
+                                                   disabled={isBrowsingCachePath}
+                                                   className="px-2.5 py-1.5 bg-white/10 hover:bg-white/15 text-white/80 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                                                 >
+                                                   {isBrowsingCachePath ? <Loader2 size={12} className="animate-spin" /> : <FolderOpen size={12} />}
+                                                   <span>Browse</span>
+                                                 </button>
+                                                 <button
+                                                   type="button"
+                                                   onClick={() => handleSaveCacheDir()}
+                                                   disabled={isSavingCachePath}
+                                                   className="px-2.5 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                                                 >
+                                                   {isSavingCachePath ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                                                   <span>Link Folder</span>
+                                                 </button>
+                                               </div>
+                                               {cacheConfigMsg && (
+                                                 <div className={cn(
+                                                   "text-[10px] p-1.5 rounded-md flex items-center gap-1.5",
+                                                   cacheConfigMsg.type === 'success' ? "text-emerald-300 bg-emerald-500/10" : "text-rose-300 bg-rose-500/10"
+                                                 )}>
+                                                   {cacheConfigMsg.type === 'success' ? <CheckCircle size={11} /> : <AlertCircle size={11} />}
+                                                   <span>{cacheConfigMsg.text}</span>
+                                                 </div>
+                                               )}
+                                             </div>
+                                           </div>
+                                         )}
+
+                                         {/* State 5: Ready / Configured Cache View */}
+                                         {oneProxyView === 'ready' && (
+                                           <div className="space-y-2.5">
+                                             <div className="flex flex-wrap items-center justify-between gap-2">
+                                               <div className="flex items-center gap-2">
+                                                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                                 <span className="text-xs font-bold text-white/90">OneProxy Cache</span>
+                                                 <span className="text-[10px] bg-white/5 text-white/50 border border-white/10 px-2 py-0.5 rounded-md">
+                                                   {oneProxyStatus?.cachedImagesCount ?? 0} cards ({oneProxyStatus?.totalSizeFormatted || '0 B'})
+                                                 </span>
+                                               </div>
+
+                                               <div className="flex items-center gap-2">
+                                                 <button
+                                                   type="button"
+                                                   onClick={() => {
+                                                     setSelectedOneProxySets([]);
+                                                     fetchOneProxySets();
+                                                     setOneProxyView('download_prompt');
+                                                   }}
+                                                   className="px-2.5 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-95"
+                                                   title="Download additional sets or manage library"
+                                                 >
+                                                   <Download size={12} />
+                                                   <span>Manage Sets / Downloads</span>
+                                                 </button>
+
+                                                 <button
+                                                   type="button"
+                                                   onClick={() => setOneProxyView('link_prompt')}
+                                                   className="text-xs text-white/60 hover:text-white flex items-center gap-1 transition-colors cursor-pointer py-1 px-2 rounded-md hover:bg-white/5"
+                                                   title="Change cache folder"
+                                                 >
+                                                   <FolderOpen size={12} />
+                                                   <span>Change Folder</span>
+                                                 </button>
+                                               </div>
+                                             </div>
+
+                                             {/* Folder Location Footnote */}
+                                             <div className="flex items-center text-[10px] text-white/40 pt-1 border-t border-white/5 font-mono">
+                                               <span className="truncate max-w-full text-white/50" title={oneProxyStatus?.cacheDir}>
+                                                 📁 {oneProxyStatus?.cacheDir || '~/.cache/oneproxy'}
+                                               </span>
+                                             </div>
+                                           </div>
+                                         )}
+                                       </div>
+                                     );
+                                   })()}
                                 </div>
 
                                 {pluginState.selectedPlugin.options.length > 0 && (

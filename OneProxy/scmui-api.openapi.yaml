@@ -1,0 +1,174 @@
+openapi: 3.1.0
+info:
+  title: OneProxy SCMUI API
+  version: 1.0.0
+  description: Read-only public card metadata and direct artwork downloads. All requests share the configured global byte budget. No ZIPs or individual activation.
+servers:
+  - url: https://oneproxy.torforge.dev/api/v1
+security:
+  - SCMUI: []
+paths:
+  /status:
+    get:
+      summary: Read readiness, current limits, and attribution links
+      responses:
+        '200':
+          description: API status and limits
+          content:
+            application/json:
+              schema: {type: object}
+        default: {$ref: '#/components/responses/Error'}
+  /catalog:
+    get:
+      summary: Complete public metadata and artwork inventory
+      parameters:
+        - {$ref: '#/components/parameters/IfNoneMatch'}
+      responses:
+        '200':
+          description: Complete current snapshot; retain the ETag for subsequent checks
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Catalog'}
+        '304': {description: Unchanged snapshot; no body}
+        default: {$ref: '#/components/responses/Error'}
+  /sets:
+    get:
+      summary: List sets, counts and downloadable byte totals
+      responses:
+        '200': {description: Set index}
+        '304': {description: Unchanged}
+        default: {$ref: '#/components/responses/Error'}
+  /sets/{setCode}/manifest:
+    get:
+      summary: Complete inventory for one selected set, DON or BACK
+      parameters:
+        - name: setCode
+          in: path
+          required: true
+          schema: {type: string, example: OP01}
+        - {$ref: '#/components/parameters/IfNoneMatch'}
+      responses:
+        '200': {description: Set cards and assets}
+        '304': {description: Unchanged}
+        default: {$ref: '#/components/responses/Error'}
+  /cards/{cardId}:
+    get:
+      summary: Card metadata and its artwork record
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema: {type: string, example: OP01-001_P1}
+      responses:
+        '200': {description: Card and asset or null if unavailable}
+        '304': {description: Unchanged}
+        default: {$ref: '#/components/responses/Error'}
+  /assets/{assetId}:
+    parameters:
+      - name: assetId
+        in: path
+        required: true
+        schema: {type: string, pattern: '^[a-f0-9]{64}$'}
+    get:
+      summary: Download original artwork, optionally resuming a partial transfer
+      parameters:
+        - name: Range
+          in: header
+          schema: {type: string, example: 'bytes=65536-'}
+        - name: If-Range
+          in: header
+          schema: {type: string, description: Quoted SHA-256 ETag}
+        - {$ref: '#/components/parameters/IfNoneMatch'}
+      responses:
+        '200':
+          description: Complete image bytes
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '206':
+          description: Requested bytes; inspect Content-Range and append only at the requested offset
+        '304': {description: Unchanged}
+        '416': {description: Unsatisfiable range; Content-Range reports current size}
+        default: {$ref: '#/components/responses/Error'}
+    head:
+      summary: Inspect artwork headers without reserving a download slot
+      responses:
+        '200': {description: Content-Length, Content-Type, ETag and Accept-Ranges; no body}
+        '304': {description: Unchanged; no body}
+        default: {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    SCMUI:
+      type: http
+      scheme: bearer
+      description: One shared SCMUI credential issued in OneProxy admin
+  parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: {type: string}
+  responses:
+    Error:
+      description: '401 unauthorized, 403 disabled, 404 missing, 409 artwork changed, 429 throttled, or 503 temporarily unavailable. Honor Retry-After for 429/503.'
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code: {type: string}
+                  message: {type: string}
+  schemas:
+    Card:
+      type: object
+      required: [cardId, baseCardId, setCode, assetId, availability, metadata]
+      properties:
+        cardId: {type: string}
+        baseCardId: {type: string}
+        setCode: {type: string}
+        assetId: {type: [string, 'null']}
+        availability: {type: string, enum: [ready, unavailable]}
+        metadata:
+          type: object
+          description: Public persisted CardDetail fields plus manual corrections; numeric-looking source values are strings/null. See integration guide.
+    Asset:
+      type: object
+      required: [assetId, cardId, setCode, fileName, relativePath, source, sha256, bytes, contentType, downloadUrl]
+      properties:
+        assetId: {type: string}
+        cardId: {type: string}
+        setCode: {type: string}
+        fileName: {type: string}
+        relativePath: {type: string}
+        source: {type: string, enum: [local-original, remote-fallback]}
+        sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        bytes: {type: integer, minimum: 0}
+        contentType: {type: string}
+        downloadUrl: {type: string, description: Protected relative URL on the OneProxy origin}
+    Catalog:
+      type: object
+      required: [schemaVersion, revision, publishedAt, cards, assets, sets, unavailable]
+      properties:
+        schemaVersion: {type: integer, const: 1}
+        revision: {type: string}
+        publishedAt: {type: string, format: date-time}
+        cards:
+          type: array
+          items: {$ref: '#/components/schemas/Card'}
+        assets:
+          type: array
+          items: {$ref: '#/components/schemas/Asset'}
+        sets:
+          type: array
+          items:
+            type: object
+            properties:
+              setCode: {type: string}
+              cardCount: {type: integer}
+              assetCount: {type: integer}
+              bytes: {type: integer}
+        unavailable: {type: integer}
