@@ -4,7 +4,27 @@ All notable changes to **SCMUI (Silhouette Card Maker UI)** are documented in th
 
 ---
 
-## [3.0.7] - 2026-10-18
+## [3.0.7] - 2026-10-20
+
+### 📱 Pokémon Pocket & Complete `.webp` Integration
+- **Full `.webp` Ecosystem**: Native end-to-end support for `.webp` images across asset scanning, disk caching, plugin fetch staging, PDF generation preflight, and high-res art downloads.
+- **Pokémon Pocket Ingestion**: Direct integration with Pokémon Pocket via Limitless (`pocket.limitlesstcg.com`) with instant search and download of native high-res `.webp` card artwork.
+- **Parallel Omni-Search**: Searching with "All Formats & Eras" automatically queries both physical Limitless TCG and Pokémon Pocket simultaneously, returning standard cards and Pocket cards side-by-side.
+- **Visual `WEBP` Indicator Badges**: Cards formatted as `.webp` now feature a vibrant green `WEBP` badge in the Card Selector grid.
+- **Pocket Era & Set Filters**: Dedicated **"Pokémon Pocket (WebP)"** format filter and set options for all Pocket releases (`A1`, `A1a`, `A2`, `A2a`, `B1`, `B2b`, `B3a`, `B4b`, `P-A`, `P-B`).
+- **MIME & Magic Bytes Auto-Detection**: Downloader inspects response headers and binary magic bytes (`RIFF...WEBP`) to save `.webp` cards with proper extensions while cleaning up any stale duplicate formats.
+
+### 🔍 Limitless Pokémon Card Selector & Vintage Fixes
+- **Pre-HGSS Image Fix (Vintage Eras)**: Resolved broken card images for pre-2010 sets (Diamond & Pearl, Platinum, EX Series, WotC Base/Neo) by routing requests through the full `LIMITLESS_TO_POKEMONTCG_SET_ID` map to `pokemontcg.io` with fallback to Limitless DO CDN.
+- **Comprehensive Metadata Filters**:
+  - **Card Type**: Pokémon, Trainer, Supporter, Item, Tool, Stadium, Energy (Basic), Special Energy.
+  - **Energy / Element**: Grass 🌿, Fire 🔥, Water 💧, Lightning ⚡, Psychic 👁️, Fighting 🥊, Darkness 🌑, Metal ⚙️, Colorless ⭐, Dragon 🐉.
+  - **Stage / Mechanic**: Basic Pokémon, Stage 1, Stage 2, Pokémon ex, Pokémon V / VMAX / VSTAR, Radiant Pokémon, ACE SPEC.
+  - **Rarity**: Common (C), Uncommon (U), Rare (R), Double Rare (RR), Ultra Rare (UR), Illustration Rare (IR), Special Illustration Rare (SIR), Secret / Hyper Rare (Gold).
+  - **Format / Era**: Standard, Expanded, Scarlet & Violet, Sword & Shield, Sun & Moon, XY, Black & White, HeartGold & SoulSilver, Diamond & Pearl / Platinum, EX, and Classic / WotC.
+  - **Sort By**: Set & Number, Card Name (A-Z), Card Type, Pokédex Number, Rarity.
+  - **Set Filter**: Filter by any specific set across modern, Pocket, and classic eras.
+- **Image Fallback Resilience**: Added `onError` event handling to automatically cascade through fallback URLs if a primary CDN thumbnail fails to load.
 
 ### 🏴‍☠️ OneProxy Plugin & Offline Asset Management
 - **Dedicated OneProxy Integration**: Full native support for [OneProxy](https://oneproxy.torforge.dev) with direct upstream card catalog synchronization (`5,035+ cards`).
@@ -14,6 +34,11 @@ All notable changes to **SCMUI (Silhouette Card Maker UI)** are documented in th
   - **Option B (Link Existing Assets)**: Instant linking for users who already have the OneProxy assets folder saved locally.
 - **Dynamic File Sizing & Calibration**: Replaced hardcoded sizes with dynamic disk calibration based on actual downloaded card dimensions and live catalog counts, automatically updating whenever OneProxy releases new cards.
 - **Context-Aware Visibility**: OneProxy controls and card selector options appear strictly when OneProxy is selected as the active format.
+
+### 📐 Precise Physical Print DPI & Performance Refinements
+- **Game-Accurate Physical Print DPI**: Computed true image print resolution based on official card dimensions across each plugin (e.g. 63x88mm at 300 DPI baseline = 744x1039px; 744x1039px = 300 DPI, 1488x2078px = 600 DPI, 2976x4156px = 1200 DPI).
+- **Lag Elimination in Card Selector**: Implemented cached thumbnail generation and removed CPU-heavy on-the-fly image header decodes from grid renders, providing a smooth 60fps scrolling experience.
+- **De-Cluttered Grid Thumbnails**: Removed redundant DPI pill badges from card selector thumbnail overlays for a cleaner, modern look.
 
 ### ✂️ SCM-Extras: Physical Cutting Templates & Presets
 - **Game-Accurate Physical Corner Specifications**:
