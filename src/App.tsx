@@ -790,6 +790,33 @@ const getPluginCardProvider = (pluginId?: string, format?: string): PluginCardPr
   return PLUGIN_CARD_PROVIDERS.mtg;
 };
 
+export const computeCardDpi = (width: number, height: number, pluginId?: string): number => {
+  if (!width || !height || width <= 0 || height <= 0) return 300;
+  const maxDim = Math.max(width, height);
+  const minDim = Math.min(width, height);
+  const ratio = maxDim / minDim;
+  const isBleed = ratio < 1.38;
+  let cardW = 2.50, cardH = 3.50;
+  const p = (pluginId || '').toLowerCase();
+  if (p === 'yugioh') {
+    cardW = isBleed ? 2.57 : 2.323;
+    cardH = isBleed ? 3.64 : 3.386;
+  } else if (p === 'one_piece' || p === 'oneproxy' || p === 'digimon') {
+    cardW = isBleed ? 2.73 : 2.480;
+    cardH = isBleed ? 3.715 : 3.465;
+  } else {
+    cardW = isBleed ? 2.75 : 2.50;
+    cardH = isBleed ? 3.75 : 3.50;
+  }
+  const rawDpi = ((maxDim / cardH) + (minDim / cardW)) / 2;
+  let dpi = Math.round(rawDpi);
+  if (Math.abs(rawDpi - 300) <= 6) dpi = 300;
+  else if (Math.abs(rawDpi - 600) <= 12) dpi = 600;
+  else if (Math.abs(rawDpi - 800) <= 15) dpi = 800;
+  else if (Math.abs(rawDpi - 1200) <= 25) dpi = 1200;
+  return dpi;
+};
+
 interface AppStatus {
   installed: boolean;
   version: string;
@@ -3016,6 +3043,7 @@ export default function App() {
   const [artResults, setArtResults] = useState<any[]>([]);
   const [isSearchingArt, setIsSearchingArt] = useState(false);
   const [artDownloadMsg, setArtDownloadMsg] = useState<string | null>(null);
+  const [detectedDpiMap, setDetectedDpiMap] = useState<Record<string, number>>({});
 
   const handleSearchArt = async (name: string, customFilters?: any, sourceOverride?: string) => {
     const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
@@ -9829,8 +9857,8 @@ export default function App() {
                     {artResults
                       .slice()
                       .sort((a, b) => {
-                        const dpiA = a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 300);
-                        const dpiB = b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 300);
+                        const dpiA = detectedDpiMap[a.id] || a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 300);
+                        const dpiB = detectedDpiMap[b.id] || b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 300);
                         if (scryfallFilters.order === 'dpi_desc') return dpiB - dpiA;
                         if (scryfallFilters.order === 'dpi_asc') return dpiA - dpiB;
                         return 0;
@@ -9838,7 +9866,15 @@ export default function App() {
                       .map((card) => {
                         const img = card.imageUrl || card.image_uris?.normal || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.normal;
                         const frameEffects = card.frame_effects?.join(', ') || card.tags?.join(', ');
-                        const cardDpi = card.dpi || (card.image_uris?.png ? 300 : card.highres_image ? 300 : 300);
+                        const currentPlugin = artSourceTab in PLUGIN_CARD_PROVIDERS ? artSourceTab : (pluginState.selectedPlugin?.id || 'mtg');
+                        const cardDpi = detectedDpiMap[card.id] || card.dpi || (card.image_uris?.png ? 300 : card.highres_image ? 300 : 300);
+                        const badgeColor = cardDpi >= 1000
+                          ? 'bg-emerald-600/90 text-emerald-100 border-emerald-400/30'
+                          : cardDpi >= 600
+                          ? 'bg-cyan-600/90 text-white border-cyan-400/30'
+                          : cardDpi >= 300
+                          ? 'bg-primary-600/80 text-white border-white/10'
+                          : 'bg-amber-600/90 text-amber-100 border-amber-400/30';
 
                         return (
                           <div key={card.id} className="bg-white/[0.03] border border-white/10 hover:border-primary-500/40 rounded-2xl p-2.5 flex flex-col justify-between transition-all group">
@@ -9849,14 +9885,28 @@ export default function App() {
                                 title="Click to enlarge"
                               >
                                 {img ? (
-                                  <img src={img} alt={card.name} className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300" />
+                                  <img
+                                    src={img}
+                                    alt={card.name}
+                                    onLoad={(e) => {
+                                      const nw = e.currentTarget.naturalWidth;
+                                      const nh = e.currentTarget.naturalHeight;
+                                      if (nw > 0 && nh > 0) {
+                                        const calculated = computeCardDpi(nw, nh, currentPlugin);
+                                        if (calculated && calculated !== detectedDpiMap[card.id]) {
+                                          setDetectedDpiMap(prev => prev[card.id] === calculated ? prev : { ...prev, [card.id]: calculated });
+                                        }
+                                      }
+                                    }}
+                                    className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                                  />
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center text-xs text-white/30">No Image</div>
                                 )}
                                 <span className="absolute top-1.5 left-1.5 max-w-[58%] truncate px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none" title={`${String(card.set || '').toUpperCase()} #${card.collector_number}`}>
                                   {String(card.set || '').toUpperCase()} #{card.collector_number}
                                 </span>
-                                <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-primary-600/80 backdrop-blur-md text-[8px] font-mono font-bold text-white border border-white/10 pointer-events-none">
+                                <span className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md ${badgeColor} backdrop-blur-md text-[8px] font-mono font-bold border pointer-events-none shadow-sm`}>
                                   {cardDpi} DPI
                                 </span>
                               </div>

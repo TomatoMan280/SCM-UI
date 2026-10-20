@@ -1732,6 +1732,16 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
         searchRes = await fetchJson(broadUrl);
       }
 
+      if (searchRes.data?.data && Array.isArray(searchRes.data.data)) {
+        searchRes.data.data = searchRes.data.data.map((c: any) => {
+          let dpi = 300;
+          if (c.image_uris?.png || c.card_faces?.[0]?.image_uris?.png) dpi = 300;
+          else if (c.image_uris?.large || c.card_faces?.[0]?.image_uris?.large) dpi = 268;
+          else if (c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal) dpi = 195;
+          else if (c.image_uris?.small || c.card_faces?.[0]?.image_uris?.small) dpi = 58;
+          return { ...c, dpi };
+        });
+      }
       return res.status(searchRes.status || 200).json(searchRes.data);
     } catch (err: any) {
       console.error("[Scryfall Error]", err.message);
@@ -2041,6 +2051,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           collector_number: cardNum,
           imageUrl: lgUrl,
           thumbnailUrl: smUrl,
+          dpi: 183,
           image_uris: {
             small: smUrl,
             normal: lgUrl,
@@ -2066,6 +2077,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
             collector_number: cardNum,
             imageUrl: lgImg,
             thumbnailUrl: smImg,
+            dpi: 183,
             image_uris: {
               small: smImg,
               normal: lgImg,
@@ -2857,26 +2869,50 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   const inFlightDownloads = new Map<string, Promise<{ buffer: Buffer; contentType: string } | null>>();
   let lastRemoteDownloadTime = 0;
 
+  const computeDpiFromDimensions = (width: number, height: number, plugin: string = 'oneproxy'): number => {
+    if (!width || !height || width <= 0 || height <= 0) return 300;
+    const maxDim = Math.max(width, height);
+    const minDim = Math.min(width, height);
+    const ratio = maxDim / minDim;
+    const isBleed = ratio < 1.38;
+    let cardW = 2.50, cardH = 3.50;
+    const p = (plugin || '').toLowerCase();
+    if (p === 'yugioh') {
+      cardW = isBleed ? 2.57 : 2.323;
+      cardH = isBleed ? 3.64 : 3.386;
+    } else if (p === 'one_piece' || p === 'oneproxy' || p === 'digimon') {
+      cardW = isBleed ? 2.73 : 2.480;
+      cardH = isBleed ? 3.715 : 3.465;
+    } else {
+      cardW = isBleed ? 2.75 : 2.50;
+      cardH = isBleed ? 3.75 : 3.50;
+    }
+    const rawDpi = ((maxDim / cardH) + (minDim / cardW)) / 2;
+    let dpi = Math.round(rawDpi);
+    if (Math.abs(rawDpi - 300) <= 6) dpi = 300;
+    else if (Math.abs(rawDpi - 600) <= 12) dpi = 600;
+    else if (Math.abs(rawDpi - 800) <= 15) dpi = 800;
+    else if (Math.abs(rawDpi - 1200) <= 25) dpi = 1200;
+    return dpi;
+  };
+
   // Fast image DPI & dimension reader from binary header (supports PNG and JPEG)
-  const getFastImageDpi = (filePath: string): number => {
+  const getFastImageDpi = (filePath: string, plugin: string = 'oneproxy'): number => {
     try {
       const fd = fs.openSync(filePath, 'r');
       const buffer = Buffer.alloc(32);
       fs.readSync(fd, buffer, 0, 32, 0);
       fs.closeSync(fd);
 
-      // PNG: IHDR chunk (height at byte 20)
-      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
-        const height = buffer.readUInt32BE(20);
-        const dpi = Math.round(height / 3.46);
-        if (dpi >= 1000) return 1200;
-        if (dpi >= 700) return 800;
-        if (dpi >= 500) return 600;
-        return 300;
-      }
+      let width = 0;
+      let height = 0;
 
-      // JPEG: SOF marker search (height at offset + 5)
-      if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
+      // PNG: IHDR chunk (width at 16, height at 20)
+      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+        width = buffer.readUInt32BE(16);
+        height = buffer.readUInt32BE(20);
+      } else if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
+        // JPEG: SOF marker search (height at offset + 5, width at offset + 7)
         const fd2 = fs.openSync(filePath, 'r');
         const stat = fs.statSync(filePath);
         const readSize = Math.min(stat.size, 65536);
@@ -2889,16 +2925,17 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           if (jpgBuf[offset] !== 0xFF) { offset++; continue; }
           const marker = jpgBuf[offset + 1];
           if (marker >= 0xC0 && marker <= 0xC3 && marker !== 0xC4) {
-            const height = jpgBuf.readUInt16BE(offset + 5);
-            const dpi = Math.round(height / 3.46);
-            if (dpi >= 1000) return 1200;
-            if (dpi >= 700) return 800;
-            if (dpi >= 500) return 600;
-            return 300;
+            height = jpgBuf.readUInt16BE(offset + 5);
+            width = jpgBuf.readUInt16BE(offset + 7);
+            break;
           }
           const length = jpgBuf.readUInt16BE(offset + 2);
           offset += 2 + length;
         }
+      }
+
+      if (width > 0 && height > 0) {
+        return computeDpiFromDimensions(width, height, plugin);
       }
     } catch (_) {}
     return 300;
@@ -2931,7 +2968,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               set_name: c.card_sets?.[0]?.set_name || 'Yu-Gi-Oh!',
               collector_number: String(c.id),
               imageUrl: c.card_images?.[0]?.image_url || `https://images.ygoprodeck.com/images/cards/${c.id}.jpg`,
-              thumbnailUrl: c.card_images?.[0]?.image_url_small || `https://images.ygoprodeck.com/images/cards_small/${c.id}.jpg`
+              thumbnailUrl: c.card_images?.[0]?.image_url_small || `https://images.ygoprodeck.com/images/cards_small/${c.id}.jpg`,
+              dpi: 350
             }));
           }
           break;
@@ -2953,7 +2991,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 set_name: c.set?.name || 'Disney Lorcana',
                 collector_number: c.collector_number || '1',
                 imageUrl: img,
-                thumbnailUrl: c.image_uris?.digital?.small || img
+                thumbnailUrl: c.image_uris?.digital?.small || img,
+                dpi: 300
               };
             }).filter((c: any) => !!c.imageUrl);
           }
@@ -2979,7 +3018,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 set_name: p.setName || 'Star Wars: Unlimited',
                 collector_number: String(p.number || '1'),
                 imageUrl: img,
-                thumbnailUrl: img
+                thumbnailUrl: img,
+                dpi: 286
               };
             }).filter((c: any) => !!c.imageUrl);
           }
@@ -3005,7 +3045,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                     set_name: setName,
                     collector_number: id,
                     imageUrl: img,
-                    thumbnailUrl: thumb
+                    thumbnailUrl: thumb,
+                    dpi: 300
                   };
                 });
               }
@@ -3155,7 +3196,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   set_name: 'One Piece Card Game',
                   collector_number: cardNum,
                   imageUrl: imgUrl,
-                  thumbnailUrl: imgUrl
+                  thumbnailUrl: imgUrl,
+                  dpi: 183
                 });
               }
             }
@@ -3192,7 +3234,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               set_name: 'Android: Netrunner',
               collector_number: String(c.position || c.code),
               imageUrl: `https://netrunnerdb.com/card_image/${c.code}.png`,
-              thumbnailUrl: `https://netrunnerdb.com/card_image/${c.code}.png`
+              thumbnailUrl: `https://netrunnerdb.com/card_image/${c.code}.png`,
+              dpi: 120
             }));
           }
           break;
@@ -3216,7 +3259,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 set_name: 'Final Fantasy TCG',
                 collector_number: c.code,
                 imageUrl: img,
-                thumbnailUrl: c.images?.thumbs?.[0] || img
+                thumbnailUrl: c.images?.thumbs?.[0] || img,
+                dpi: 300
               };
             }).filter((c: any) => !!c.imageUrl);
           }
@@ -3244,7 +3288,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               set_name: c.pack_name || 'Arkham Horror: The Card Game',
               collector_number: c.code,
               imageUrl: `https://arkhamdb.com${c.imagesrc}`,
-              thumbnailUrl: `https://arkhamdb.com${c.imagesrc}`
+              thumbnailUrl: `https://arkhamdb.com${c.imagesrc}`,
+              dpi: 300
             }));
           }
           break;
@@ -3271,7 +3316,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               set_name: c.pack_name || 'The Lord of the Rings: LCG',
               collector_number: c.code,
               imageUrl: `https://ringsdb.com${c.imagesrc}`,
-              thumbnailUrl: `https://ringsdb.com${c.imagesrc}`
+              thumbnailUrl: `https://ringsdb.com${c.imagesrc}`,
+              dpi: 300
             }));
           }
           break;
@@ -3291,7 +3337,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               set_name: c.release?.name || 'Ashes Reborn',
               collector_number: c.stub,
               imageUrl: `https://cdn.ashes.live/images/cards/${c.stub}.jpg`,
-              thumbnailUrl: `https://cdn.ashes.live/images/cards/${c.stub}.jpg`
+              thumbnailUrl: `https://cdn.ashes.live/images/cards/${c.stub}.jpg`,
+              dpi: 300
             }));
           }
           break;
@@ -3313,7 +3360,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 set_name: 'Echoes of Astra',
                 collector_number: String(c.number || c.id),
                 imageUrl: c.raw_payload?.cardImageLargeUrl || c.image_url,
-                thumbnailUrl: c.image_url
+                thumbnailUrl: c.image_url,
+                dpi: 300
               })).filter((c: any) => !!c.imageUrl);
             }
           }
@@ -3344,7 +3392,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                       set_name: 'KeyForge',
                       collector_number: '1',
                       imageUrl: imgSrc,
-                      thumbnailUrl: imgSrc
+                      thumbnailUrl: imgSrc,
+                      dpi: 300
                     });
                   }
                 }
@@ -3376,7 +3425,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 set_name: 'Gundam Card Game',
                 collector_number: cardNum,
                 imageUrl: imgUrl,
-                thumbnailUrl: imgUrl
+                thumbnailUrl: imgUrl,
+                dpi: 183
               });
             }
           }
@@ -3401,7 +3451,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 set_name: ed?.set?.name || 'Grand Archive',
                 collector_number: ed?.slug || c.slug || '1',
                 imageUrl: img,
-                thumbnailUrl: img
+                thumbnailUrl: img,
+                dpi: 300
               };
             }).filter((c: any) => !!c.imageUrl);
           }
@@ -3437,7 +3488,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   set_name: `Flesh and Blood (${p.set_id || 'FAB'})`,
                   collector_number: p.id || '1',
                   imageUrl: p.image_url,
-                  thumbnailUrl: p.image_url
+                  thumbnailUrl: p.image_url,
+                  dpi: 300
                 });
               }
               if (results.length >= 40) break;
@@ -3486,7 +3538,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                   set_name: setName,
                   collector_number: p.slug,
                   imageUrl: imgUrl,
-                  thumbnailUrl: imgUrl
+                  thumbnailUrl: imgUrl,
+                  dpi: 300
                 });
               }
               if (results.length >= 40) break;
@@ -3546,7 +3599,8 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                         set_name: `${gInfo.name} (${json.deck_name || 'DeckLog'})`,
                         collector_number: c.card_number || '1',
                         imageUrl: img,
-                        thumbnailUrl: img
+                        thumbnailUrl: img,
+                        dpi: 300
                       };
                     }).filter((c: any) => !!c.imageUrl);
                     if (results.length > 0) {
