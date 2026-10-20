@@ -4,6 +4,24 @@ All notable changes to **SCMUI (Silhouette Card Maker UI)** are documented in th
 
 ---
 
+## [3.0.8] - 2026-10-20
+
+### 🐧 Full Linux Desktop Support
+- **Cross-Platform Linux Builds**: Integrated automated Linux desktop packaging for both portable **`AppImage`** and Debian/Ubuntu **`.deb`** formats.
+- **GitHub Actions Linux Pipeline**: Added `ubuntu-latest` to `.github/workflows/release.yml` matrix to automatically compile, verify, and publish Linux desktop binaries alongside Windows and macOS releases.
+- **Universal Linux Folder Browser**: Implemented adaptive multi-desktop directory selection across GNOME (`zenity`), KDE Plasma (`kdialog`), and universal Python Tkinter fallback for linking local card asset folders.
+- **Seamless AppImage Self-Updating**: Automated background update pipeline now detects `.AppImage` packages, applies executable permissions (`chmod +x`), and launches new releases smoothly in the background.
+- **Robust Linux Python & Upscayl Discovery**: Enhanced automatic detection of Linux system Python (`python3`/`python`) and expanded Upscayl AI model search paths across `/usr/share`, `/opt`, Flatpak, and user local directories.
+
+### 🏴‍☠️ OneProxy Downloader Refinements
+- **Cleaned Progress UI**: Removed the redundant `"1 worker"` and `"· 1 Worker"` status labels from the download progress bar, status text, and initial connection prompts, keeping the interface minimal and focused.
+- **Sequential Stability**: Preserved reliable sequential download queueing with automatic `.part` file resumption and bandwidth compliance.
+
+### 📦 Version 3.0.8 Alignment
+- Synchronized version **3.0.8** across `package.json`, `version-policy.json`, server API endpoints, client headers (`X-SCMUI-Version`), and UI display badges.
+
+---
+
 ## [3.0.7] - 2026-10-20
 
 ### 📱 Pokémon Pocket & Complete `.webp` Integration

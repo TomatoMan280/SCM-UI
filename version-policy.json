@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "minRequiredVersion": "3.0.7",
-  "latestVersion": "3.0.7",
+  "minRequiredVersion": "3.0.8",
+  "latestVersion": "3.0.8",
   "forceUpdate": false,
   "title": "SCMUI Update",
   "message": "SCMUI is up to date.",

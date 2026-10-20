@@ -11,7 +11,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-latest, windows-latest, ubuntu-latest]
     
     runs-on: ${{ matrix.os }}
 
@@ -40,6 +40,12 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npm run desktop:build:win
 
+    - name: Build Linux app (.AppImage and .deb)
+      if: matrix.os == 'ubuntu-latest'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: npm run desktop:build:linux
+
     - name: Upload macOS Artifacts
       if: matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
@@ -57,3 +63,13 @@ jobs:
         path: |
           release/*.exe
           release/*.exe.blockmap
+
+    - name: Upload Linux Artifacts
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: SCMUI-Linux-Build
+        path: |
+          release/*.AppImage
+          release/*.deb
+

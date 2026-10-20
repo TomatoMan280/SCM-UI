@@ -4,7 +4,7 @@
   "description": "Silhouette Card Maker UI",
   "author": "SCMUI",
   "private": true,
-  "version": "3.0.7",
+  "version": "3.0.8",
   "type": "module",
   "main": "electron-main.cjs",
   "scripts": {
@@ -59,7 +59,17 @@
       "icon": "build/icon.ico"
     },
     "linux": {
-      "target": "AppImage"
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Graphics",
+      "icon": "build/icon.png",
+      "artifactName": "SCMUI-${version}.${ext}",
+      "description": "Silhouette Card Maker UI",
+      "desktop": {
+        "StartupWMClass": "SCMUI"
+      }
     },
     "nsis": {
       "oneClick": false,

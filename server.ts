@@ -217,7 +217,9 @@ async function startServer() {
       path.join(process.env.APPDATA || '', 'Programs', 'upscayl', 'resources'),
       '/Applications/Upscayl.app/Contents/Resources',
       '/usr/share/upscayl/resources',
-      '/opt/upscayl/resources'
+      '/opt/upscayl/resources',
+      path.join(process.env.HOME || '', '.local', 'share', 'upscayl', 'resources'),
+      '/var/lib/flatpak/app/org.upscayl.Upscayl/current/active/files/resources'
     ];
 
     for (const base of candidateDirs) {
@@ -1198,7 +1200,7 @@ except Exception:
   };
 
   const getCurrentAppVersion = () => {
-    let currentVersion = '3.0.7';
+    let currentVersion = '3.0.8';
     try {
       const possiblePkgPaths = [
         path.join(baseAppPath, 'package.json'),
@@ -1340,14 +1342,15 @@ except Exception:
 
       const isWin = process.platform === 'win32';
       const isMac = process.platform === 'darwin';
+      const isLinux = process.platform === 'linux';
 
       const releases = (Array.isArray(ghReleases) ? ghReleases : []).map((r: any) => {
         const assets = (r.assets || []).map((a: any) => {
           const name = a.name || '';
           const isWinInstaller = name.endsWith('.exe');
           const isMacInstaller = name.endsWith('.dmg');
-          const isLinuxInstaller = name.endsWith('.AppImage');
-          const isPreferred = (isWin && isWinInstaller) || (isMac && isMacInstaller) || (!isWin && !isMac && isLinuxInstaller);
+          const isLinuxInstaller = name.endsWith('.AppImage') || name.endsWith('.deb');
+          const isPreferred = (isWin && isWinInstaller) || (isMac && isMacInstaller) || (isLinux && isLinuxInstaller);
 
           return {
             name: a.name,
@@ -1596,7 +1599,7 @@ except Exception:
     try {
       const { assetName } = req.body;
       const installerPath = activeDownload.filePath || path.join(baseDataPath, 'temp-uploads', assetName || 'update.exe');
-      const isSimulated = activeDownload.tag === 'v3.0.8' || assetName?.includes('3.0.8') || req.body?.simulate;
+      const isSimulated = req.body?.simulate === true || activeDownload.tag === 'simulation';
 
       if (!fs.existsSync(installerPath) && !isSimulated) {
         return res.status(404).json({ error: 'Installer file not found on disk' });
@@ -1609,7 +1612,12 @@ except Exception:
         } else if (process.platform === 'darwin') {
           exec(`open "${installerPath}"`);
         } else {
-          exec(`xdg-open "${installerPath}"`);
+          try { fs.chmodSync(installerPath, 0o755); } catch (_) {}
+          if (installerPath.endsWith('.AppImage')) {
+            exec(`"${installerPath}" &`);
+          } else {
+            exec(`xdg-open "${installerPath}"`);
+          }
         }
       }
 
@@ -2704,7 +2712,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   const ONEPROXY_BASE_URL = 'https://oneproxy.torforge.dev/api/v1';
   const ONEPROXY_BEARER_TOKEN = 'op_scmui_QCCTA2FAWJN7k7pWk08DiHf66xqZxmNzjkt88WYYBIE';
   const ONEPROXY_CREDIT_URL = 'https://oneproxy.torforge.dev/?utm_source=scmui&utm_medium=desktop_app&utm_campaign=scmui_integration';
-  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.7 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
+  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.8 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
 
   const defaultOneProxyCacheDir = path.join(os.homedir(), '.cache', 'oneproxy');
   const defaultUserOneProxyDir = path.join(os.homedir(), 'OneProxy');
@@ -2837,7 +2845,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const headers = {
       'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
       'User-Agent': ONEPROXY_USER_AGENT,
-      'X-SCMUI-Version': '3.0.7',
+      'X-SCMUI-Version': '3.0.8',
       'Accept': 'application/json',
       ...(options.headers || {})
     };
@@ -3296,9 +3304,9 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           } catch (_) {}
 
           oneProxyBulkDownloadState.totalCards = allAssetsQueue.length;
-          oneProxyBulkDownloadState.statusText = `Starting download of ${allAssetsQueue.length} assets across ${targetSets.length} sets (1 worker)...`;
+          oneProxyBulkDownloadState.statusText = `Starting download of ${allAssetsQueue.length} assets across ${targetSets.length} sets...`;
 
-          // 2. Controlled Single Worker: exactly 1 worker per user specification for maximum stability
+          // 2. Controlled Sequential Queue: downloads cards sequentially with resume support for maximum stability
           for (let i = 0; i < allAssetsQueue.length && !oneProxyBulkCancelRequested; i++) {
             const asset = allAssetsQueue[i];
             const setCode = asset.setCode || 'OP';
@@ -3349,7 +3357,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 const fetchHeaders: any = {
                   'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
                   'User-Agent': ONEPROXY_USER_AGENT,
-                  'X-SCMUI-Version': '3.0.7'
+                  'X-SCMUI-Version': '3.0.8'
                 };
 
                 if (existingPartBytes > 0 && asset.sha256) {
@@ -4591,7 +4599,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           currentCardName: 'OP01-001.png',
           totalBytesDownloaded: 18600000000,
           percent: 72,
-          statusText: 'Downloading card OP01-001.png (1 worker)...',
+          statusText: 'Downloading card OP01-001.png...',
           targetDir: 'C:\\Users\\cecil\\OneProxy',
           startTime: Date.now() - 120000,
           error: null,
@@ -4905,7 +4913,15 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
         }
         return res.json({ success: false, message: "No folder selected." });
       } else {
-        const script = `zenity --file-selection --directory --title="Select OneProxy Folder"`;
+        const script = `
+if command -v zenity >/dev/null 2>&1; then
+  zenity --file-selection --directory --title="Select OneProxy Folder"
+elif command -v kdialog >/dev/null 2>&1; then
+  kdialog --getexistingdirectory .
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -c "import tkinter, tkinter.filedialog; root = tkinter.Tk(); root.withdraw(); print(tkinter.filedialog.askdirectory(title='Select OneProxy Folder'))"
+fi
+`;
         const chosenPath = await new Promise<string>((resolve) => {
           exec(script, { timeout: 120000 }, (error, stdout) => {
             if (error) return resolve('');
@@ -4975,7 +4991,7 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
         currentCardName: 'OP01-001.png',
         totalBytesDownloaded: 18600000000,
         percent: 72,
-        statusText: 'Downloading card OP01-001.png (1 worker)...',
+        statusText: 'Downloading card OP01-001.png...',
         targetDir: 'C:\\Users\\cecil\\OneProxy',
         startTime: Date.now() - 120000,
         error: null,
@@ -5257,19 +5273,38 @@ if ($res -eq [System.Windows.Forms.DialogResult]::OK) {
           
           pythonExecutable = path.join(destDir, 'python', 'bin', 'python3');
         } else {
-          // Mock or use apt-get for non-Windows assuming user is root or in a container
-          sendEvent('progress', { step: 'Extracting files...', detail: 'Using apt-get / brew', percent: 60 });
-          sendEvent('stdout', '> Extracting files...');
-          if (platform === 'linux') {
-             try {
-                await runCommand('sudo', ['apt-get', 'update']);
-                await runCommand('sudo', ['apt-get', 'install', '-y', 'python3', 'python3-pip', 'python3-venv']);
-             } catch(e) {
+          sendEvent('progress', { step: 'Configuring Python environment...', detail: 'Detecting Linux Python 3', percent: 60 });
+          sendEvent('stdout', '> Detecting Python 3 on Linux...');
+          let linuxPython = 'python3';
+          let hasPython = false;
+          try {
+            const check = spawnSync('python3', ['--version']);
+            if (check.status === 0) hasPython = true;
+          } catch (_) {}
+
+          if (!hasPython) {
+            try {
+              const check2 = spawnSync('python', ['--version']);
+              if (check2.status === 0) {
+                hasPython = true;
+                linuxPython = 'python';
+              }
+            } catch (_) {}
+          }
+
+          if (!hasPython) {
+            sendEvent('stdout', '> System Python not found. Attempting package manager install...');
+            try {
+              await runCommand('sudo', ['apt-get', 'update']);
+              await runCommand('sudo', ['apt-get', 'install', '-y', 'python3', 'python3-pip', 'python3-venv']);
+            } catch (_) {
+              try {
                 await runCommand('apt-get', ['update']);
                 await runCommand('apt-get', ['install', '-y', 'python3', 'python3-pip', 'python3-venv']);
-             }
+              } catch (_) {}
+            }
           }
-          pythonExecutable = 'python3';
+          pythonExecutable = linuxPython;
         }
 
         sendEvent('progress', { step: 'Installing required dependencies...', detail: 'Creating virtual environment and installing packages', percent: 80 });

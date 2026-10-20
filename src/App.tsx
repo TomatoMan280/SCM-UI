@@ -2183,7 +2183,7 @@ export default function App() {
           totalCards: 0,
           currentSet: chosenSets[0] || 'OP',
           currentCardNumber: '',
-          currentCardName: 'Initializing download queue (1 worker)...',
+          currentCardName: 'Initializing download queue...',
           statusText: 'Connecting to OneProxy v1 Partner API...'
         });
       } else {
@@ -5111,7 +5111,7 @@ export default function App() {
                       "font-mono text-[10px] transition-colors",
                       updateInfo?.hasUpdate ? "text-primary-400 font-bold" : "text-white/80 group-hover/ver:text-white"
                     )}>
-                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.7'}
+                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.8'}
                     </span>
                   </div>
                 </div>
@@ -6667,7 +6667,7 @@ export default function App() {
                                              <div className="flex items-center justify-between text-[10px] text-white/40 pt-1 border-t border-white/5 font-mono">
                                                <span className="truncate max-w-[220px]">To: {oneProxyBulkProgress?.targetDir || oneProxyDownloadPath || oneProxyStatus?.defaultUserDir}</span>
                                                <div className="flex items-center gap-2">
-                                                 <span className="text-primary-400 font-medium">25 MB/s allowance · 1 Worker</span>
+                                                 <span className="text-primary-400 font-medium">25 MB/s allowance</span>
                                                  <span>·</span>
                                                  <span>{formatSize(oneProxyBulkProgress?.totalBytesDownloaded ?? 0)} downloaded</span>
                                                </div>
@@ -8340,7 +8340,7 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold uppercase tracking-wider text-white/50">Current Version</span>
                           <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-white font-bold">
-                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.7'}
+                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.8'}
                           </span>
                         </div>
                         {updateInfo?.hasUpdate ? (
