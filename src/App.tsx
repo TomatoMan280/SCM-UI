@@ -2421,6 +2421,13 @@ export default function App() {
     const asset = target?.primaryAsset || target?.assets?.[0];
     if (!target || !asset) return;
 
+    // Guard: Never auto-update if already running this target version or newer
+    const currentVer = (updateInfo.currentVersion || status?.version || '').replace(/^[vV]/, '').trim();
+    const targetVer = (target.tag || '').replace(/^[vV]/, '').trim();
+    if (currentVer && targetVer && (currentVer === targetVer || target.isCurrent || target.isNewer === false)) {
+      return;
+    }
+
     if (downloadState.isDownloading || downloadState.status === 'completed') return;
     if (autoStartedUpdateRef.current === target.tag) return;
 

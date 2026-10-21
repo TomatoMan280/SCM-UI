@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "minRequiredVersion": "3.0.8",
   "latestVersion": "3.0.8",
-  "forceUpdate": true,
-  "title": "SCMUI 3.0.8 Update Required",
-  "message": "SCMUI 3.0.8 is required to continue.",
+  "forceUpdate": false,
+  "title": "SCMUI Update",
+  "message": "SCMUI is up to date.",
   "blockOutboundAPIs": false,
   "disabledPlugins": [],
   "targetReleaseTag": "V3.0.8",
-  "lastUpdated": "2026-10-20T22:50:00Z"
+  "lastUpdated": "2026-10-21T00:15:00Z"
 }

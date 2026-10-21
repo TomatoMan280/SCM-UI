@@ -1303,7 +1303,9 @@ except Exception:
       const policy = await fetchVersionPolicy(forceRefresh);
       const currentVersion = getCurrentAppVersion();
       const isOutdated = policy.minRequiredVersion ? (compareVersions(policy.minRequiredVersion, currentVersion) > 0) : false;
-      const isUpdateRequired = Boolean(policy.forceUpdate || isOutdated);
+      const targetTag = policy.targetReleaseTag || (policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : null);
+      const isTargetNewer = targetTag ? (compareVersions(targetTag, currentVersion) > 0) : false;
+      const isUpdateRequired = isOutdated || Boolean(policy.forceUpdate && isTargetNewer);
       res.json({
         success: true,
         currentVersion,
@@ -1396,7 +1398,9 @@ except Exception:
 
       const policy = await fetchVersionPolicy(forceRefresh);
       const isOutdated = policy.minRequiredVersion ? (compareVersions(policy.minRequiredVersion, currentVersion) > 0) : false;
-      const isUpdateRequired = Boolean(policy.forceUpdate || isOutdated);
+      const targetTag = policy.targetReleaseTag || (policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : null);
+      const isTargetNewer = targetTag ? (compareVersions(targetTag, currentVersion) > 0) : hasUpdate;
+      const isUpdateRequired = isOutdated || Boolean(policy.forceUpdate && isTargetNewer);
 
       let requiredRelease = null;
       if (policy.forceUpdate && policy.simulateDownload) {
@@ -1428,9 +1432,12 @@ except Exception:
           ]
         };
       } else if (policy.targetReleaseTag) {
-        requiredRelease = releases.find((r: any) => r.tag.toLowerCase() === policy.targetReleaseTag?.toLowerCase()) || null;
+        const found = releases.find((r: any) => r.tag.toLowerCase() === policy.targetReleaseTag?.toLowerCase()) || null;
+        if (found && (isUpdateRequired || found.isNewer)) {
+          requiredRelease = found;
+        }
       }
-      if (!requiredRelease) {
+      if (!requiredRelease && isUpdateRequired) {
         requiredRelease = newerRelease || latestRelease;
       }
 
