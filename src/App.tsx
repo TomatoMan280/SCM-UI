@@ -797,7 +797,7 @@ const PLUGIN_CARD_PROVIDERS: Record<string, PluginCardProviderInfo> = {
 };
 
 const getPluginCardProvider = (pluginId?: string, format?: string): PluginCardProviderInfo => {
-  if (pluginId === 'one_piece' && format === 'oneproxy') {
+  if (pluginId === 'one_piece' || pluginId === 'oneproxy') {
     return PLUGIN_CARD_PROVIDERS.oneproxy;
   }
   if (pluginId && PLUGIN_CARD_PROVIDERS[pluginId]) {
@@ -3364,7 +3364,7 @@ export default function App() {
       setIsArtPickerOpen(true);
     } else if (targetMode === 'double_sided') {
       const cleaned = cleanCardName(cardFilename);
-      const isOneProxy = currentPluginId === 'one_piece' && pluginState.format === 'oneproxy';
+      const isOneProxy = currentPluginId === 'one_piece' || currentPluginId === 'oneproxy';
       const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId)));
       setArtSourceTab(defaultSource);
       setArtTargetCard({ name: cardFilename, type: 'double_sided', targetMode: 'double_sided', targets });
@@ -3375,7 +3375,7 @@ export default function App() {
       }
     } else {
       const cleaned = cleanCardName(cardFilename);
-      const isOneProxy = currentPluginId === 'one_piece' && pluginState.format === 'oneproxy';
+      const isOneProxy = currentPluginId === 'one_piece' || currentPluginId === 'oneproxy';
       const defaultSource = preferredSource || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId)));
       setArtSourceTab(defaultSource);
       setArtTargetCard({ name: cardFilename, type, targetMode: 'front', targets });
@@ -3390,7 +3390,7 @@ export default function App() {
   const openAddCardPicker = (source?: string, type: 'front' | 'back' = 'front') => {
     const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
     if (!pluginSupportsCardIngestion(currentPluginId)) return;
-    const isOneProxy = currentPluginId === 'one_piece' && pluginState.format === 'oneproxy';
+    const isOneProxy = currentPluginId === 'one_piece' || currentPluginId === 'oneproxy';
     const provider = getPluginCardProvider(isOneProxy ? 'oneproxy' : currentPluginId, pluginState.format);
     const defaultSource = source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId)));
     setIsBacksOnlyModal(type === 'back');
@@ -3435,9 +3435,12 @@ export default function App() {
       if (artSourceTab !== 'scryfall' && artSourceTab !== 'mpcfill') {
         setArtSourceTab('scryfall');
       }
+    } else if (currentPluginId === 'one_piece' || currentPluginId === 'oneproxy') {
+      if (artSourceTab !== 'oneproxy') {
+        setArtSourceTab('oneproxy');
+      }
     } else {
-      const isOneProxy = currentPluginId === 'one_piece' && pluginState.format === 'oneproxy';
-      const targetSource = currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId);
+      const targetSource = currentPluginId === 'pokemon' ? 'limitless' : currentPluginId;
       if (artSourceTab !== targetSource) {
         setArtSourceTab(targetSource);
       }
@@ -3445,7 +3448,7 @@ export default function App() {
   }, [pluginState.selectedPlugin?.id, pluginState.format]);
 
   useEffect(() => {
-    if (pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy') {
+    if (pluginState.selectedPlugin?.id === 'one_piece' || pluginState.selectedPlugin?.id === 'oneproxy') {
       fetchOneProxyStatus();
     }
   }, [pluginState.selectedPlugin?.id, pluginState.format]);
@@ -6225,7 +6228,8 @@ export default function App() {
                                         const val = (e.target.value || '').trim();
                                         const p = PLUGINS.find(pl => pl.id === val || pl.name.toLowerCase() === val.toLowerCase()) || PLUGINS[0];
                                         if (p) {
-                                          setPluginState({ ...pluginState, selectedPlugin: p, format: p.formats?.[0] || '', options: {} });
+                                          const defaultFormat = p.id === 'one_piece' ? 'oneproxy' : (p.formats?.[0] || '');
+                                          setPluginState({ ...pluginState, selectedPlugin: p, format: defaultFormat, options: {} });
                                         }
                                       }}
                                       className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white/80 appearance-none focus:outline-none focus:border-primary-500"
@@ -9782,8 +9786,8 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
-                            const isOneProxy = pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy';
-                            const provKey = pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : (pluginState.selectedPlugin?.id || 'pokemon'));
+                            const isOneProxy = pluginState.selectedPlugin?.id === 'one_piece' || pluginState.selectedPlugin?.id === 'oneproxy';
+                            const provKey = isOneProxy ? 'oneproxy' : (pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : (pluginState.selectedPlugin?.id || 'pokemon'));
                             setArtSourceTab(provKey);
                             handleSearchArt(artQuery || getPluginCardProvider(provKey, pluginState.format).defaultQuery, undefined, provKey);
                           }}
