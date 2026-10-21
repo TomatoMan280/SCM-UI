@@ -6553,40 +6553,46 @@ export default function App() {
                                                        );
                                                      }}
                                                      className={cn(
-                                                       "p-2.5 rounded-lg border text-left cursor-pointer transition-all select-none flex flex-col justify-between",
-                                                       isSelected
-                                                         ? "bg-primary-500/15 border-primary-500/50 shadow-sm"
-                                                         : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
-                                                     )}
-                                                   >
-                                                    <div className="flex items-start justify-between gap-1.5">
+                                                        "p-2.5 rounded-lg border text-left cursor-pointer transition-all select-none flex flex-col justify-between min-h-[78px]",
+                                                        isSelected
+                                                          ? "bg-primary-500/15 border-primary-500/50 shadow-sm ring-1 ring-primary-500/30"
+                                                          : s.isComplete
+                                                            ? "bg-emerald-500/[0.08] border-emerald-500/30 hover:border-emerald-500/50 hover:bg-emerald-500/[0.13]"
+                                                            : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
+                                                      )}
+                                                    >
                                                       <div className="flex items-start gap-1.5 min-w-0">
                                                         <div className={cn(
                                                           "w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 transition-colors mt-0.5",
-                                                          isSelected ? "bg-primary-500 border-primary-500 text-white" : "border-white/30 bg-white/5"
+                                                          isSelected
+                                                            ? "bg-primary-500 border-primary-500 text-white"
+                                                            : s.isComplete
+                                                              ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                                                              : "border-white/30 bg-white/5"
                                                         )}>
                                                           {isSelected && <Check size={10} strokeWidth={3} />}
                                                         </div>
-                                                        <div className="min-w-0 flex flex-col">
-                                                          <span className="text-xs font-bold text-white truncate">{s.setCode}</span>
-                                                          {s.setName && s.setName !== s.setCode && (
-                                                            <span className="text-[10px] text-white/70 truncate font-normal leading-tight" title={s.setName}>
-                                                              {s.setName}
+                                                        <div className="min-w-0 flex-1">
+                                                          <div className="flex items-center justify-between gap-1">
+                                                            <span className={cn(
+                                                              "text-xs font-bold truncate",
+                                                              s.isComplete ? "text-emerald-300" : "text-white"
+                                                            )}>
+                                                              {s.setCode}
                                                             </span>
+                                                            {!s.isComplete && s.downloadedCount > 0 && (
+                                                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                                                                {s.percent}%
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                          {s.setName && s.setName !== s.setCode && (
+                                                            <div className="text-[10px] text-white/80 font-normal leading-snug mt-0.5 line-clamp-2" title={s.setName}>
+                                                              {s.setName}
+                                                            </div>
                                                           )}
                                                         </div>
                                                       </div>
-                                                       {s.isComplete ? (
-                                                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                                                           Done
-                                                         </span>
-                                                       ) : s.downloadedCount > 0 ? (
-                                                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
-                                                           {s.percent}%
-                                                         </span>
-                                                       ) : null}
-                                                     </div>
-
                                                      <div className="mt-2 flex items-center justify-between text-[10px] text-white/50">
                                                        <span>{s.cardCount > 0 ? `${s.cardCount} cards` : `${s.assetCount || 8} card backs`}</span>
                                                        <span>{s.bytesFormatted || '~120 MB'}</span>
