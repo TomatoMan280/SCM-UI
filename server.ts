@@ -1200,7 +1200,7 @@ except Exception:
   };
 
   const getCurrentAppVersion = () => {
-    let currentVersion = '3.0.8';
+    let currentVersion = '3.0.9';
     try {
       const possiblePkgPaths = [
         path.join(baseAppPath, 'package.json'),
@@ -1406,8 +1406,8 @@ except Exception:
       if (policy.forceUpdate && policy.simulateDownload) {
         requiredRelease = {
           id: 999999,
-          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.8',
-          name: `SCMUI v${policy.minRequiredVersion || '3.0.8'}`,
+          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.9',
+          name: `SCMUI v${policy.minRequiredVersion || '3.0.9'}`,
           publishedAt: new Date().toISOString(),
           isPrerelease: false,
           isCurrent: false,
@@ -1415,7 +1415,7 @@ except Exception:
           notes: 'Automatic background update with performance improvements.',
           htmlUrl: 'https://github.com/TomatoMan280/SCM-UI/releases',
           primaryAsset: {
-            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.8'}.exe`,
+            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.9'}.exe`,
             size: 28500000,
             downloadUrl: 'simulate',
             isInstaller: true,
@@ -1423,7 +1423,7 @@ except Exception:
           },
           assets: [
             {
-              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.8'}.exe`,
+              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.9'}.exe`,
               size: 28500000,
               downloadUrl: 'simulate',
               isInstaller: true,
@@ -1517,8 +1517,8 @@ except Exception:
     if (assetUrl === 'simulate' || req.query.simulate === 'true' || req.body.simulate === true) {
       activeDownload = {
         isDownloading: true,
-        tag: tag || 'v3.0.8',
-        assetName: assetName || 'SCMUI-Setup-3.0.8.exe',
+        tag: tag || 'v3.0.9',
+        assetName: assetName || 'SCMUI-Setup-3.0.9.exe',
         progress: 8,
         downloadedBytes: 2280000,
         totalBytes: 28500000,
@@ -2728,7 +2728,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   const ONEPROXY_BASE_URL = 'https://oneproxy.torforge.dev/api/v1';
   const ONEPROXY_BEARER_TOKEN = 'op_scmui_QCCTA2FAWJN7k7pWk08DiHf66xqZxmNzjkt88WYYBIE';
   const ONEPROXY_CREDIT_URL = 'https://oneproxy.torforge.dev/?utm_source=scmui&utm_medium=desktop_app&utm_campaign=scmui_integration';
-  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.8 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
+  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.9 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
 
   const defaultOneProxyCacheDir = path.join(os.homedir(), '.cache', 'oneproxy');
   const defaultUserOneProxyDir = path.join(os.homedir(), 'OneProxy');
@@ -2861,7 +2861,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const headers = {
       'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
       'User-Agent': ONEPROXY_USER_AGENT,
-      'X-SCMUI-Version': '3.0.8',
+      'X-SCMUI-Version': '3.0.9',
       'Accept': 'application/json',
       ...(options.headers || {})
     };
@@ -3375,7 +3375,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 const fetchHeaders: any = {
                   'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
                   'User-Agent': ONEPROXY_USER_AGENT,
-                  'X-SCMUI-Version': '3.0.8'
+                  'X-SCMUI-Version': '3.0.9'
                 };
 
                 if (existingPartBytes > 0 && asset.sha256) {
