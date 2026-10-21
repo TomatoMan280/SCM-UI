@@ -833,6 +833,17 @@ export const computeCardDpi = (width: number, height: number, pluginId?: string)
   return dpi;
 };
 
+export const getBrowserDisplayUrl = (url: string | null | undefined): string => {
+  if (!url || typeof url !== 'string') return '';
+  if (url.includes('drive.google.com')) {
+    const idMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/) || url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (idMatch && idMatch[1]) {
+      return `https://drive.google.com/thumbnail?sz=w1600-h1600&id=${idMatch[1]}`;
+    }
+  }
+  return url;
+};
+
 interface AppStatus {
   installed: boolean;
   version: string;
@@ -1056,6 +1067,14 @@ const LightboxGallery = ({
   }, [currentImage]);
 
   const displaySrc = isFlipped && backSrc ? backSrc : currentImage;
+  const resolvedDisplaySrc = getBrowserDisplayUrl(displaySrc);
+  const [imgError, setImgError] = useState(false);
+  const [usedProxy, setUsedProxy] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+    setUsedProxy(false);
+  }, [displaySrc]);
 
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
 
@@ -1554,15 +1573,51 @@ const LightboxGallery = ({
                 <span className="text-[10px] font-black uppercase tracking-wider">After (Upscayl AI HD)</span>
               </div>
             </div>
+          ) : imgError ? (
+            <div className="flex flex-col items-center justify-center p-8 bg-zinc-900/90 border border-white/10 rounded-2xl text-center max-w-md shadow-2xl">
+              <AlertTriangle className="text-amber-400 mb-3" size={42} />
+              <h3 className="text-sm font-bold text-white mb-1.5">Asset Preview Unavailable</h3>
+              <p className="text-xs text-white/60 mb-4 leading-relaxed">
+                The remote host prevented inline preview in the browser. The asset is still fully downloadable to your project.
+              </p>
+              <div className="flex items-center gap-2">
+                <a
+                  href={displaySrc}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-primary-600/30"
+                >
+                  Open in Browser
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImgError(false);
+                    setUsedProxy(false);
+                  }}
+                  className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white/80 rounded-xl text-xs font-semibold transition-all"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
           ) : (
             /* STANDARD ENLARGED IMAGE */
             <img
-              src={displaySrc}
+              src={usedProxy ? `/api/proxy-image?url=${encodeURIComponent(displaySrc)}` : resolvedDisplaySrc}
               alt="Enlarged asset"
               onLoad={(e) => {
                 const img = e.currentTarget;
                 if (img.naturalWidth && img.naturalHeight) {
                   setDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+                }
+                setImgError(false);
+              }}
+              onError={() => {
+                if (!usedProxy && displaySrc.startsWith('http')) {
+                  setUsedProxy(true);
+                } else {
+                  setImgError(true);
                 }
               }}
               className={cn(
@@ -3124,7 +3179,8 @@ export default function App() {
     rarity: 'all',
     format: 'all',
     order: 'released',
-    set: ''
+    set: '',
+    lang: 'any'
   });
 
   // MPC Filters
@@ -3132,7 +3188,9 @@ export default function App() {
     dpi: 'all',
     face: 'all',
     tag: 'all',
-    set: ''
+    set: '',
+    order: 'dpi_desc',
+    lang: 'all'
   });
 
   // OneProxy Filters
@@ -3198,7 +3256,9 @@ export default function App() {
           isBack: isBacksOnlyModal ? 'true' : 'false',
           face: mp.face || 'all',
           dpi: mp.dpi || 'all',
-          set: mp.set || ''
+          set: mp.set || '',
+          order: mp.order || 'dpi_desc',
+          lang: mp.lang || 'all'
         });
         const res = await fetch(`/api/mpc/search?${params.toString()}`);
         const data = await res.json();
@@ -3221,7 +3281,8 @@ export default function App() {
           rarity: sf.rarity,
           format: sf.format || 'all',
           order: sf.order,
-          set: sf.set || ''
+          set: sf.set || '',
+          lang: sf.lang || 'any'
         });
         const res = await fetch(`/api/scryfall/search?${params.toString()}`);
         const data = await res.json();
@@ -3357,6 +3418,17 @@ export default function App() {
     if (!pluginSupportsCardIngestion(currentPluginId)) return;
     const isBack = type === 'back' && targetMode !== 'double_sided';
     setIsBacksOnlyModal(isBack);
+
+    // Auto-sync preferred language setting if configured in plugin options
+    let activeFilters = { ...scryfallFilters };
+    const prefLang = pluginState.options?.['--prefer_lang'];
+    if (prefLang && prefLang !== 'en') {
+      const LANG_MAP: Record<string, string> = { 'sp': 'es', 'jp': 'ja', 'kr': 'ko', 'cs': 'zhs', 'ct': 'zht', 'ag': 'grc' };
+      const targetLang = LANG_MAP[prefLang] || prefLang;
+      activeFilters = { ...scryfallFilters, lang: targetLang };
+      setScryfallFilters(activeFilters);
+    }
+
     if (isBack) {
       setArtSourceTab('mpcfill');
       setArtTargetCard({ name: cardFilename, type: 'back', targetMode: 'back', targets });
@@ -3371,7 +3443,7 @@ export default function App() {
       setArtQuery(cleaned);
       setIsArtPickerOpen(true);
       if (cleaned) {
-        handleSearchArt(cleaned, undefined, defaultSource);
+        handleSearchArt(cleaned, activeFilters, defaultSource);
       }
     } else {
       const cleaned = cleanCardName(cardFilename);
@@ -3382,7 +3454,7 @@ export default function App() {
       setArtQuery(cleaned);
       setIsArtPickerOpen(true);
       if (cleaned) {
-        handleSearchArt(cleaned, undefined, defaultSource);
+        handleSearchArt(cleaned, activeFilters, defaultSource);
       }
     }
   };
@@ -5124,7 +5196,7 @@ export default function App() {
                       "font-mono text-[10px] transition-colors",
                       updateInfo?.hasUpdate ? "text-primary-400 font-bold" : "text-white/80 group-hover/ver:text-white"
                     )}>
-                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.9'}
+                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.10'}
                     </span>
                   </div>
                 </div>
@@ -7869,7 +7941,7 @@ export default function App() {
                           <div className="w-full md:w-1/3 flex flex-col gap-3">
                             <div className="text-[10px] uppercase tracking-widest text-primary-400 font-bold px-2 text-center md:text-left">Incoming Card</div>
                             <div className="aspect-[2.5/3.5] bg-[#0f0f13] border border-primary-500/50 rounded-xl overflow-hidden shadow-lg relative max-w-[200px] mx-auto md:mx-0 w-full">
-                              <img src={`/library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${encodeURIComponent(name)}`} className="absolute inset-0 w-full h-full object-cover" />
+                              <img src={`/api/thumbnail?src=${encodeURIComponent(`/library/Temp_Fetch_${fetchConflictData.tempDirId}/game/${type}/${name}`)}`} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
                             </div>
                           </div>
 
@@ -7878,7 +7950,7 @@ export default function App() {
                             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-1">
                               {variants.map(v => (
                                 <div key={v} className="aspect-[2.5/3.5] bg-[#0f0f13] border border-white/10 w-full rounded-xl overflow-hidden relative opacity-70 hover:opacity-100 transition-opacity">
-                                  <img src={`/plugins_staging/${type}/${encodeURIComponent(v)}?t=${cacheBusts[v] || Date.now()}`} className="absolute inset-0 w-full h-full object-cover" />
+                                  <img src={`/api/thumbnail?src=${encodeURIComponent(`/plugins_staging/${type}/${v}`)}`} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
                                 </div>
                               ))}
                             </div>
@@ -8367,7 +8439,7 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold uppercase tracking-wider text-white/50">Current Version</span>
                           <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-white font-bold">
-                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.9'}
+                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.10'}
                           </span>
                         </div>
                         {updateInfo?.hasUpdate ? (
@@ -9846,7 +9918,34 @@ export default function App() {
 
                 {/* Filters Toolbar */}
                 {artSourceTab === 'scryfall' && !isBacksOnlyModal ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 pt-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 pt-1">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Language</label>
+                      <select
+                        value={scryfallFilters.lang || 'any'}
+                        onChange={(e) => {
+                          const updated = { ...scryfallFilters, lang: e.target.value };
+                          setScryfallFilters(updated);
+                          handleSearchArt(artQuery, updated, 'scryfall');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="any" className="bg-[#1a1a20]">All Languages</option>
+                        <option value="en" className="bg-[#1a1a20]">English (EN)</option>
+                        <option value="fr" className="bg-[#1a1a20]">French (FR)</option>
+                        <option value="de" className="bg-[#1a1a20]">German (DE)</option>
+                        <option value="es" className="bg-[#1a1a20]">Spanish (ES)</option>
+                        <option value="it" className="bg-[#1a1a20]">Italian (IT)</option>
+                        <option value="pt" className="bg-[#1a1a20]">Portuguese (PT)</option>
+                        <option value="ja" className="bg-[#1a1a20]">Japanese (JA)</option>
+                        <option value="ko" className="bg-[#1a1a20]">Korean (KO)</option>
+                        <option value="ru" className="bg-[#1a1a20]">Russian (RU)</option>
+                        <option value="zhs" className="bg-[#1a1a20]">Simplified Chinese (zhs)</option>
+                        <option value="zht" className="bg-[#1a1a20]">Traditional Chinese (zht)</option>
+                        <option value="ph" className="bg-[#1a1a20]">Phyrexian</option>
+                      </select>
+                    </div>
+
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Frame Style</label>
                       <select
@@ -10145,7 +10244,7 @@ export default function App() {
                     </div>
                   </div>
                 ) : artSourceTab === 'mpcfill' ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Category / Face</label>
                       <select
@@ -10185,12 +10284,35 @@ export default function App() {
                     </div>
 
                     <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Language</label>
+                      <select
+                        value={mpcFilters.lang || 'all'}
+                        onChange={(e) => {
+                          const updated = { ...mpcFilters, lang: e.target.value };
+                          setMpcFilters(updated);
+                          handleSearchArt(artQuery, updated, 'mpcfill');
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                      >
+                        <option value="all" className="bg-[#1a1a20]">All Languages</option>
+                        <option value="en" className="bg-[#1a1a20]">English (EN)</option>
+                        <option value="fr" className="bg-[#1a1a20]">French (FR)</option>
+                        <option value="de" className="bg-[#1a1a20]">German (DE)</option>
+                        <option value="es" className="bg-[#1a1a20]">Spanish (ES)</option>
+                        <option value="it" className="bg-[#1a1a20]">Italian (IT)</option>
+                        <option value="ja" className="bg-[#1a1a20]">Japanese (JA)</option>
+                        <option value="pt" className="bg-[#1a1a20]">Portuguese (PT)</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Sort By</label>
                       <select
-                        value={scryfallFilters.order}
+                        value={mpcFilters.order || 'dpi_desc'}
                         onChange={(e) => {
-                          const updated = { ...scryfallFilters, order: e.target.value };
-                          setScryfallFilters(updated);
+                          const updated = { ...mpcFilters, order: e.target.value };
+                          setMpcFilters(updated);
+                          handleSearchArt(artQuery, updated, 'mpcfill');
                         }}
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
                       >
@@ -10470,7 +10592,7 @@ export default function App() {
                   ) : artSourceTab === 'scryfall' ? (
                     <button
                       onClick={() => {
-                        const reset = { frame: 'all', type: 'all', color: 'all', rarity: 'all', format: 'all', order: 'released', set: '' };
+                        const reset = { frame: 'all', type: 'all', color: 'all', rarity: 'all', format: 'all', order: 'released', set: '', lang: 'any' };
                         setScryfallFilters(reset);
                         handleSearchArt(artQuery, reset, 'scryfall');
                       }}
@@ -10481,7 +10603,7 @@ export default function App() {
                   ) : artSourceTab === 'mpcfill' ? (
                     <button
                       onClick={() => {
-                        const reset = { dpi: 'all', face: 'all', tag: 'all', set: '' };
+                        const reset = { dpi: 'all', face: 'all', tag: 'all', set: '', order: 'dpi_desc', lang: 'all' };
                         setMpcFilters(reset);
                         handleSearchArt(artQuery, reset, 'mpcfill');
                       }}
@@ -10539,15 +10661,18 @@ export default function App() {
                       })
                       .map((card) => {
                         const fullImg = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
-                        const thumbImg = card.thumbnailUrl || card.image_uris?.small || card.image_uris?.normal || fullImg;
+                        const thumbImg = card.thumbnailUrl || card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || card.image_uris?.normal || fullImg;
+                        const enlargeImg = card.previewUrl || getBrowserDisplayUrl(fullImg) || thumbImg;
                         const frameEffects = card.frame_effects?.join(', ') || card.tags?.join(', ');
 
                         return (
                           <div key={card.id} className="bg-white/[0.03] border border-white/10 hover:border-primary-500/40 rounded-2xl p-2.5 flex flex-col justify-between transition-all group">
                             <div>
                               <div
-                                onClick={() => fullImg && setEnlargedImage(fullImg)}
-                                className="relative aspect-[5/7] rounded-xl overflow-hidden bg-black/40 mb-2 cursor-pointer group/img"
+                                onClick={() => enlargeImg && setEnlargedImage(enlargeImg)}
+                                className="relative aspect-[5/7] rounded-xl overflow-hidden bg-black/40 mb-2 cursor-pointer group/img lightbox-trigger"
+                                data-enlarge-src={enlargeImg}
+                                data-lightbox-group="art-results"
                                 title="Click to enlarge"
                               >
                                 {thumbImg ? (
@@ -10560,8 +10685,8 @@ export default function App() {
                                       const target = e.currentTarget;
                                       if (card.fallbackUrl && target.src !== card.fallbackUrl) {
                                         target.src = card.fallbackUrl;
-                                      } else if (fullImg && target.src !== fullImg) {
-                                        target.src = fullImg;
+                                      } else if (fullImg && target.src !== getBrowserDisplayUrl(fullImg)) {
+                                        target.src = getBrowserDisplayUrl(fullImg);
                                       }
                                     }}
                                     className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
@@ -10572,13 +10697,20 @@ export default function App() {
                                 <span className="absolute top-1.5 left-1.5 max-w-[85%] truncate px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none" title={`${String(card.set || '').toUpperCase()} #${card.collector_number}`}>
                                   {String(card.set || '').toUpperCase()} #{card.collector_number}
                                 </span>
+                                {card.lang && card.lang !== 'en' && (
+                                  <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-amber-500/80 backdrop-blur-md text-[8px] font-mono font-bold text-white shadow pointer-events-none uppercase">
+                                    {card.lang}
+                                  </span>
+                                )}
                                 {card.isWebp && (
                                   <span className="absolute top-1.5 right-1.5 px-1 py-0.5 rounded bg-emerald-500/80 backdrop-blur-md text-[8px] font-mono font-bold text-white shadow pointer-events-none">
                                     WEBP
                                   </span>
                                 )}
                               </div>
-                              <h4 className="text-xs font-bold text-white truncate" title={card.name}>{card.name}</h4>
+                              <h4 className="text-xs font-bold text-white truncate" title={card.printed_name && card.printed_name !== card.name ? `${card.printed_name} (${card.name})` : card.name}>
+                                {card.printed_name && card.printed_name !== card.name ? `${card.printed_name} (${card.name})` : card.name}
+                              </h4>
                               <p className="text-[10px] text-white/40 truncate" title={card.set_name || card.source}>
                                 {card.set_name || card.source || 'Community'} {card.released_at ? `(${card.released_at.slice(0, 4)})` : ''}
                               </p>

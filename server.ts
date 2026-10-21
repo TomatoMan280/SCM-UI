@@ -920,7 +920,7 @@ except Exception:
   const thumbnailQueue = new Map<string, Promise<string>>();
 
   // High-performance image thumbnail generator with native .webp & transparency support
-  const createThumbnailFile = async (srcPath: string, destPath: string, maxWidth: number = 360): Promise<boolean> => {
+  const createThumbnailFile = async (srcPath: string, destPath: string, maxWidth: number = 280): Promise<boolean> => {
     const ext = path.extname(srcPath).toLowerCase();
     const tempPath = `${destPath}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp.jpg`;
 
@@ -945,8 +945,8 @@ try:
         if img.width > max_w:
             ratio = max_w / float(img.width)
             new_h = int(float(img.height) * ratio)
-            img = img.resize((max_w, new_h), Image.Resampling.LANCZOS)
-        img.save(sys.argv[2], 'JPEG', quality=85)
+            img = img.resize((max_w, new_h), Image.Resampling.BILINEAR)
+        img.save(sys.argv[2], 'JPEG', quality=75, optimize=True)
     sys.exit(0)
 except Exception:
     sys.exit(1)
@@ -973,6 +973,7 @@ except Exception:
       if (image.width > maxWidth) {
         image.resize({ w: maxWidth });
       }
+      image.quality(75);
       await image.write(tempPath as any);
       try {
         fs.renameSync(tempPath, destPath);
@@ -1034,9 +1035,72 @@ except Exception:
   app.get('/api/thumbnail', async (req: any, res: any) => {
     try {
       const srcQuery = req.query.src as string;
+      const urlQuery = (req.query.url as string || '').trim();
       const viewQuery = req.query.view as string;
       const typeQuery = req.query.type as string;
       const nameQuery = req.query.name as string;
+
+      // Remote image thumbnailing with caching for all plugins
+      const rawRemote = urlQuery || (srcQuery && (srcQuery.startsWith('http://') || srcQuery.startsWith('https://')) ? srcQuery : '');
+      if (rawRemote) {
+        const hash = crypto.createHash('md5').update(rawRemote).digest('hex');
+        const thumbFilename = `remote_${hash}_thumb.jpg`;
+        const thumbPath = path.join(thumbnailCacheDir, thumbFilename);
+
+        if (fs.existsSync(thumbPath)) {
+          try {
+            if (fs.statSync(thumbPath).size > 0) {
+              res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+              return res.sendFile(thumbPath);
+            }
+          } catch (_) {}
+        }
+
+        let genPromise = thumbnailQueue.get(thumbPath);
+        if (!genPromise) {
+          genPromise = (async () => {
+            let fetchUrl = rawRemote;
+            if (rawRemote.includes('drive.google.com')) {
+              const idMatch = rawRemote.match(/[?&]id=([a-zA-Z0-9_-]+)/) || rawRemote.match(/\/d\/([a-zA-Z0-9_-]+)/);
+              if (idMatch && idMatch[1]) {
+                fetchUrl = `https://drive.google.com/thumbnail?sz=w280-h392&id=${idMatch[1]}`;
+              }
+            }
+
+            const upstream = await fetch(fetchUrl, {
+              headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+              }
+            });
+            if (!upstream.ok) {
+              throw new Error(`Upstream fetch failed: ${upstream.statusText}`);
+            }
+            const buffer = Buffer.from(await upstream.arrayBuffer());
+            const tmpRaw = path.join(thumbnailCacheDir, `temp_remote_${hash}.${Date.now()}`);
+            fs.writeFileSync(tmpRaw, buffer);
+            try {
+              const ok = await createThumbnailFile(tmpRaw, thumbPath, 280);
+              if (!ok) throw new Error("Thumbnail conversion failed");
+            } finally {
+              try { if (fs.existsSync(tmpRaw)) fs.unlinkSync(tmpRaw); } catch (_) {}
+            }
+            return thumbPath;
+          })();
+          thumbnailQueue.set(thumbPath, genPromise);
+        }
+
+        try {
+          await genPromise;
+          res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+          return res.sendFile(thumbPath);
+        } catch (err) {
+          console.warn(`[Thumbnail] Remote thumbnail generation failed for ${rawRemote}:`, err);
+          return res.redirect(rawRemote);
+        } finally {
+          thumbnailQueue.delete(thumbPath);
+        }
+      }
 
       let realSourcePath = '';
 
@@ -1106,7 +1170,7 @@ except Exception:
       let genPromise = thumbnailQueue.get(thumbPath);
       if (!genPromise) {
         genPromise = (async () => {
-          const ok = await createThumbnailFile(realSourcePath, thumbPath, 360);
+          const ok = await createThumbnailFile(realSourcePath, thumbPath, 280);
           if (!ok) {
             throw new Error(`Failed to generate thumbnail for ${realSourcePath}`);
           }
@@ -1200,7 +1264,7 @@ except Exception:
   };
 
   const getCurrentAppVersion = () => {
-    let currentVersion = '3.0.9';
+    let currentVersion = '3.0.10';
     try {
       const possiblePkgPaths = [
         path.join(baseAppPath, 'package.json'),
@@ -1406,8 +1470,8 @@ except Exception:
       if (policy.forceUpdate && policy.simulateDownload) {
         requiredRelease = {
           id: 999999,
-          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.9',
-          name: `SCMUI v${policy.minRequiredVersion || '3.0.9'}`,
+          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.10',
+          name: `SCMUI v${policy.minRequiredVersion || '3.0.10'}`,
           publishedAt: new Date().toISOString(),
           isPrerelease: false,
           isCurrent: false,
@@ -1415,7 +1479,7 @@ except Exception:
           notes: 'Automatic background update with performance improvements.',
           htmlUrl: 'https://github.com/TomatoMan280/SCM-UI/releases',
           primaryAsset: {
-            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.9'}.exe`,
+            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.10'}.exe`,
             size: 28500000,
             downloadUrl: 'simulate',
             isInstaller: true,
@@ -1423,7 +1487,7 @@ except Exception:
           },
           assets: [
             {
-              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.9'}.exe`,
+              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.10'}.exe`,
               size: 28500000,
               downloadUrl: 'simulate',
               isInstaller: true,
@@ -1517,8 +1581,8 @@ except Exception:
     if (assetUrl === 'simulate' || req.query.simulate === 'true' || req.body.simulate === true) {
       activeDownload = {
         isDownloading: true,
-        tag: tag || 'v3.0.9',
-        assetName: assetName || 'SCMUI-Setup-3.0.9.exe',
+        tag: tag || 'v3.0.10',
+        assetName: assetName || 'SCMUI-Setup-3.0.10.exe',
         progress: 8,
         downloadedBytes: 2280000,
         totalBytes: 28500000,
@@ -2034,6 +2098,7 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
     const frameFilter = req.query.frame as string;
     const rarityFilter = req.query.rarity as string;
     const orderSort = (req.query.order as string) || 'released';
+    const langFilter = (req.query.lang as string || 'any').toLowerCase().trim();
 
     if (!q && (!typeFilter || typeFilter === 'all') && (!colorFilter || colorFilter === 'all') && (!rarityFilter || rarityFilter === 'all') && (!frameFilter || frameFilter === 'all')) {
       return res.status(400).json({ error: "Query parameter 'q' or a filter is required" });
@@ -2099,6 +2164,18 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
         else if (frameFilter === 'etched') filterStr += ' is:etched';
       }
 
+      // Language filter handling
+      const LANG_MAP: Record<string, string> = {
+        'sp': 'es', 'jp': 'ja', 'kr': 'ko', 'cs': 'zhs', 'ct': 'zht', 'ag': 'grc',
+        'es': 'es', 'ja': 'ja', 'ko': 'ko', 'zhs': 'zhs', 'zht': 'zht', 'grc': 'grc',
+        'fr': 'fr', 'de': 'de', 'it': 'it', 'pt': 'pt', 'ru': 'ru', 'ph': 'ph',
+        'en': 'en', 'any': 'any', 'all': 'any'
+      };
+      const mappedLang = LANG_MAP[langFilter] || (langFilter === 'all' ? 'any' : langFilter);
+      if (mappedLang && mappedLang !== 'all') {
+        filterStr += ` lang:${mappedLang}`;
+      }
+
       // Step B: Build query with optional filters
       let scryfallQuery = '';
       if (resolvedCardName) {
@@ -2126,7 +2203,20 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
           else if (c.image_uris?.large || c.card_faces?.[0]?.image_uris?.large) dpi = 268;
           else if (c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal) dpi = 195;
           else if (c.image_uris?.small || c.card_faces?.[0]?.image_uris?.small) dpi = 58;
-          return { ...c, dpi };
+
+          const highRes = c.image_uris?.png || c.card_faces?.[0]?.image_uris?.png || c.image_uris?.large || c.card_faces?.[0]?.image_uris?.large;
+          const lowResThumb = c.image_uris?.small || c.card_faces?.[0]?.image_uris?.small || c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal;
+          const preview = c.image_uris?.large || c.card_faces?.[0]?.image_uris?.large || highRes;
+
+          return {
+            ...c,
+            dpi,
+            lang: c.lang || 'en',
+            printed_name: c.printed_name || c.name,
+            imageUrl: highRes,
+            previewUrl: preview,
+            thumbnailUrl: lowResThumb
+          };
         });
       }
       return res.status(searchRes.status || 200).json(searchRes.data);
@@ -2136,7 +2226,40 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
     }
   });
 
-  // MPCFill Community Art & Backings Search API
+  // Cached MPCFill Sources
+  let cachedMpcSources: [number, boolean][] | null = null;
+  let lastMpcSourcesFetch = 0;
+
+  async function getMpcSources(): Promise<[number, boolean][]> {
+    const now = Date.now();
+    if (cachedMpcSources && cachedMpcSources.length > 0 && (now - lastMpcSourcesFetch < 3600000)) {
+      return cachedMpcSources;
+    }
+    try {
+      const res = await fetch("https://mpcfill.com/2/sources/", {
+        headers: { "User-Agent": "SCMUI/1.1.0", "Accept": "application/json" }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.results && typeof data.results === 'object') {
+          const pks = Object.values(data.results).map((s: any) => [s.pk, true] as [number, boolean]);
+          if (pks.length > 0) {
+            cachedMpcSources = pks;
+            lastMpcSourcesFetch = now;
+            return cachedMpcSources;
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn("[MPCFill] Failed to refresh sources:", err.message);
+    }
+    if (!cachedMpcSources || cachedMpcSources.length === 0) {
+      cachedMpcSources = Array.from({ length: 300 }, (_, i) => [i + 1, true]);
+    }
+    return cachedMpcSources;
+  }
+
+  // MPCFill Community Art & Backings Search API (Live exploreSearch)
   app.get("/api/mpc/search", async (req, res) => {
     const q = (req.query.q as string || '').trim();
     const faceFilter = (req.query.face as string || req.query.cardType as string || 'all').toLowerCase().trim();
@@ -2144,92 +2267,125 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
     if (faceFilter === 'fronts') isBack = false;
     const dpiFilter = req.query.dpi as string || 'all';
     const setFilter = req.query.set as string;
+    const orderSort = (req.query.order as string) || 'dpi_desc';
+    const langFilter = (req.query.lang as string || 'all').toLowerCase().trim();
 
-    console.log(`[MPCFill Search] Query: "${q}", isBack: ${isBack}, face: ${faceFilter}, dpi: ${dpiFilter}, set: ${setFilter || 'none'}`);
+    console.log(`[MPCFill Search] Query: "${q}", isBack: ${isBack}, face: ${faceFilter}, dpi: ${dpiFilter}, lang: ${langFilter}, order: ${orderSort}`);
 
-    const headers = {
-      "User-Agent": "SCMUI/1.1.0",
-      "Content-Type": "application/json"
-    };
-
-    // Curated high-resolution MPC cards & backs database (800 & 1200 DPI)
+    // Curated fallback in case external API is unreachable
     const curatedMpcLibrary: any[] = [
-      // High-res Backs (800 - 1200 DPI)
       { id: 'classic_mtg_back', name: 'Classic MTG Cardback', dpi: 800, type: 'back', source: 'WotC Scan HQ', tags: ['Standard', 'Official Back'], imageUrl: 'https://upload.wikimedia.org/wikipedia/en/a/aa/Magic_the_gathering-card_back.jpg' },
       { id: 'lotus_back_1200', name: 'Black Lotus Stained Glass Back', dpi: 1200, type: 'back', source: 'Algencon Drive', tags: ['Custom Back', '1200 DPI', 'Full Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Black+Lotus&format=image&version=large' },
       { id: 'vintage_retro_back', name: 'Retro 1993 Vintage Back', dpi: 1200, type: 'back', source: 'VintageMTG', tags: ['Retro', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Time+Walk&format=image&version=large' },
       { id: 'minimalist_dark_back', name: 'Sleeved Matte Obsidian Back', dpi: 1200, type: 'back', source: 'ProxyKing', tags: ['Minimalist', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Dark+Ritual&format=image&version=large' },
       { id: 'anime_mox_back', name: 'Mystical Archive Japanese Back', dpi: 1200, type: 'back', source: 'Torino Custom', tags: ['Japanese', 'Anime', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Mox+Diamond&format=image&version=large' },
-
-      // Popular Custom Front Arts (800 - 1200 DPI)
       { id: 'sol_ring_masterpiece', name: 'Sol Ring', dpi: 1200, type: 'card', source: 'MPC Masterpiece', set: 'MPC', collector_number: '1200', tags: ['1200 DPI', 'Borderless', 'Full Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Sol+Ring&format=image&version=large' },
       { id: 'black_lotus_custom', name: 'Black Lotus', dpi: 1200, type: 'card', source: 'Vintage Proxy Drive', set: 'MPC', collector_number: '001', tags: ['1200 DPI', 'Extended Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Black+Lotus&format=image&version=large' },
-      { id: 'mana_crypt_vintage', name: 'Mana Crypt', dpi: 1200, type: 'card', source: 'Chilli_Axe Drive', set: 'MPC', collector_number: 'MC01', tags: ['1200 DPI', 'Retro Frame'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Mana+Crypt&format=image&version=large' },
-      { id: 'command_tower_galaxy', name: 'Command Tower', dpi: 1200, type: 'card', source: 'Silvan Drive', set: 'MPC', collector_number: 'CT88', tags: ['1200 DPI', 'Foil Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Command+Tower&format=image&version=large' },
-      { id: 'rhystic_study_anime', name: 'Rhystic Study', dpi: 1200, type: 'card', source: 'AnimeProxy Co', set: 'MPC', collector_number: 'AP09', tags: ['1200 DPI', 'Anime Alt-Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Rhystic+Study&format=image&version=large' },
-      { id: 'demonic_tutor_retro', name: 'Demonic Tutor', dpi: 1200, type: 'card', source: 'Vintage Vault', set: 'MPC', collector_number: 'DT93', tags: ['1200 DPI', 'Vintage 1993'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Demonic+Tutor&format=image&version=large' },
-      { id: 'cyclonic_rift_custom', name: 'Cyclonic Rift', dpi: 1200, type: 'card', source: 'Mythic Drive', set: 'MPC', collector_number: 'CR77', tags: ['1200 DPI', 'Borderless'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Cyclonic+Rift&format=image&version=large' },
-      { id: 'swords_to_plowshares_sld', name: 'Swords to Plowshares', dpi: 800, type: 'card', source: 'HighRes Scans', set: 'MPC', collector_number: 'STP1', tags: ['800 DPI', 'Showcase'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Swords+to+Plowshares&format=image&version=large' },
-      { id: 'counterspell_retro', name: 'Counterspell', dpi: 800, type: 'card', source: 'Alpha Remaster', set: 'MPC', collector_number: 'CS01', tags: ['800 DPI', 'Retro'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Counterspell&format=image&version=large' }
+      { id: 'mana_crypt_vintage', name: 'Mana Crypt', dpi: 1200, type: 'card', source: 'Chilli_Axe Drive', set: 'MPC', collector_number: 'MC01', tags: ['1200 DPI', 'Retro Frame'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Mana+Crypt&format=image&version=large' }
     ];
 
     let results: any[] = [];
 
-    // Step 1: Attempt live MPCFill API search (only if query provided)
-    if (q) {
-      try {
-        const endpoint = isBack ? 'https://api.mpcfill.com/v1/backs' : 'https://api.mpcfill.com/v1/cards';
-        const bodyPayload = isBack 
-          ? JSON.stringify({ backNames: [q] })
-          : JSON.stringify({ cardNames: [q] });
+    // Step 1: Query live MPCFill Explore API
+    try {
+      const sources = await getMpcSources();
+      let cardTypes: string[] = [];
+      if (isBack || faceFilter === 'backs') {
+        cardTypes = ['CARDBACK'];
+      } else if (faceFilter === 'fronts') {
+        cardTypes = ['CARD'];
+      } else {
+        cardTypes = [];
+      }
 
-        const mpcResp = await fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: bodyPayload
-        });
+      const minDpi = (dpiFilter && dpiFilter !== 'all') ? (parseInt(dpiFilter, 10) || 0) : 0;
+      const languages = (langFilter && langFilter !== 'all' && langFilter !== 'any') ? [langFilter.toUpperCase()] : [];
 
-        if (mpcResp.ok) {
-          const mpcJson = await mpcResp.json();
-          const rawItems = mpcJson?.data || mpcJson?.cards || [];
-          if (Array.isArray(rawItems) && rawItems.length > 0) {
-            results = rawItems.map((item: any) => ({
-              id: item.id || Math.random().toString(36).slice(2),
-              name: item.name || q,
-              set: item.set || 'MPC',
-              collector_number: item.source || 'Drive',
-              dpi: item.dpi || 1200,
-              imageUrl: item.imageUrl || `https://lh3.googleusercontent.com/d/${item.id}`,
-              tags: item.tags || ['Community Art', `${item.dpi || 1200} DPI`],
-              source: item.source || 'MPCFill'
-            }));
+      let sortDirection = 'dateCreatedDescending';
+      if (orderSort === 'name') sortDirection = 'nameAscending';
+
+      const explorePayload = {
+        cardTypes,
+        pageSize: 100,
+        pageStart: 0,
+        query: q || null,
+        sortBy: sortDirection,
+        searchSettings: {
+          searchTypeSettings: { fuzzySearch: true, filterCardbacks: false },
+          sourceSettings: { sources },
+          filterSettings: {
+            minimumDPI: minDpi,
+            maximumDPI: 1500,
+            maximumSize: 30,
+            languages,
+            includesTags: [],
+            excludesTags: ['NSFW']
           }
         }
-      } catch (e: any) {
-        console.warn(`[MPCFill Search] Live API offline or unroutable (${e.message}). Using high-DPI curated database.`);
+      };
+
+      const mpcResp = await fetch("https://mpcfill.com/2/exploreSearch/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "SCMUI/1.1.0"
+        },
+        body: JSON.stringify(explorePayload)
+      });
+
+      if (mpcResp.ok) {
+        const mpcJson = await mpcResp.json();
+        const rawItems = mpcJson?.cards || [];
+        if (Array.isArray(rawItems) && rawItems.length > 0) {
+          results = rawItems.map((item: any) => ({
+            id: item.identifier || item.id,
+            name: item.name,
+            set: item.cardType === 'CARDBACK' ? 'BACK' : 'MPC',
+            collector_number: `${item.dpi || 1200} DPI`,
+            dpi: item.dpi || 1200,
+            imageUrl: item.downloadLink || `https://drive.google.com/uc?id=${item.identifier}&export=download`,
+            previewUrl: `https://drive.google.com/thumbnail?sz=w1600-h1600&id=${item.identifier}`,
+            thumbnailUrl: item.smallThumbnailUrl || `https://drive.google.com/thumbnail?sz=w280-h392&id=${item.identifier}`,
+            fallbackUrl: `https://drive.google.com/thumbnail?sz=w200-h280&id=${item.identifier}`,
+            source: item.source || item.sourceName || 'MPC Community Drive',
+            tags: [
+              ...(item.dpi ? [`${item.dpi} DPI`] : []),
+              ...(item.source ? [item.source] : []),
+              ...(item.language ? [item.language] : []),
+              ...(Array.isArray(item.tags) ? item.tags : [])
+            ],
+            language: item.language || 'EN',
+            cardType: item.cardType
+          }));
+        }
+      } else {
+        console.warn(`[MPCFill Search] Live API returned status ${mpcResp.status}`);
       }
+    } catch (e: any) {
+      console.warn(`[MPCFill Search] Live API call failed: ${e.message}`);
     }
 
-    // Step 2: Combine with curated high-DPI library
-    const filteredCurated = curatedMpcLibrary.filter(item => {
-      if (faceFilter === 'backs' && item.type !== 'back') return false;
-      if (faceFilter === 'fronts' && item.type === 'back') return false;
-      if (isBack && item.type !== 'back') return false;
-      if (!isBack && item.type === 'back' && q) {
-        // Only show backs if query specifically searches for backs or back pattern
-        if (!q.toLowerCase().includes('back') && !q.toLowerCase().includes('cardback')) return false;
-      }
-      if (q) {
-        const searchTerms = q.toLowerCase().split(' ');
-        const matchesName = searchTerms.every(term => item.name.toLowerCase().includes(term));
-        const matchesTags = item.tags.some((t: string) => t.toLowerCase().includes(q.toLowerCase()));
-        return matchesName || matchesTags;
-      }
-      return isBack ? item.type === 'back' : true;
-    });
+    // Step 2: Fallback to curated library if no live results
+    if (results.length === 0) {
+      const filteredCurated = curatedMpcLibrary.filter(item => {
+        if (faceFilter === 'backs' && item.type !== 'back') return false;
+        if (faceFilter === 'fronts' && item.type === 'back') return false;
+        if (isBack && item.type !== 'back') return false;
+        if (!isBack && item.type === 'back' && q) {
+          if (!q.toLowerCase().includes('back') && !q.toLowerCase().includes('cardback')) return false;
+        }
+        if (q) {
+          const searchTerms = q.toLowerCase().split(' ');
+          const matchesName = searchTerms.every(term => item.name.toLowerCase().includes(term));
+          const matchesTags = item.tags && item.tags.some((t: string) => t.toLowerCase().includes(q.toLowerCase()));
+          return matchesName || matchesTags;
+        }
+        return isBack ? item.type === 'back' : true;
+      });
+      results = [...filteredCurated];
+    }
 
-    results = [...results, ...filteredCurated];
-
+    // Optional Set filter
     if (setFilter && setFilter.trim() !== '') {
       const targetSet = setFilter.trim().toLowerCase();
       results = results.filter(item => {
@@ -2238,51 +2394,54 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
       });
     }
 
-    // If still empty and query provided, dynamically generate a custom high-res MPC entry using Scryfall's ultra-res prints
-    if (results.length === 0 && q) {
-      try {
-        const sfUrl = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(q)}`;
-        const sfResp = await fetch(sfUrl, { headers: { "User-Agent": "SCMUI/1.1.0" } });
-        if (sfResp.ok) {
-          const sfCard = await sfResp.json();
-          results.push({
-            id: `mpc_${sfCard.id}`,
-            name: sfCard.name,
-            set: 'MPC',
-            collector_number: '1200-Ultra',
-            dpi: 1200,
-            imageUrl: sfCard.image_uris?.png || sfCard.image_uris?.large || sfCard.card_faces?.[0]?.image_uris?.png,
-            tags: ['1200 DPI Render', 'MPC Bleed Edge Ready', sfCard.set_name],
-            source: 'MPC Community Drive'
-          });
-          results.push({
-            id: `mpc_${sfCard.id}_800`,
-            name: sfCard.name,
-            set: 'MPC',
-            collector_number: '800-Showcase',
-            dpi: 800,
-            imageUrl: sfCard.image_uris?.large || sfCard.image_uris?.normal || sfCard.card_faces?.[0]?.image_uris?.large,
-            tags: ['800 DPI', 'Full Art', 'Custom Artist'],
-            source: 'Chilli_Axe Drive'
-          });
-        }
-      } catch (err) { }
-    }
-
-    // Apply DPI filter
-    if (dpiFilter && dpiFilter !== 'all') {
-      const dpiNum = parseInt(dpiFilter, 10);
-      if (!isNaN(dpiNum)) {
-        results = results.filter(r => (r.dpi || 1200) >= dpiNum);
-      }
-    }
-
-    if (setFilter && setFilter.trim() !== '') {
-      const lowerSet = setFilter.trim().toLowerCase();
-      results = results.filter(r => (r.set || '').toLowerCase() === lowerSet || (r.tags || []).some((t: string) => t.toLowerCase().includes(lowerSet)));
+    // Step 3: Sort results
+    if (orderSort === 'dpi_desc') {
+      results.sort((a, b) => (b.dpi || 1200) - (a.dpi || 1200));
+    } else if (orderSort === 'dpi_asc') {
+      results.sort((a, b) => (a.dpi || 1200) - (b.dpi || 1200));
+    } else if (orderSort === 'name') {
+      results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }
 
     res.json({ success: true, count: results.length, data: results });
+  });
+
+  // Image proxy endpoint for external assets that have CORS/CORP or download restrictions (e.g. Google Drive)
+  app.get("/api/proxy-image", async (req, res) => {
+    const rawUrl = (req.query.url as string || '').trim();
+    if (!rawUrl) {
+      return res.status(400).send("url parameter is required");
+    }
+
+    try {
+      let targetUrl = rawUrl;
+      if (rawUrl.includes('drive.google.com')) {
+        const idMatch = rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) || rawUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (idMatch && idMatch[1]) {
+          targetUrl = `https://drive.google.com/thumbnail?sz=w1600-h1600&id=${idMatch[1]}`;
+        }
+      }
+
+      const upstream = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        }
+      });
+
+      if (!upstream.ok) {
+        return res.status(upstream.status).send(`Failed to proxy image: ${upstream.statusText}`);
+      }
+
+      const contentType = upstream.headers.get("content-type") || "image/jpeg";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      const buffer = Buffer.from(await upstream.arrayBuffer());
+      res.send(buffer);
+    } catch (e: any) {
+      console.error("[proxy-image] Error:", e);
+      res.status(500).send(e.message);
+    }
   });
 
   app.post("/api/scryfall/download", async (req, res) => {
@@ -2311,11 +2470,34 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
       };
 
       const downloadTargetUrl = imageUrl.startsWith('/') ? `http://127.0.0.1:${PORT}${imageUrl}` : imageUrl;
-      const response = await fetch(downloadTargetUrl, { headers, redirect: 'follow' });
+      let response = await fetch(downloadTargetUrl, { headers, redirect: 'follow' });
       if (!response.ok) throw new Error(`Download failed with status ${response.status}`);
 
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      let arrayBuffer = await response.arrayBuffer();
+      let buffer = Buffer.from(arrayBuffer);
+
+      // Fallback for Google Drive links if HTML confirmation/redirect was returned instead of image:
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      if ((contentType.includes('text/html') || buffer.slice(0, 15).toString().toLowerCase().includes('<!doctype')) && downloadTargetUrl.includes('drive.google.com')) {
+        const idMatch = downloadTargetUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        if (idMatch) {
+          const driveId = idMatch[1];
+          // Try high-resolution thumbnail endpoint (w1600-h1600)
+          const thumbResp = await fetch(`https://drive.google.com/thumbnail?sz=w1600-h1600&id=${driveId}`, { headers, redirect: 'follow' });
+          if (thumbResp.ok && !(thumbResp.headers.get('content-type') || '').includes('text/html')) {
+            arrayBuffer = await thumbResp.arrayBuffer();
+            buffer = Buffer.from(arrayBuffer);
+          } else {
+            // Try Google Apps Script base64 fetcher as used by MPCFill
+            const gasResp = await fetch(`https://script.google.com/macros/s/AKfycbw8laScKBfxda2Wb0g63gkYDBdy8NWNxINoC4xDOwnCQ3JMFdruam1MdmNmN4wI5k4/exec?id=${driveId}`);
+            if (gasResp.ok) {
+              const b64 = await gasResp.text();
+              buffer = Buffer.from(b64, 'base64');
+              arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+            }
+          }
+        }
+      }
 
       // Detect image format from content-type or magic bytes
       let detectedExt = '.png';
@@ -2584,6 +2766,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
             set_name: setName || setCode,
             collector_number: cardNum,
             imageUrl: lgUrl,
+            previewUrl: lgUrl,
             thumbnailUrl: smUrl,
             fallbackUrl,
             dpi: 300,
@@ -2614,6 +2797,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
               set: setCode,
               collector_number: cardNum,
               imageUrl: lgImg,
+              previewUrl: lgImg,
               thumbnailUrl: smImg,
               dpi: 300,
               isWebp,
@@ -2728,7 +2912,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   const ONEPROXY_BASE_URL = 'https://oneproxy.torforge.dev/api/v1';
   const ONEPROXY_BEARER_TOKEN = 'op_scmui_QCCTA2FAWJN7k7pWk08DiHf66xqZxmNzjkt88WYYBIE';
   const ONEPROXY_CREDIT_URL = 'https://oneproxy.torforge.dev/?utm_source=scmui&utm_medium=desktop_app&utm_campaign=scmui_integration';
-  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.9 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
+  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.10 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
 
   const defaultOneProxyCacheDir = path.join(os.homedir(), '.cache', 'oneproxy');
   const defaultUserOneProxyDir = path.join(os.homedir(), 'OneProxy');
@@ -2861,7 +3045,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const headers = {
       'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
       'User-Agent': ONEPROXY_USER_AGENT,
-      'X-SCMUI-Version': '3.0.9',
+      'X-SCMUI-Version': '3.0.10',
       'Accept': 'application/json',
       ...(options.headers || {})
     };
@@ -3375,7 +3559,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 const fetchHeaders: any = {
                   'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
                   'User-Agent': ONEPROXY_USER_AGENT,
-                  'X-SCMUI-Version': '3.0.9'
+                  'X-SCMUI-Version': '3.0.10'
                 };
 
                 if (existingPartBytes > 0 && asset.sha256) {
@@ -4591,6 +4775,31 @@ app.get("/api/moxfield-proxy", async (req, res) => {
           break;
         }
       }
+
+      // Standardize and optimize all plugin results: Low-res for thumbnails, high-res for enlarge & download
+      results = results.map(item => {
+        const full = item.imageUrl || item.image_url || '';
+        const preview = item.previewUrl || full;
+        let thumb = item.thumbnailUrl;
+
+        // If thumbnail is missing or same as full image, route through /api/thumbnail for a 280px lightweight cached version
+        if (!thumb || thumb === full) {
+          if (full.startsWith('http://') || full.startsWith('https://')) {
+            thumb = `/api/thumbnail?url=${encodeURIComponent(full)}`;
+          } else if (full) {
+            thumb = `/api/thumbnail?src=${encodeURIComponent(full)}`;
+          } else {
+            thumb = full;
+          }
+        }
+
+        return {
+          ...item,
+          imageUrl: full,
+          previewUrl: preview,
+          thumbnailUrl: thumb
+        };
+      });
 
       res.json({ success: true, count: results.length, data: results });
     } catch (err: any) {
@@ -7728,6 +7937,9 @@ fi
           else if (fs.existsSync(p2)) targetPaths.push(p2);
         }
       }
+
+      // Guarantee upscale operates strictly on original full-resolution card assets, never cached thumbnails
+      targetPaths = targetPaths.filter(p => !p.includes('thumbnails') && !p.includes('_thumb.') && !p.includes('temp_'));
 
       targetPaths = Array.from(new Set(targetPaths));
 

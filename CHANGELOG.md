@@ -4,6 +4,45 @@ All notable changes to **SCMUI (Silhouette Card Maker UI)** are documented in th
 
 ---
 
+## [3.0.10] - 2026-10-21
+
+### ⚡ Universal Low-Resolution Thumbnails & 60 FPS Performance
+- **Universal 280px Cached Thumbnails**: All card search plugins (Scryfall, MPCFill, Limitless, OneProxy, and custom plugins) now serve lightweight 280px thumbnails (~15–30 KB) down from multi-megabyte raw images.
+- **Persistent Disk Caching (`/api/thumbnail`)**: Remote art from all card search plugins is cached to disk with immutable HTTP headers (`Cache-Control: public, max-age=604800, immutable`), reducing network payload by ~95% and eliminating lag during rapid scrolling.
+- **Asynchronous Rendering**: Added `loading="lazy"` and `decoding="async"` across all asset and card search grids for instantaneous grid populating.
+
+### 🔍 MPCFill Alternative & Custom Art Integration
+- **Direct MPC Search**: Integrated MPCFill community art search directly inside the Card Selector modal alongside Scryfall and Limitless.
+- **Filter Controls**: Search by card name with custom filtering by front/back, DPI resolution, face type, language, and sorting order.
+- **One-Click Asset Assignment**: Ingest custom proxy card art directly to Front, Back, or Double-Sided project slots with automatic filename formatting.
+
+### 🌐 Manual Language Selection in Card Selector
+- **Multi-Language Search**: Added an intuitive language filter dropdown to the manual card search dialog.
+- **Global Print Discovery**: Search printings in any official language (Japanese, German, French, Spanish, Italian, Simplified/Traditional Chinese, Korean, etc.) or across all languages simultaneously without English-only restrictions.
+
+### 🖼️ High-Resolution Enlargement & Lossless Downloads
+- **Pristine Lightbox Previews**: Enlarging card art in the search modal or asset library now strictly loads the uncompressed master image (up to 1600×1600+ on MPC and high-DPI Scryfall/local assets).
+- **Lossless Ingestion**: Card downloads prioritize full-fidelity master images (`imageUrl` / lossless PNGs) into project and library folders.
+- **Isolated Print & PDF Workflows**: Silhouette Card Maker and PDF sheet compilation continue to strictly use 300+ DPI master files from asset directories.
+
+### 🛡️ Upscaling Guardrails
+- **Master Image Protection**: Enforced an explicit directory and path exclusion filter in `/api/upscale` (`filter(p => !p.includes('thumbnails') && !p.includes('_thumb.') && !p.includes('temp_'))`).
+- Upscayl AI models only ever process original master card images, completely ignoring thumbnail caches.
+
+---
+
+## [3.0.9] - 2026-10-20
+
+### 🏴‍☠️ OneProxy Catalog & Asset Enhancements
+- **Live Set Name Integration**: Integrated live `setName` metadata into the downloader grid and card selector set filter.
+- **Visual Status Styling**: Styled completed download tiles with an emerald glow and removed the bulky Done badge to maximize room for card titles.
+- **Default Format Alignment**: Ensured OneProxy remains the permanent default format and card provider whenever One Piece is selected.
+
+### 🔄 Update Policy Refinements
+- **Scrapped Mandatory Update Enforcement**: Prevented forced update blocking dialogs and self-updating loops by enforcing strict target version comparison in update policy guards.
+
+---
+
 ## [3.0.8] - 2026-10-20
 
 ### 🐧 Full Linux Desktop Support
