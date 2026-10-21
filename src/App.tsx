@@ -2323,10 +2323,13 @@ export default function App() {
       });
       if (res.ok) {
         setDownloadState(prev => ({ ...prev, status: 'restarting' }));
-        setUpdateStatusToast('Update installed! Restarting SCMUI...');
-        setTimeout(() => {
-          window.location.reload();
-        }, 2200);
+        setUpdateStatusToast('Update ready! Closing SCMUI to complete installation...');
+        const isDesktop = status?.isElectron || window.navigator.userAgent.includes('Electron');
+        if (!isDesktop) {
+          setTimeout(() => {
+            window.location.reload();
+          }, 3500);
+        }
       } else {
         const err = await res.json();
         throw new Error(err?.error || 'Failed to launch installer');

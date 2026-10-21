@@ -15,6 +15,7 @@ const fs = require('fs');
 
 let mainWindow;
 let serverProcess;
+let isShuttingDownForUpdate = false;
 
 function createWindow() {
   let iconPath = path.join(__dirname, 'build', 'icon.png');
@@ -83,6 +84,16 @@ function createWindow() {
        console.log('[Main] Server is ready. Loading app...');
        mainWindow.loadURL('http://127.0.0.1:3000');
     }
+    if (output.includes('SCMUI_QUIT_FOR_UPDATE')) {
+       console.log('[Main] Server requested quit for update. Closing app cleanly...');
+       isShuttingDownForUpdate = true;
+       if (mainWindow && !mainWindow.isDestroyed()) {
+         mainWindow.destroy();
+       }
+       setTimeout(() => {
+         app.quit();
+       }, 300);
+    }
   });
   
   serverProcess.stderr.on('data', (data) => {
@@ -98,6 +109,13 @@ function createWindow() {
   serverProcess.on('exit', (code, signal) => {
     console.log(`[Main] Server process exited with code ${code}, signal ${signal}`);
     fs.appendFileSync(logPath, `[Main] Server process exited with code ${code}, signal ${signal}\\n`);
+    if (isShuttingDownForUpdate || code === 0) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.destroy();
+      }
+      app.quit();
+      return;
+    }
     if (code !== 0 && code !== null) {
       const { dialog } = require('electron');
       dialog.showErrorBox('SCMUI Server Crashed', `Server exited with code ${code}.\\nCheck logs at: ${logPath}`);
@@ -112,6 +130,7 @@ function createWindow() {
 
   mainWindow.webContents.on('did-fail-load', (e, errCode, errDesc) => {
     fs.appendFileSync(logPath, `[Web Fail Load] ${errCode} ${errDesc}\\n`);
+    if (isShuttingDownForUpdate) return;
     const { dialog } = require('electron');
     dialog.showErrorBox('Page failed to load', `Error ${errCode}: ${errDesc}\\nCheck logs at: ${logPath}`);
   });

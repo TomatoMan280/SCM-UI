@@ -1596,33 +1596,48 @@ except Exception:
     try {
       const { assetName } = req.body;
       const installerPath = activeDownload.filePath || path.join(baseDataPath, 'temp-uploads', assetName || 'update.exe');
-      const isSimulated = activeDownload.tag === 'v3.0.8' || assetName?.includes('3.0.8') || req.body?.simulate;
+      const isSimulated = req.body?.simulate === true || activeDownload.tag === 'simulation';
 
       if (!fs.existsSync(installerPath) && !isSimulated) {
         return res.status(404).json({ error: 'Installer file not found on disk' });
       }
 
       console.log(`[Updates] Launching installer: ${installerPath} (simulated: ${isSimulated})`);
-      if (!isSimulated && fs.existsSync(installerPath)) {
-        if (process.platform === 'win32') {
-          exec(`start "" "${installerPath}"`);
-        } else if (process.platform === 'darwin') {
-          exec(`open "${installerPath}"`);
-        } else {
-          exec(`xdg-open "${installerPath}"`);
-        }
-      }
 
       res.json({ success: true, message: 'Installer launched successfully', restarting: true });
 
       setTimeout(() => {
         try {
-          if (process.env.ELECTRON_RUN_AS_NODE || process.env.USER_DATA_PATH) {
-            console.log('[Updates] Closing server to allow installer to proceed...');
-            process.exit(0);
+          if (!isSimulated && fs.existsSync(installerPath)) {
+            if (process.platform === 'win32') {
+              const installerProc = spawn(installerPath, [], {
+                detached: true,
+                stdio: 'ignore'
+              });
+              installerProc.unref();
+            } else if (process.platform === 'darwin') {
+              exec(`open "${installerPath}"`);
+            } else {
+              try { fs.chmodSync(installerPath, 0o755); } catch (_) {}
+              if (installerPath.endsWith('.AppImage')) {
+                const installerProc = spawn(installerPath, [], { detached: true, stdio: 'ignore' });
+                installerProc.unref();
+              } else {
+                exec(`xdg-open "${installerPath}"`);
+              }
+            }
           }
-        } catch (_) {}
-      }, 1500);
+
+          if (process.env.ELECTRON_RUN_AS_NODE || process.env.USER_DATA_PATH) {
+            console.log('[Updates] SCMUI_QUIT_FOR_UPDATE - Closing server to allow installer to proceed...');
+            setTimeout(() => {
+              process.exit(0);
+            }, 600);
+          }
+        } catch (err: any) {
+          console.error('[Updates] Failed to launch installer detached:', err);
+        }
+      }, 800);
     } catch (e: any) {
       console.error('[Updates] Launch installer error:', e);
       res.status(500).json({ error: e?.message || 'Failed to launch installer' });
