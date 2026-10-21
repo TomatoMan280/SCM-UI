@@ -2961,7 +2961,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
       } catch (_) {}
     }
 
-    if (setsList.length === 0) {
+    if (setsList.length === 0 || !setsList.some(s => !!s.setName)) {
       try {
         const resp = await fetchOneProxyApi('/sets');
         if (resp.ok) {
@@ -2980,6 +2980,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
     const enrichedSets = setsList.map(s => {
       const setCode = s.setCode;
+      const setName = s.setName || s.name || '';
       const assetCount = Number(s.assetCount) || 0;
       const cardCount = Number(s.cardCount) || 0;
       const totalBytes = Number(s.bytes) || 0;
@@ -3011,6 +3012,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
 
       return {
         setCode,
+        setName,
         cardCount,
         assetCount,
         bytes: totalBytes,

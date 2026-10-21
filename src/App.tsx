@@ -6559,16 +6559,23 @@ export default function App() {
                                                          : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
                                                      )}
                                                    >
-                                                     <div className="flex items-start justify-between gap-1.5">
-                                                       <div className="flex items-center gap-1.5 min-w-0">
-                                                         <div className={cn(
-                                                           "w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 transition-colors",
-                                                           isSelected ? "bg-primary-500 border-primary-500 text-white" : "border-white/30 bg-white/5"
-                                                         )}>
-                                                           {isSelected && <Check size={10} strokeWidth={3} />}
-                                                         </div>
-                                                         <span className="text-xs font-bold text-white truncate">{s.setCode}</span>
-                                                       </div>
+                                                    <div className="flex items-start justify-between gap-1.5">
+                                                      <div className="flex items-start gap-1.5 min-w-0">
+                                                        <div className={cn(
+                                                          "w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 transition-colors mt-0.5",
+                                                          isSelected ? "bg-primary-500 border-primary-500 text-white" : "border-white/30 bg-white/5"
+                                                        )}>
+                                                          {isSelected && <Check size={10} strokeWidth={3} />}
+                                                        </div>
+                                                        <div className="min-w-0 flex flex-col">
+                                                          <span className="text-xs font-bold text-white truncate">{s.setCode}</span>
+                                                          {s.setName && s.setName !== s.setCode && (
+                                                            <span className="text-[10px] text-white/70 truncate font-normal leading-tight" title={s.setName}>
+                                                              {s.setName}
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                      </div>
                                                        {s.isComplete ? (
                                                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
                                                            Done
@@ -10000,32 +10007,45 @@ export default function App() {
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
                       >
                         <option value="all" className="bg-[#1a1a20]">All Sets</option>
-                        <option value="op01" className="bg-[#1a1a20]">OP01 - Romance Dawn</option>
-                        <option value="op02" className="bg-[#1a1a20]">OP02 - Paramount War</option>
-                        <option value="op03" className="bg-[#1a1a20]">OP03 - Pillars of Strength</option>
-                        <option value="op04" className="bg-[#1a1a20]">OP04 - Kingdoms of Intrigue</option>
-                        <option value="op05" className="bg-[#1a1a20]">OP05 - Awakening of the New Era</option>
-                        <option value="op06" className="bg-[#1a1a20]">OP06 - Wings of the Captain</option>
-                        <option value="op07" className="bg-[#1a1a20]">OP07 - 500 Years in the Future</option>
-                        <option value="op08" className="bg-[#1a1a20]">OP08 - Two Legends</option>
-                        <option value="op09" className="bg-[#1a1a20]">OP09 - Emperors in the New World</option>
-                        <option value="op10" className="bg-[#1a1a20]">OP10 - Royal Bloodline</option>
-                        <option value="op11" className="bg-[#1a1a20]">OP11</option>
-                        <option value="op12" className="bg-[#1a1a20]">OP12</option>
-                        <option value="op13" className="bg-[#1a1a20]">OP13</option>
-                        <option value="op14" className="bg-[#1a1a20]">OP14</option>
-                        <option value="op15" className="bg-[#1a1a20]">OP15</option>
-                        <option value="eb01" className="bg-[#1a1a20]">EB01 - Memorial Collection</option>
-                        <option value="eb02" className="bg-[#1a1a20]">EB02</option>
-                        <option value="prb01" className="bg-[#1a1a20]">PRB01 - Premium Booster</option>
-                        <option value="st01" className="bg-[#1a1a20]">ST01 - Straw Hat Crew</option>
-                        <option value="st02" className="bg-[#1a1a20]">ST02 - Worst Generation</option>
-                        <option value="st03" className="bg-[#1a1a20]">ST03 - The Seven Warlords</option>
-                        <option value="st04" className="bg-[#1a1a20]">ST04 - Animal Kingdom Pirates</option>
-                        <option value="st10" className="bg-[#1a1a20]">ST10 - Three Captains</option>
-                        <option value="st13" className="bg-[#1a1a20]">ST13 - 3 Brothers</option>
-                        <option value="don" className="bg-[#1a1a20]">DON!! Cards</option>
-                        <option value="back" className="bg-[#1a1a20]">Card Backings</option>
+                        {oneProxySets && oneProxySets.length > 0 ? (
+                          oneProxySets.map((s) => (
+                            <option key={s.setCode} value={s.setCode.toLowerCase()} className="bg-[#1a1a20]">
+                              {s.setCode}{s.setName && s.setName !== s.setCode ? ` - ${s.setName}` : ''}
+                            </option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="op01" className="bg-[#1a1a20]">OP01 - Romance Dawn</option>
+                            <option value="op02" className="bg-[#1a1a20]">OP02 - Paramount War</option>
+                            <option value="op03" className="bg-[#1a1a20]">OP03 - Pillars of Strength</option>
+                            <option value="op04" className="bg-[#1a1a20]">OP04 - Kingdoms of Intrigue</option>
+                            <option value="op05" className="bg-[#1a1a20]">OP05 - Awakening of the New Era</option>
+                            <option value="op06" className="bg-[#1a1a20]">OP06 - Wings of the Captain</option>
+                            <option value="op07" className="bg-[#1a1a20]">OP07 - 500 Years in the Future</option>
+                            <option value="op08" className="bg-[#1a1a20]">OP08 - Two Legends</option>
+                            <option value="op09" className="bg-[#1a1a20]">OP09 - Emperors in the New World</option>
+                            <option value="op10" className="bg-[#1a1a20]">OP10 - Royal Bloodline</option>
+                            <option value="op11" className="bg-[#1a1a20]">OP11</option>
+                            <option value="op12" className="bg-[#1a1a20]">OP12</option>
+                            <option value="op13" className="bg-[#1a1a20]">OP13</option>
+                            <option value="op14" className="bg-[#1a1a20]">OP14</option>
+                            <option value="op15" className="bg-[#1a1a20]">OP15</option>
+                            <option value="eb01" className="bg-[#1a1a20]">EB01 - Memorial Collection</option>
+                            <option value="eb02" className="bg-[#1a1a20]">EB02 - Anime 25th Collection</option>
+                            <option value="eb03" className="bg-[#1a1a20]">EB03 - One Piece Heroines Edition</option>
+                            <option value="eb04" className="bg-[#1a1a20]">EB04 - Egghead Crisis</option>
+                            <option value="eb05" className="bg-[#1a1a20]">EB05 - One Piece Heroines Edition vol.2</option>
+                            <option value="prb01" className="bg-[#1a1a20]">PRB01 - Premium Booster</option>
+                            <option value="st01" className="bg-[#1a1a20]">ST01 - Straw Hat Crew</option>
+                            <option value="st02" className="bg-[#1a1a20]">ST02 - Worst Generation</option>
+                            <option value="st03" className="bg-[#1a1a20]">ST03 - The Seven Warlords</option>
+                            <option value="st04" className="bg-[#1a1a20]">ST04 - Animal Kingdom Pirates</option>
+                            <option value="st10" className="bg-[#1a1a20]">ST10 - Three Captains</option>
+                            <option value="st13" className="bg-[#1a1a20]">ST13 - 3 Brothers</option>
+                            <option value="don" className="bg-[#1a1a20]">DON!! Cards</option>
+                            <option value="back" className="bg-[#1a1a20]">Card Backings</option>
+                          </>
+                        )}
                       </select>
                     </div>
 
