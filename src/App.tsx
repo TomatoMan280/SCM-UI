@@ -186,9 +186,12 @@ const cleanCardName = (filename?: string | null): string => {
   let clean = stripExt(filename);
   // Strip duplicate tags like _copy, _copy2, (1), etc.
   clean = clean.replace(/_copy\d*$/i, '').replace(/\s*\(\d+\)$/, '');
-  // Strip parenthetical set and collector number info e.g. " (SLD 243)" or " [LEA 12]"
-  clean = clean.replace(/\s*\([a-zA-Z0-9]+\s+[a-zA-Z0-9]+\)$/i, '');
-  clean = clean.replace(/\s*\[[a-zA-Z0-9]+(?:\s+[a-zA-Z0-9]+)?\]$/i, '');
+  // Strip DPI tags like "(MPC 800 DPI)", "(800 DPI)", "(1200 DPI)", "[800 DPI]", "(800DPI)", "800 DPI"
+  clean = clean.replace(/\s*[\(\[](?:[a-zA-Z0-9_-]+\s+)?\d+\s*dpi[\)\]]/gi, '');
+  clean = clean.replace(/[\s_\-]+(?:MPC\s+)?\d+\s*dpi/gi, '');
+  // Strip parenthetical set and collector number info e.g. " (SLD 243)", " [LEA 12]", " (MPC 800)", " (MPC 1)"
+  clean = clean.replace(/\s*\([a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_#-]+)+\)$/i, '');
+  clean = clean.replace(/\s*\[[a-zA-Z0-9_-]+(?:\s+[a-zA-Z0-9_#-]+)+\]$/i, '');
   // Strip quantity prefixes e.g. "1x ", "4x ", "1 "
   clean = clean.replace(/^[0-9]+x?\s+/, '');
   // Handle SCM's squished format e.g. "1blacklotus1" -> strip leading digits and trailing digits
@@ -3186,10 +3189,10 @@ export default function App() {
   // MPC Filters
   const [mpcFilters, setMpcFilters] = useState({
     dpi: 'all',
-    face: 'all',
+    face: 'fronts',
     tag: 'all',
     set: '',
-    order: 'dpi_desc',
+    order: 'default',
     lang: 'all'
   });
 
@@ -3216,6 +3219,7 @@ export default function App() {
   const [isArtPickerOpen, setIsArtPickerOpen] = useState(false);
   const [artQuery, setArtQuery] = useState('');
   const [artResults, setArtResults] = useState<any[]>([]);
+  const [visibleArtCount, setVisibleArtCount] = useState<number>(40);
   const [isSearchingArt, setIsSearchingArt] = useState(false);
   const [artDownloadMsg, setArtDownloadMsg] = useState<string | null>(null);
 
@@ -3225,6 +3229,7 @@ export default function App() {
     const queryTerm = (name || '').trim();
     setIsSearchingArt(true);
     setArtDownloadMsg(null);
+    setVisibleArtCount(40);
     try {
       if (activeSource === 'limitless' || (currentPluginId === 'pokemon' && activeSource !== 'mpcfill')) {
         const pf = customFilters || pokemonFilters;
@@ -3242,18 +3247,21 @@ export default function App() {
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
           setArtResults(data.data);
+          setVisibleArtCount(40);
           if (data.data.length === 0) {
             setArtDownloadMsg(`No matching Pokémon cards found for "${queryTerm || 'filters'}" on Limitless.`);
           }
         } else {
           setArtResults([]);
+          setVisibleArtCount(40);
           setArtDownloadMsg(data.error || "No matching Pokémon cards found on Limitless.");
         }
       } else if (activeSource === 'mpcfill') {
         const mp = customFilters || mpcFilters;
+        const isBackMode = isBacksOnlyModal || mp.face === 'backs';
         const params = new URLSearchParams({
           q: queryTerm,
-          isBack: isBacksOnlyModal ? 'true' : 'false',
+          isBack: isBackMode ? 'true' : 'false',
           face: mp.face || 'all',
           dpi: mp.dpi || 'all',
           set: mp.set || '',
@@ -3264,12 +3272,14 @@ export default function App() {
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
           setArtResults(data.data);
+          setVisibleArtCount(40);
           if (data.data.length === 0) {
-            setArtDownloadMsg("No matching cards found in MPCFill.");
+            setArtDownloadMsg(isBackMode ? "No matching card backings found in MPCFill." : "No matching cards found in MPCFill.");
           }
         } else {
           setArtResults([]);
-          setArtDownloadMsg("No matching cards found in MPCFill.");
+          setVisibleArtCount(40);
+          setArtDownloadMsg(isBackMode ? "No matching card backings found in MPCFill." : "No matching cards found in MPCFill.");
         }
       } else if (activeSource === 'scryfall' && currentPluginId === 'mtg') {
         const sf = customFilters || scryfallFilters;
@@ -3430,10 +3440,14 @@ export default function App() {
     }
 
     if (isBack) {
+      setIsBacksOnlyModal(true);
       setArtSourceTab('mpcfill');
       setArtTargetCard({ name: cardFilename, type: 'back', targetMode: 'back', targets });
       setArtQuery('');
+      const updated = { ...mpcFilters, face: 'backs' };
+      setMpcFilters(updated);
       setIsArtPickerOpen(true);
+      handleSearchArt('', updated, 'mpcfill');
     } else if (targetMode === 'double_sided') {
       const cleaned = cleanCardName(cardFilename);
       const isOneProxy = currentPluginId === 'one_piece' || currentPluginId === 'oneproxy';
@@ -3464,16 +3478,24 @@ export default function App() {
     if (!pluginSupportsCardIngestion(currentPluginId)) return;
     const isOneProxy = currentPluginId === 'one_piece' || currentPluginId === 'oneproxy';
     const provider = getPluginCardProvider(isOneProxy ? 'oneproxy' : currentPluginId, pluginState.format);
-    const defaultSource = source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId)));
-    setIsBacksOnlyModal(type === 'back');
+    const isBack = type === 'back';
+    const defaultSource = isBack ? 'mpcfill' : (source || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId))));
+    setIsBacksOnlyModal(isBack);
     setArtSourceTab(defaultSource);
     setArtTargetCard(null);
-    const initialQuery = provider.defaultQuery;
+    const initialQuery = isBack ? '' : provider.defaultQuery;
     setArtQuery(initialQuery);
     setArtResults([]);
+    setVisibleArtCount(40);
     setArtDownloadMsg(null);
     setIsArtPickerOpen(true);
-    handleSearchArt(initialQuery, undefined, defaultSource);
+    const initialFilters = isBack 
+      ? { ...mpcFilters, face: 'backs' } 
+      : (defaultSource === 'mpcfill' ? { ...mpcFilters, face: 'fronts' } : undefined);
+    if (isBack || defaultSource === 'mpcfill') {
+      setMpcFilters(initialFilters!);
+    }
+    handleSearchArt(initialQuery, initialFilters, defaultSource);
   };
 
 
@@ -5196,7 +5218,7 @@ export default function App() {
                       "font-mono text-[10px] transition-colors",
                       updateInfo?.hasUpdate ? "text-primary-400 font-bold" : "text-white/80 group-hover/ver:text-white"
                     )}>
-                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.10'}
+                      {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.11'}
                     </span>
                   </div>
                 </div>
@@ -6115,7 +6137,6 @@ export default function App() {
                             setActiveTab('assets');
                             setAssetViewMode('plugins');
                             setSelectedAssets(new Set());
-                            if (assetFilter === 'back') setAssetFilter('all');
                           }}
                           className={cn(
                             "flex-1 py-2 px-3 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all text-center",
@@ -6233,17 +6254,15 @@ export default function App() {
                           >
                             Fronts
                           </button>
-                          {assetViewMode !== 'plugins' && (
-                            <button
-                              onClick={() => setAssetFilter('back')}
-                              className={cn(
-                                "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
-                                assetFilter === 'back' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
-                              )}
-                            >
-                              Backs
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setAssetFilter('back')}
+                            className={cn(
+                              "px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest transition-all",
+                              assetFilter === 'back' ? "bg-white/10 text-white" : "text-white/40 hover:text-white"
+                            )}
+                          >
+                            Backs
+                          </button>
                         </div>
 
                         <div className="hidden sm:block h-6 w-px bg-white/5" />
@@ -7516,13 +7535,14 @@ export default function App() {
 
                   <div className="space-y-16">
                     {/* Back Patterns Section */}
-                    {(assetFilter === 'all' || assetFilter === 'back') && assetViewMode !== 'plugins' && (
+                    {(assetFilter === 'all' || assetFilter === 'back') && (
                       <section className="space-y-6">
                         <DropZone
                           label="Drag and drop area for backs"
                           isLibrary={assetViewMode === 'library'}
-                          disabled={false}
+                          disabled={assetViewMode === 'plugins'}
                           onDrop={async (files, isLibrary) => {
+                            if (assetViewMode === 'plugins') return;
                             const filesToUpload = isLibrary ? Array.from(files) : [files[0]];
                             addLog(`[Uploader] Dropped ${filesToUpload.length} back patterns. Starting upload...`);
                             for (const file of filesToUpload) {
@@ -7544,7 +7564,6 @@ export default function App() {
                               </h3>
                             </div>
                             <div className="flex items-center gap-2">
-
                               <button onClick={() => setCollapsedSections(s => ({ ...s, backs: !s.backs }))} className="p-1 hover:bg-white/5 rounded-lg text-white/40 hover:text-white transition-colors">
                                 <ChevronDown size={18} className={cn("transition-transform", collapsedSections.backs && "-rotate-90")} />
                               </button>
@@ -7556,18 +7575,21 @@ export default function App() {
                               className="grid gap-4 sm:gap-6 p-4 sm:p-6 bg-white/[0.02] border border-white/5 rounded-2xl sm:rounded-[40px] mt-6"
                               style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${cardWidth}px), 1fr))` }}
                             >
-                              <TemplateCard
-                                type="back"
-                                multiple={assetViewMode === 'library'}
-                                onUpload={async (files) => {
-                                  for (let i = 0; i < files.length; i++) {
-                                    setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
-                                    await handleUpload(files[i], 'back', assetViewMode === 'library');
-                                  }
-                                  setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
-                                  setTimeout(() => setTaskProgress(null), 1500);
-                                }}
-                              />
+                              {assetViewMode !== 'plugins' && (
+                                <TemplateCard
+                                  type="back"
+                                  multiple={assetViewMode === 'library'}
+                                  onUpload={async (files) => {
+                                    for (let i = 0; i < files.length; i++) {
+                                      setTaskProgress({ current: i + 1, total: files.length, message: `Uploading ${files[i].name}...` });
+                                      await handleUpload(files[i], 'back', assetViewMode === 'library');
+                                    }
+                                    setTaskProgress(prev => prev ? { ...prev, message: 'Upload complete.' } : null);
+                                    setTimeout(() => setTaskProgress(null), 1500);
+                                  }}
+                                />
+                              )}
+
                               {getAllAssets('back')
                                 .filter(img => img.toLowerCase().includes(assetSearch.toLowerCase()))
                                 .map((img: string, i: number) => (
@@ -8439,7 +8461,7 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-semibold uppercase tracking-wider text-white/50">Current Version</span>
                           <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-white/10 text-white font-bold">
-                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.10'}
+                            {updateInfo?.currentVersion ? (updateInfo.currentVersion.startsWith('v') || updateInfo.currentVersion.startsWith('V') ? updateInfo.currentVersion : `v${updateInfo.currentVersion}`) : 'v3.0.11'}
                           </span>
                         </div>
                         {updateInfo?.hasUpdate ? (
@@ -9159,7 +9181,7 @@ export default function App() {
                         isCardArtSubmenuOpen ? "flex" : "hidden group-hover/art:flex"
                       )}
                     >
-                      {/* Set Art (Card Ingestion) */}
+                      {/* Set Art / Replace Back (Card Ingestion) */}
                       {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
                         <button
                           onClick={(e) => {
@@ -9167,7 +9189,7 @@ export default function App() {
                             openArtPickerForCard(
                               contextMenu.name,
                               (contextMenu.type as any) || 'front',
-                              'front',
+                              contextMenu.type === 'back' ? 'back' : 'front',
                               undefined,
                               isMultiSelected ? targetCards : undefined
                             );
@@ -9175,14 +9197,16 @@ export default function App() {
                             setIsCardArtSubmenuOpen(false);
                           }}
                           className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                          title={isMultiSelected ? `Search and set front card artwork for all ${targets.length} selected cards via card ingestion` : "Search and set front card artwork via card ingestion"}
+                          title={isMultiSelected 
+                            ? (contextMenu.type === 'back' ? `Search and replace back pattern for all ${targets.length} selected backs` : `Search and set front card artwork for all ${targets.length} selected cards via card ingestion`)
+                            : (contextMenu.type === 'back' ? "Search and replace this card back pattern" : "Search and set front card artwork via card ingestion")}
                         >
                           <ImageIcon size={14} className="text-primary-400 group-hover:text-primary-300 shrink-0" />
-                          <span className="truncate font-medium">Set Art (Card Ingestion){isMultiSelected ? ` (${targets.length})` : ''}</span>
+                          <span className="truncate font-medium">{contextMenu.type === 'back' ? 'Replace Back (Card Ingestion)' : 'Set Art (Card Ingestion)'}{isMultiSelected ? ` (${targets.length})` : ''}</span>
                         </button>
                       )}
 
-                      {/* Set Art (Manual Upload) */}
+                      {/* Set Art / Replace Back (Manual Upload) */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -9195,23 +9219,23 @@ export default function App() {
                           setIsCardArtSubmenuOpen(false);
                         }}
                         className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                        title={isMultiSelected ? `Upload front artwork file to apply to all ${targets.length} selected cards` : "Upload front artwork file from your computer"}
+                        title={isMultiSelected 
+                          ? (contextMenu.type === 'back' ? `Upload back pattern file to apply to all ${targets.length} selected backs` : `Upload front artwork file to apply to all ${targets.length} selected cards`)
+                          : (contextMenu.type === 'back' ? "Upload replacement back file from your computer" : "Upload front artwork file from your computer")}
                       >
                         <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate font-medium">Set Art (Manual Upload){isMultiSelected ? ` (${targets.length})` : ''}</span>
+                        <span className="truncate font-medium">{contextMenu.type === 'back' ? 'Replace Back (Manual Upload)' : 'Set Art (Manual Upload)'}{isMultiSelected ? ` (${targets.length})` : ''}</span>
                       </button>
 
-                      {/* Set Back (Card Ingestion) */}
-                      {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
+                      {/* Set Back (Card Ingestion) - Hidden for cards in the Backs section */}
+                      {contextMenu.type !== 'back' && pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            const backTargetMode = contextMenu.type === 'back' ? 'back' : 'double_sided';
-                            const backType = contextMenu.type === 'back' ? 'back' : ((contextMenu.type as any) || 'front');
                             openArtPickerForCard(
                               contextMenu.name,
-                              backType,
-                              backTargetMode,
+                              (contextMenu.type as any) || 'front',
+                              'double_sided',
                               undefined,
                               isMultiSelected ? targetCards : undefined
                             );
@@ -9226,25 +9250,26 @@ export default function App() {
                         </button>
                       )}
 
-                      {/* Set Back (Manual Upload) */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const backType = contextMenu.type === 'back' ? 'back' : 'double_sided';
-                          handleManualCardUploadTrigger(
-                            contextMenu.name,
-                            backType,
-                            isMultiSelected ? targetCards : undefined
-                          );
-                          setContextMenu(null);
-                          setIsCardArtSubmenuOpen(false);
-                        }}
-                        className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
-                        title={isMultiSelected ? `Upload card back pattern to apply to all ${targets.length} selected cards` : "Upload card back pattern from your computer"}
-                      >
-                        <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
-                        <span className="truncate font-medium">Set Back (Manual Upload){isMultiSelected ? ` (${targets.length})` : ''}</span>
-                      </button>
+                      {/* Set Back (Manual Upload) - Hidden for cards in the Backs section */}
+                      {contextMenu.type !== 'back' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleManualCardUploadTrigger(
+                              contextMenu.name,
+                              'double_sided',
+                              isMultiSelected ? targetCards : undefined
+                            );
+                            setContextMenu(null);
+                            setIsCardArtSubmenuOpen(false);
+                          }}
+                          className={cn(itemBaseCls, "text-white/85 hover:text-white hover:bg-white/10 group")}
+                          title={isMultiSelected ? `Upload card back pattern to apply to all ${targets.length} selected cards` : "Upload card back pattern from your computer"}
+                        >
+                          <Upload size={14} className="text-white/40 group-hover:text-white shrink-0" />
+                          <span className="truncate font-medium">Set Back (Manual Upload){isMultiSelected ? ` (${targets.length})` : ''}</span>
+                        </button>
+                      )}
 
                     </div>
                   </div>
@@ -9755,7 +9780,12 @@ export default function App() {
                         <span className="px-2 py-0.5 rounded-full bg-primary-600/30 text-primary-300 text-[10px] font-mono border border-primary-500/30">
                           {artTargetCard.targets && artTargetCard.targets.length > 1
                             ? `${artTargetCard.targets.length} Cards Selected (${artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})`
-                            : `${artTargetCard.name} (${artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})`}
+                            : `${cleanCardName(artTargetCard.name)} (${artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})`}
+                        </span>
+                      )}
+                      {artResults.length > 0 && !isSearchingArt && (
+                        <span className="px-2 py-0.5 rounded-full bg-white/10 text-primary-300 text-[10px] font-mono border border-white/10">
+                          {artResults.length} {isBacksOnlyModal || mpcFilters.face === 'backs' ? 'Backings' : 'Arts'}
                         </span>
                       )}
                     </div>
@@ -9812,7 +9842,11 @@ export default function App() {
                         onClick={() => {
                           setSetBackSearchCategory('backs');
                           setIsBacksOnlyModal(true);
-                          handleSearchArt(artQuery, undefined, 'mpcfill');
+                          setArtSourceTab('mpcfill');
+                          const updated = { ...mpcFilters, face: 'backs' };
+                          setMpcFilters(updated);
+                          setArtQuery('');
+                          handleSearchArt('', updated, 'mpcfill');
                         }}
                         className={cn(
                           "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
@@ -9825,13 +9859,17 @@ export default function App() {
                   ) : (
                     /* Provider Tabs */
                     <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
-                      {pluginState.selectedPlugin?.id === 'mtg' ? (
+                      {isBacksOnlyModal ? (
+                        <div className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-primary-600 text-white shadow-lg flex items-center gap-1.5 select-none">
+                          <ImageIcon size={13} /> MPC Backs
+                        </div>
+                      ) : pluginState.selectedPlugin?.id === 'mtg' ? (
                         <>
                           <button
                             type="button"
                             onClick={() => {
                               setArtSourceTab('scryfall');
-                              handleSearchArt(artQuery || (isBacksOnlyModal ? 'Cardback' : 'Sol Ring'), undefined, 'scryfall');
+                              handleSearchArt(artQuery || 'Sol Ring', undefined, 'scryfall');
                             }}
                             className={cn(
                               "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
@@ -9844,7 +9882,9 @@ export default function App() {
                             type="button"
                             onClick={() => {
                               setArtSourceTab('mpcfill');
-                              handleSearchArt(artQuery || (isBacksOnlyModal ? 'Cardback' : 'Sol Ring'), undefined, 'mpcfill');
+                              const updated = { ...mpcFilters, face: 'fronts' };
+                              setMpcFilters(updated);
+                              handleSearchArt(artQuery || 'Sol Ring', updated, 'mpcfill');
                             }}
                             className={cn(
                               "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
@@ -10249,12 +10289,24 @@ export default function App() {
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Category / Face</label>
                       <select
                         value={mpcFilters.face}
+                        disabled={isBacksOnlyModal}
                         onChange={(e) => {
-                          const updated = { ...mpcFilters, face: e.target.value };
+                          const val = e.target.value;
+                          const updated = { ...mpcFilters, face: val };
                           setMpcFilters(updated);
-                          handleSearchArt(artQuery, updated, 'mpcfill');
+                          if (val === 'backs') {
+                            setIsBacksOnlyModal(true);
+                            setArtQuery('');
+                            handleSearchArt('', updated, 'mpcfill');
+                          } else {
+                            if (val === 'fronts') setIsBacksOnlyModal(false);
+                            handleSearchArt(artQuery, updated, 'mpcfill');
+                          }
                         }}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
+                        className={cn(
+                          "w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium",
+                          isBacksOnlyModal && "opacity-60 cursor-not-allowed"
+                        )}
                       >
                         <option value="all" className="bg-[#1a1a20]">All (Cards & Backs)</option>
                         <option value="fronts" className="bg-[#1a1a20]">Front Art Only</option>
@@ -10316,6 +10368,7 @@ export default function App() {
                         }}
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white/80 focus:outline-none focus:border-primary-500 font-medium"
                       >
+                        <option value="default" className="bg-[#1a1a20]">MPCFill Default (Popularity)</option>
                         <option value="dpi_desc" className="bg-[#1a1a20]">DPI: High to Low</option>
                         <option value="dpi_asc" className="bg-[#1a1a20]">DPI: Low to High</option>
                         <option value="name" className="bg-[#1a1a20]">Name (A-Z)</option>
@@ -10640,7 +10693,17 @@ export default function App() {
               </div>
 
               {/* Modal Body: Results Grid */}
-              <div className="flex-1 overflow-y-auto p-5">
+              <div 
+                className="flex-1 overflow-y-auto p-5"
+                onScroll={(e) => {
+                  const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+                  if (scrollHeight - scrollTop - clientHeight < 450) {
+                    if (visibleArtCount < artResults.length) {
+                      setVisibleArtCount(prev => Math.min(prev + 40, artResults.length));
+                    }
+                  }
+                }}
+              >
                 {isSearchingArt ? (
                   <div className="h-72 flex flex-col items-center justify-center gap-3 text-white/40">
                     <Loader2 size={36} className="animate-spin text-primary-400" />
@@ -10659,6 +10722,7 @@ export default function App() {
                         }
                         return 0;
                       })
+                      .slice(0, visibleArtCount)
                       .map((card) => {
                         const fullImg = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
                         const thumbImg = card.thumbnailUrl || card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || card.image_uris?.normal || fullImg;
@@ -10775,7 +10839,7 @@ export default function App() {
                                 >
                                   {artTargetCard.targets && artTargetCard.targets.length > 1 ? `Replace Front Art (${artTargetCard.targets.length} Cards)` : 'Replace Front Art'}
                                 </button>
-                              ) : isBacksOnlyModal ? (
+                              ) : isBacksOnlyModal || card.isBack || card.cardType === 'CARDBACK' || mpcFilters.face === 'backs' ? (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -10783,10 +10847,10 @@ export default function App() {
                                     handleDownloadCardArt(card, targetMode, 'back');
                                   }}
                                   className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
-                                  title="Add this card backing to workspace"
+                                  title={assetViewMode === 'plugins' ? "Add this card backing to plugins library" : "Add this card backing to workspace"}
                                 >
                                   <PlusCircle size={12} />
-                                  <span>Add Back</span>
+                                  <span>{assetViewMode === 'plugins' ? 'Add Back to Plugins' : 'Add Back'}</span>
                                 </button>
                               ) : (
                                 <button
@@ -10796,22 +10860,47 @@ export default function App() {
                                     handleDownloadCardArt(card, targetMode, 'front');
                                   }}
                                   className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
-                                  title="Add this card to your active workspace"
+                                  title={assetViewMode === 'plugins' ? "Add this card to plugins library" : "Add this card to your active workspace"}
                                 >
                                   <PlusCircle size={12} />
-                                  <span>Add Card</span>
+                                  <span>{assetViewMode === 'plugins' ? 'Add Card to Plugins' : 'Add Card'}</span>
                                 </button>
                               )}
                             </div>
                           </div>
                         );
                       })}
+
+                    {visibleArtCount < artResults.length && (
+                      <div className="col-span-full py-8 flex flex-col items-center justify-center gap-3">
+                        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white/70">
+                          <Loader2 size={15} className="animate-spin text-primary-400" />
+                          <span>Showing {Math.min(visibleArtCount, artResults.length)} of {artResults.length} {isBacksOnlyModal || mpcFilters.face === 'backs' ? 'card backings' : 'arts'}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] text-white/40">Scroll down to load more</span>
+                          <span className="text-white/20">•</span>
+                          <button
+                            type="button"
+                            onClick={() => setVisibleArtCount(artResults.length)}
+                            className="px-3 py-1 bg-white/5 hover:bg-white/10 text-white/70 hover:text-white rounded-lg text-[11px] font-medium transition-colors cursor-pointer border border-white/10"
+                          >
+                            Load all {artResults.length} at once
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {visibleArtCount >= artResults.length && artResults.length > 40 && (
+                      <div className="col-span-full py-6 text-center text-xs text-white/40">
+                        All {artResults.length} {isBacksOnlyModal || mpcFilters.face === 'backs' ? 'card backings' : 'cards'} loaded
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="h-72 flex flex-col items-center justify-center gap-2 text-white/30 text-center px-4">
                     <ImageIcon size={32} className="opacity-40 text-primary-400" />
                     <p className="text-sm font-semibold text-white/60">
-                      {isBacksOnlyModal ? "Type a search term above to find card back patterns." : "Type a card name above to browse printings."}
+                      {isBacksOnlyModal || mpcFilters.face === 'backs' ? "No card back patterns found." : "Type a card name above to browse printings."}
                     </p>
                   </div>
                 )}
@@ -10823,13 +10912,17 @@ export default function App() {
                     onClick={() => {
                       setArtQuery('');
                       setArtTargetCard(null);
-                      setIsBacksOnlyModal(false);
-                      setArtResults([]);
+                      if (isBacksOnlyModal || mpcFilters.face === 'backs') {
+                        handleSearchArt('', { ...mpcFilters, face: 'backs' }, 'mpcfill');
+                      } else {
+                        setArtResults([]);
+                        setVisibleArtCount(40);
+                      }
                     }}
                     className="w-full py-2.5 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95"
                   >
                     <Search size={14} />
-                    <span>Search for a different card or back...</span>
+                    <span>{isBacksOnlyModal || mpcFilters.face === 'backs' ? 'Browse all 483 card backings...' : 'Search for a different card or back...'}</span>
                   </button>
                 </div>
               </div>

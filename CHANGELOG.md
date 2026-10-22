@@ -4,6 +4,20 @@ All notable changes to **SCMUI (Silhouette Card Maker UI)** are documented in th
 
 ---
 
+## [3.0.11] - 2026-10-22
+
+### 🧹 Clean Asset Ingestion & DPI Metadata Stripping
+- **DPI Suffix Stripping**: Ingested card assets automatically strip technical metadata suffixes (such as `(MPC 800 DPI)`, `(1200 DPI)`, etc.) so downloaded files and workspace entries maintain clean, canonical card names.
+- **Smart Query Sanitization**: Scryfall and MPCFill query resolution now automatically normalize search strings containing parenthetical suffixes, guaranteeing reliable card art discovery even with technical tags in card titles.
+- **Header & Modal Badge Sanitization**: Art picker target titles and card replacement headers display cleaned names without technical DPI clutter.
+
+### 🎨 Asset Library & Plugin UI Streamlining
+- **Back Patterns Cleanup**: Removed the redundant "Import Backs" header button and the dashed "Import MPC Back" placeholder button tile from the Plugins view mode for a consistent and clean gallery experience.
+- **Context Menu Filtering**: Removed "Set Back" actions when right-clicking assets within the Back Patterns section to prevent accidental self-referential assignments.
+- **Banner Cleanliness**: Removed redundant "Back Selector" button adjacent to the primary "Card Selector" in the Game Plugins banner.
+
+---
+
 ## [3.0.10] - 2026-10-21
 
 ### ⚡ Universal Low-Resolution Thumbnails & 60 FPS Performance

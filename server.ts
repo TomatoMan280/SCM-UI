@@ -973,7 +973,9 @@ except Exception:
       if (image.width > maxWidth) {
         image.resize({ w: maxWidth });
       }
-      image.quality(75);
+      if (typeof (image as any).quality === 'function') {
+        (image as any).quality(75);
+      }
       await image.write(tempPath as any);
       try {
         fs.renameSync(tempPath, destPath);
@@ -1264,7 +1266,7 @@ except Exception:
   };
 
   const getCurrentAppVersion = () => {
-    let currentVersion = '3.0.10';
+    let currentVersion = '3.0.11';
     try {
       const possiblePkgPaths = [
         path.join(baseAppPath, 'package.json'),
@@ -1470,8 +1472,8 @@ except Exception:
       if (policy.forceUpdate && policy.simulateDownload) {
         requiredRelease = {
           id: 999999,
-          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.10',
-          name: `SCMUI v${policy.minRequiredVersion || '3.0.10'}`,
+          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.11',
+          name: `SCMUI v${policy.minRequiredVersion || '3.0.11'}`,
           publishedAt: new Date().toISOString(),
           isPrerelease: false,
           isCurrent: false,
@@ -1479,7 +1481,7 @@ except Exception:
           notes: 'Automatic background update with performance improvements.',
           htmlUrl: 'https://github.com/TomatoMan280/SCM-UI/releases',
           primaryAsset: {
-            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.10'}.exe`,
+            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.11'}.exe`,
             size: 28500000,
             downloadUrl: 'simulate',
             isInstaller: true,
@@ -1487,7 +1489,7 @@ except Exception:
           },
           assets: [
             {
-              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.10'}.exe`,
+              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.11'}.exe`,
               size: 28500000,
               downloadUrl: 'simulate',
               isInstaller: true,
@@ -1581,8 +1583,8 @@ except Exception:
     if (assetUrl === 'simulate' || req.query.simulate === 'true' || req.body.simulate === true) {
       activeDownload = {
         isDownloading: true,
-        tag: tag || 'v3.0.10',
-        assetName: assetName || 'SCMUI-Setup-3.0.10.exe',
+        tag: tag || 'v3.0.11',
+        assetName: assetName || 'SCMUI-Setup-3.0.11.exe',
         progress: 8,
         downloadedBytes: 2280000,
         totalBytes: 28500000,
@@ -2196,6 +2198,22 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
         searchRes = await fetchJson(broadUrl);
       }
 
+      // If still nothing and resolvedCardName has parentheses (e.g. flavor name "Trostani, Selesnya's Voice (Song of the People)"), strip parentheses and retry
+      if (!searchRes.data?.data && resolvedCardName && resolvedCardName.includes('(')) {
+        const noParens = resolvedCardName.replace(/\s*\([^)]*\)/g, '').trim();
+        if (noParens && noParens !== resolvedCardName) {
+          const parensQuery = (noParens.includes(' ') ? `!"${noParens}"` : noParens) + filterStr;
+          const parensUrl = `https://api.scryfall.com/cards/search?order=${encodeURIComponent(orderSort)}&q=${encodeURIComponent(parensQuery.trim())}&unique=prints`;
+          console.log(`[Scryfall] Parens fallback search: ${parensUrl}`);
+          searchRes = await fetchJson(parensUrl);
+          if (!searchRes.data?.data) {
+            const broadParensQuery = (noParens + filterStr).trim();
+            const broadParensUrl = `https://api.scryfall.com/cards/search?order=${encodeURIComponent(orderSort)}&q=${encodeURIComponent(broadParensQuery)}&unique=prints`;
+            searchRes = await fetchJson(broadParensUrl);
+          }
+        }
+      }
+
       if (searchRes.data?.data && Array.isArray(searchRes.data.data)) {
         searchRes.data.data = searchRes.data.data.map((c: any) => {
           let dpi = 300;
@@ -2259,150 +2277,260 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
     return cachedMpcSources;
   }
 
-  // MPCFill Community Art & Backings Search API (Live exploreSearch)
+  // Cached MPCFill Cardbacks
+  let cachedMpcCardbacks: any[] | null = null;
+  let lastMpcCardbacksFetch = 0;
+
+  // MPCFill Community Art & Backings Search API (Direct Editor & Cardbacks Engine)
   app.get("/api/mpc/search", async (req, res) => {
     const q = (req.query.q as string || '').trim();
-    const faceFilter = (req.query.face as string || req.query.cardType as string || 'all').toLowerCase().trim();
-    let isBack = req.query.isBack === 'true' || faceFilter === 'backs';
+    const faceFilter = (req.query.face as string || req.query.cardType as string || 'fronts').toLowerCase().trim();
+    let isBack = req.query.isBack === 'true' || faceFilter === 'backs' || q.toLowerCase() === 'cardback' || q.toLowerCase() === 'cardbacks';
     if (faceFilter === 'fronts') isBack = false;
     const dpiFilter = req.query.dpi as string || 'all';
-    const setFilter = req.query.set as string;
+    const setFilter = (req.query.set as string || '').trim().toLowerCase();
     const orderSort = (req.query.order as string) || 'dpi_desc';
     const langFilter = (req.query.lang as string || 'all').toLowerCase().trim();
 
     console.log(`[MPCFill Search] Query: "${q}", isBack: ${isBack}, face: ${faceFilter}, dpi: ${dpiFilter}, lang: ${langFilter}, order: ${orderSort}`);
 
-    // Curated fallback in case external API is unreachable
-    const curatedMpcLibrary: any[] = [
-      { id: 'classic_mtg_back', name: 'Classic MTG Cardback', dpi: 800, type: 'back', source: 'WotC Scan HQ', tags: ['Standard', 'Official Back'], imageUrl: 'https://upload.wikimedia.org/wikipedia/en/a/aa/Magic_the_gathering-card_back.jpg' },
-      { id: 'lotus_back_1200', name: 'Black Lotus Stained Glass Back', dpi: 1200, type: 'back', source: 'Algencon Drive', tags: ['Custom Back', '1200 DPI', 'Full Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Black+Lotus&format=image&version=large' },
-      { id: 'vintage_retro_back', name: 'Retro 1993 Vintage Back', dpi: 1200, type: 'back', source: 'VintageMTG', tags: ['Retro', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Time+Walk&format=image&version=large' },
-      { id: 'minimalist_dark_back', name: 'Sleeved Matte Obsidian Back', dpi: 1200, type: 'back', source: 'ProxyKing', tags: ['Minimalist', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Dark+Ritual&format=image&version=large' },
-      { id: 'anime_mox_back', name: 'Mystical Archive Japanese Back', dpi: 1200, type: 'back', source: 'Torino Custom', tags: ['Japanese', 'Anime', '1200 DPI'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Mox+Diamond&format=image&version=large' },
-      { id: 'sol_ring_masterpiece', name: 'Sol Ring', dpi: 1200, type: 'card', source: 'MPC Masterpiece', set: 'MPC', collector_number: '1200', tags: ['1200 DPI', 'Borderless', 'Full Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Sol+Ring&format=image&version=large' },
-      { id: 'black_lotus_custom', name: 'Black Lotus', dpi: 1200, type: 'card', source: 'Vintage Proxy Drive', set: 'MPC', collector_number: '001', tags: ['1200 DPI', 'Extended Art'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Black+Lotus&format=image&version=large' },
-      { id: 'mana_crypt_vintage', name: 'Mana Crypt', dpi: 1200, type: 'card', source: 'Chilli_Axe Drive', set: 'MPC', collector_number: 'MC01', tags: ['1200 DPI', 'Retro Frame'], imageUrl: 'https://api.scryfall.com/cards/named?exact=Mana+Crypt&format=image&version=large' }
-    ];
+    const minDpi = (dpiFilter && dpiFilter !== 'all') ? (parseInt(dpiFilter, 10) || 0) : 0;
+    const languages = (langFilter && langFilter !== 'all' && langFilter !== 'any') ? [langFilter.toUpperCase()] : [];
+    const sources = await getMpcSources();
 
     let results: any[] = [];
 
-    // Step 1: Query live MPCFill Explore API
     try {
-      const sources = await getMpcSources();
-      let cardTypes: string[] = [];
       if (isBack || faceFilter === 'backs') {
-        cardTypes = ['CARDBACK'];
-      } else if (faceFilter === 'fronts') {
-        cardTypes = ['CARD'];
-      } else {
-        cardTypes = [];
-      }
+        // === CARDBACKS SEARCH: Returns all 483+ community cardbacks ===
+        const now = Date.now();
+        if (!cachedMpcCardbacks || (now - lastMpcCardbacksFetch > 3600000)) {
+          console.log("[MPCFill] Fetching complete cardbacks catalog from MPCFill...");
+          const cbResp = await fetch("https://mpcfill.com/2/cardbacks/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.11" },
+            body: JSON.stringify({
+              searchSettings: {
+                filterSettings: {
+                  excludesTags: ["NSFW"],
+                  includesTags: [],
+                  languages: [],
+                  maximumDPI: 1500,
+                  maximumSize: 30,
+                  minimumDPI: 0
+                },
+                searchTypeSettings: {
+                  filterCardbacks: false,
+                  fuzzySearch: true
+                },
+                sourceSettings: { sources }
+              }
+            })
+          });
 
-      const minDpi = (dpiFilter && dpiFilter !== 'all') ? (parseInt(dpiFilter, 10) || 0) : 0;
-      const languages = (langFilter && langFilter !== 'all' && langFilter !== 'any') ? [langFilter.toUpperCase()] : [];
-
-      let sortDirection = 'dateCreatedDescending';
-      if (orderSort === 'name') sortDirection = 'nameAscending';
-
-      const explorePayload = {
-        cardTypes,
-        pageSize: 100,
-        pageStart: 0,
-        query: q || null,
-        sortBy: sortDirection,
-        searchSettings: {
-          searchTypeSettings: { fuzzySearch: true, filterCardbacks: false },
-          sourceSettings: { sources },
-          filterSettings: {
-            minimumDPI: minDpi,
-            maximumDPI: 1500,
-            maximumSize: 30,
-            languages,
-            includesTags: [],
-            excludesTags: ['NSFW']
+          if (cbResp.ok) {
+            const cbJson = await cbResp.json();
+            const cbIds: string[] = cbJson?.cardbacks || [];
+            if (cbIds.length > 0) {
+              const cardsResp = await fetch("https://mpcfill.com/2/cards/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.11" },
+                body: JSON.stringify({ cardIdentifiers: cbIds })
+              });
+              if (cardsResp.ok) {
+                const cardsJson = await cardsResp.json();
+                const cardsMap = cardsJson?.results || {};
+                cachedMpcCardbacks = cbIds.map((id, index) => {
+                  const item = cardsMap[id];
+                  if (!item) return null;
+                  return {
+                    id: `mpc_${item.identifier}`,
+                    identifier: item.identifier,
+                    name: item.name || 'Card Back',
+                    set: 'BACK',
+                    collector_number: `${item.dpi || 800} DPI`,
+                    dpi: item.dpi || 800,
+                    catalogIndex: index,
+                    imageUrl: item.downloadLink || `https://drive.google.com/uc?id=${item.identifier}&export=download`,
+                    previewUrl: `https://drive.google.com/thumbnail?sz=w1600-h1600&id=${item.identifier}`,
+                    thumbnailUrl: `/api/thumbnail?url=${encodeURIComponent(`https://drive.google.com/thumbnail?sz=w280-h392&id=${item.identifier}`)}`,
+                    fallbackUrl: item.smallThumbnailUrl || `https://drive.google.com/thumbnail?sz=w400-h400&id=${item.identifier}`,
+                    source: item.sourceName || item.source || 'MPC Community Back',
+                    language: item.language || 'EN',
+                    tags: [
+                      ...(item.dpi ? [`${item.dpi} DPI`] : []),
+                      ...(item.source ? [item.source] : []),
+                      'Card Back'
+                    ],
+                    cardType: 'CARDBACK',
+                    isBack: true
+                  };
+                }).filter(Boolean);
+                lastMpcCardbacksFetch = now;
+                console.log(`[MPCFill] Successfully indexed ${cachedMpcCardbacks.length} cardbacks!`);
+              }
+            }
           }
         }
-      };
 
-      const mpcResp = await fetch("https://mpcfill.com/2/exploreSearch/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "User-Agent": "SCMUI/1.1.0"
-        },
-        body: JSON.stringify(explorePayload)
-      });
-
-      if (mpcResp.ok) {
-        const mpcJson = await mpcResp.json();
-        const rawItems = mpcJson?.cards || [];
-        if (Array.isArray(rawItems) && rawItems.length > 0) {
-          results = rawItems.map((item: any) => ({
-            id: item.identifier || item.id,
-            name: item.name,
-            set: item.cardType === 'CARDBACK' ? 'BACK' : 'MPC',
-            collector_number: `${item.dpi || 1200} DPI`,
-            dpi: item.dpi || 1200,
-            imageUrl: item.downloadLink || `https://drive.google.com/uc?id=${item.identifier}&export=download`,
-            previewUrl: `https://drive.google.com/thumbnail?sz=w1600-h1600&id=${item.identifier}`,
-            thumbnailUrl: item.smallThumbnailUrl || `https://drive.google.com/thumbnail?sz=w280-h392&id=${item.identifier}`,
-            fallbackUrl: `https://drive.google.com/thumbnail?sz=w200-h280&id=${item.identifier}`,
-            source: item.source || item.sourceName || 'MPC Community Drive',
-            tags: [
-              ...(item.dpi ? [`${item.dpi} DPI`] : []),
-              ...(item.source ? [item.source] : []),
-              ...(item.language ? [item.language] : []),
-              ...(Array.isArray(item.tags) ? item.tags : [])
-            ],
-            language: item.language || 'EN',
-            cardType: item.cardType
-          }));
+        let filteredBacks = cachedMpcCardbacks ? [...cachedMpcCardbacks] : [];
+        if (q && !['cardback', 'cardbacks', 'back', 'backs'].includes(q.toLowerCase())) {
+          const qTerms = q.toLowerCase().split(' ').filter(Boolean);
+          const nameMatches = filteredBacks.filter(b => qTerms.every(term => 
+            (b.name || '').toLowerCase().includes(term) || 
+            (b.source || '').toLowerCase().includes(term) ||
+            (b.tags && b.tags.some((t: string) => t.toLowerCase().includes(term)))
+          ));
+          // Only apply filter if it produces results; otherwise preserve full catalog so user always has options
+          if (nameMatches.length > 0) {
+            filteredBacks = nameMatches;
+          }
         }
+
+        if (minDpi > 0) {
+          filteredBacks = filteredBacks.filter(b => (b.dpi || 0) >= minDpi);
+        }
+
+        results = filteredBacks;
       } else {
-        console.warn(`[MPCFill Search] Live API returned status ${mpcResp.status}`);
+        // === CARD ART SEARCH: Returns all 74+ community alternate arts ===
+        let queryNames: string[] = [];
+        if (q) {
+          queryNames.push(q);
+          const noParens = q.replace(/\s*\([^)]*\)/g, '').trim();
+          if (noParens && noParens !== q && !queryNames.some(qn => qn.toLowerCase() === noParens.toLowerCase())) {
+            queryNames.push(noParens);
+          }
+          // Resolve canonical MTG card name through Scryfall fuzzy match to handle singular/plural and typos
+          for (const cand of [noParens || q, q]) {
+            try {
+              const fuzzyRes = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cand)}`, {
+                headers: { 'User-Agent': 'SCMUI/3.0.11' }
+              });
+              if (fuzzyRes.ok) {
+                const sfData = await fuzzyRes.json();
+                if (sfData.name && !queryNames.some(qn => qn.toLowerCase() === sfData.name.toLowerCase())) {
+                  queryNames.push(sfData.name);
+                }
+                break;
+              }
+            } catch (_) {}
+          }
+        } else {
+          queryNames = ['Sol Ring'];
+        }
+
+        const queries = queryNames.map(name => ({
+          cardType: "CARD",
+          query: name
+        }));
+
+        const editorPayload = {
+          queries,
+          searchSettings: {
+            filterSettings: {
+              excludesTags: ["NSFW"],
+              includesTags: [],
+              languages,
+              maximumDPI: 1500,
+              maximumSize: 30,
+              minimumDPI: minDpi
+            },
+            searchTypeSettings: {
+              filterCardbacks: false,
+              fuzzySearch: true
+            },
+            sourceSettings: { sources }
+          }
+        };
+
+        const editorResp = await fetch("https://mpcfill.com/2/editorSearch/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.11" },
+          body: JSON.stringify(editorPayload)
+        });
+
+        if (editorResp.ok) {
+          const editorJson = await editorResp.json();
+          let cardIds: string[] = [];
+          if (editorJson.results && typeof editorJson.results === 'object') {
+            for (const cardKey of Object.keys(editorJson.results)) {
+              const typeObj = editorJson.results[cardKey];
+              if (typeObj && typeof typeObj === 'object') {
+                for (const t of Object.keys(typeObj)) {
+                  if (Array.isArray(typeObj[t])) {
+                    cardIds.push(...typeObj[t]);
+                  }
+                }
+              }
+            }
+          }
+          cardIds = Array.from(new Set(cardIds));
+
+          if (cardIds.length > 0) {
+            const cardsResp = await fetch("https://mpcfill.com/2/cards/", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.11" },
+              body: JSON.stringify({ cardIdentifiers: cardIds })
+            });
+
+            if (cardsResp.ok) {
+              const cardsJson = await cardsResp.json();
+              const cardsMap = cardsJson?.results || {};
+              results = cardIds.map(id => {
+                const item = cardsMap[id];
+                if (!item) return null;
+                return {
+                  id: `mpc_${item.identifier}`,
+                  identifier: item.identifier,
+                  name: item.name,
+                  set: 'MPC',
+                  collector_number: `${item.dpi || 1200} DPI`,
+                  dpi: item.dpi || 1200,
+                  imageUrl: item.downloadLink || `https://drive.google.com/uc?id=${item.identifier}&export=download`,
+                  previewUrl: `https://drive.google.com/thumbnail?sz=w1600-h1600&id=${item.identifier}`,
+                  thumbnailUrl: `/api/thumbnail?url=${encodeURIComponent(`https://drive.google.com/thumbnail?sz=w280-h392&id=${item.identifier}`)}`,
+                  fallbackUrl: item.smallThumbnailUrl || `https://drive.google.com/thumbnail?sz=w400-h400&id=${item.identifier}`,
+                  source: item.sourceName || item.source || 'MPC Community Drive',
+                  language: item.language || 'EN',
+                  tags: [
+                    ...(item.dpi ? [`${item.dpi} DPI`] : []),
+                    ...(item.source ? [item.source] : []),
+                    ...(item.language ? [item.language] : []),
+                    ...(Array.isArray(item.tags) ? item.tags : [])
+                  ],
+                  cardType: item.cardType || 'CARD',
+                  isBack: false
+                };
+              }).filter(Boolean);
+            }
+          }
+        }
       }
     } catch (e: any) {
-      console.warn(`[MPCFill Search] Live API call failed: ${e.message}`);
+      console.warn(`[MPCFill Search Error]: ${e.message}`);
     }
 
-    // Step 2: Fallback to curated library if no live results
-    if (results.length === 0) {
-      const filteredCurated = curatedMpcLibrary.filter(item => {
-        if (faceFilter === 'backs' && item.type !== 'back') return false;
-        if (faceFilter === 'fronts' && item.type === 'back') return false;
-        if (isBack && item.type !== 'back') return false;
-        if (!isBack && item.type === 'back' && q) {
-          if (!q.toLowerCase().includes('back') && !q.toLowerCase().includes('cardback')) return false;
-        }
-        if (q) {
-          const searchTerms = q.toLowerCase().split(' ');
-          const matchesName = searchTerms.every(term => item.name.toLowerCase().includes(term));
-          const matchesTags = item.tags && item.tags.some((t: string) => t.toLowerCase().includes(q.toLowerCase()));
-          return matchesName || matchesTags;
-        }
-        return isBack ? item.type === 'back' : true;
-      });
-      results = [...filteredCurated];
-    }
-
-    // Optional Set filter
-    if (setFilter && setFilter.trim() !== '') {
-      const targetSet = setFilter.trim().toLowerCase();
+    // Set filter
+    if (setFilter) {
       results = results.filter(item => {
-        return (item.set && item.set.toLowerCase() === targetSet) || 
-               (item.tags && item.tags.some((t: string) => t.toLowerCase().includes(targetSet)));
+        return (item.set && item.set.toLowerCase() === setFilter) ||
+               (item.tags && item.tags.some((t: string) => t.toLowerCase().includes(setFilter)));
       });
     }
 
-    // Step 3: Sort results
+    // Sort results
     if (orderSort === 'dpi_desc') {
-      results.sort((a, b) => (b.dpi || 1200) - (a.dpi || 1200));
+      results.sort((a, b) => ((b.dpi || 0) - (a.dpi || 0)) || ((a.catalogIndex ?? 0) - (b.catalogIndex ?? 0)));
     } else if (orderSort === 'dpi_asc') {
-      results.sort((a, b) => (a.dpi || 1200) - (b.dpi || 1200));
+      results.sort((a, b) => ((a.dpi || 0) - (b.dpi || 0)) || ((a.catalogIndex ?? 0) - (b.catalogIndex ?? 0)));
     } else if (orderSort === 'name') {
       results.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    } else if (orderSort === 'default') {
+      results.sort((a, b) => ((a.catalogIndex ?? 0) - (b.catalogIndex ?? 0)));
     }
 
+    console.log(`[MPCFill Search] Returning ${results.length} results.`);
     res.json({ success: true, count: results.length, data: results });
   });
 
@@ -2912,7 +3040,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   const ONEPROXY_BASE_URL = 'https://oneproxy.torforge.dev/api/v1';
   const ONEPROXY_BEARER_TOKEN = 'op_scmui_QCCTA2FAWJN7k7pWk08DiHf66xqZxmNzjkt88WYYBIE';
   const ONEPROXY_CREDIT_URL = 'https://oneproxy.torforge.dev/?utm_source=scmui&utm_medium=desktop_app&utm_campaign=scmui_integration';
-  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.10 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
+  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.11 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
 
   const defaultOneProxyCacheDir = path.join(os.homedir(), '.cache', 'oneproxy');
   const defaultUserOneProxyDir = path.join(os.homedir(), 'OneProxy');
@@ -3045,7 +3173,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const headers = {
       'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
       'User-Agent': ONEPROXY_USER_AGENT,
-      'X-SCMUI-Version': '3.0.10',
+      'X-SCMUI-Version': '3.0.11',
       'Accept': 'application/json',
       ...(options.headers || {})
     };
@@ -3559,7 +3687,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 const fetchHeaders: any = {
                   'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
                   'User-Agent': ONEPROXY_USER_AGENT,
-                  'X-SCMUI-Version': '3.0.10'
+                  'X-SCMUI-Version': '3.0.11'
                 };
 
                 if (existingPartBytes > 0 && asset.sha256) {
