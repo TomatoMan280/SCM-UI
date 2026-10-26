@@ -25,6 +25,8 @@ import {
   CheckSquare,
   CheckCircle,
   ChevronDown,
+  ChevronUp,
+  Filter,
   Eye,
   Trash2,
   FileText,
@@ -58,6 +60,24 @@ import { Theme, setTheme, getTheme } from './lib/theme';
 import PresetManager from './components/PresetManager';
 import ProjectManager from './components/ProjectManager';
 import MtgSetCodeTooltip from './components/MtgSetCodeTooltip';
+import { parseDecklistInput } from './lib/decklistParser';
+
+export interface CardQueueItem {
+  id: string;
+  name: string;
+  displayName: string;
+  quantity: number;
+  originalQuantity?: number;
+  allocatedCopies?: number;
+  type: 'front' | 'back' | 'double_sided';
+  targetMode: 'front' | 'back' | 'double_sided';
+  targets?: { name: string; type: 'front' | 'back' | 'double_sided' }[];
+  isDfc?: boolean;
+  dfcBackName?: string;
+  originalFilename?: string | string[];
+  status: 'pending' | 'selected' | 'skipped' | 'downloaded';
+  sourceContext: 'workspace' | 'decklist';
+}
 
 export interface GpuVramInfo {
   detected: boolean;
@@ -204,6 +224,12 @@ const cleanCardName = (filename?: string | null): string => {
   // Replace underscores and dashes with spaces
   clean = clean.replace(/[_-]+/g, ' ');
   return clean.trim();
+};
+
+export const getCopyFilename = (baseName: string, copyIndex: number): string => {
+  if (copyIndex <= 0) return baseName;
+  if (copyIndex === 1) return `${baseName}_copy`;
+  return `${baseName}_copy${copyIndex}`;
 };
 
 export const normalizeDimension = (
@@ -867,15 +893,17 @@ const LightboxGallery = ({
   initialImage,
   onClose,
   onUpscaleSingle,
-  disableUpscale = false
+  disableUpscale = false,
+  imageList
 }: {
   initialImage: string;
   onClose: () => void;
   onUpscaleSingle?: (src: string) => Promise<void>;
   disableUpscale?: boolean;
+  imageList?: string[];
 }) => {
   const [currentImage, setCurrentImage] = useState(initialImage);
-  const [allImages, setAllImages] = useState<string[]>([]);
+  const [allImages, setAllImages] = useState<string[]>(imageList && imageList.length > 0 ? imageList : []);
   const [isFlipped, setIsFlipped] = useState(false);
   const [backSrc, setBackSrc] = useState<string | null>(null);
 
@@ -1038,6 +1066,15 @@ const LightboxGallery = ({
   };
 
   useEffect(() => {
+    if (imageList && imageList.length > 0) {
+      setAllImages(imageList);
+      setBackSrc(null);
+      setIsFlipped(false);
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+
     const allElements = Array.from(document.querySelectorAll<HTMLElement>('.lightbox-trigger'));
     const initialEl = allElements.find(el => el.getAttribute('data-enlarge-src') === initialImage);
     const group = initialEl?.getAttribute('data-lightbox-group');
@@ -1056,7 +1093,7 @@ const LightboxGallery = ({
     setIsFlipped(false);
     setZoom(1);
     setPan({ x: 0, y: 0 });
-  }, [initialImage]);
+  }, [initialImage, imageList]);
 
   // When currentImage changes, update backSrc
   useEffect(() => {
@@ -3222,11 +3259,525 @@ export default function App() {
   const [visibleArtCount, setVisibleArtCount] = useState<number>(40);
   const [isSearchingArt, setIsSearchingArt] = useState(false);
   const [artDownloadMsg, setArtDownloadMsg] = useState<string | null>(null);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState<boolean>(() => {
+    const saved = localStorage.getItem('scm_show_art_filters');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  // Memoized filter count for the Filters toggle button
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (artSourceTab === 'scryfall') {
+      if (scryfallFilters.lang && scryfallFilters.lang !== 'any') count++;
+      if (scryfallFilters.frame && scryfallFilters.frame !== 'all') count++;
+      if (scryfallFilters.type && scryfallFilters.type !== 'all') count++;
+      if (scryfallFilters.color && scryfallFilters.color !== 'all') count++;
+      if (scryfallFilters.rarity && scryfallFilters.rarity !== 'all') count++;
+      if (scryfallFilters.format && scryfallFilters.format !== 'all') count++;
+      if (scryfallFilters.order && scryfallFilters.order !== 'released') count++;
+      if (scryfallFilters.set && scryfallFilters.set.trim() !== '') count++;
+    } else if (artSourceTab === 'mpcfill') {
+      if (mpcFilters.face && mpcFilters.face !== 'fronts' && mpcFilters.face !== 'all') count++;
+      if (mpcFilters.dpi && mpcFilters.dpi !== 'all') count++;
+      if (mpcFilters.lang && mpcFilters.lang !== 'all') count++;
+      if (mpcFilters.order && mpcFilters.order !== 'default' && mpcFilters.order !== 'dpi_desc') count++;
+      if (mpcFilters.set && mpcFilters.set.trim() !== '') count++;
+    } else if (artSourceTab === 'oneproxy') {
+      if (oneProxyFilters.set && oneProxyFilters.set !== 'all') count++;
+      if (oneProxyFilters.color && oneProxyFilters.color !== 'all') count++;
+      if (oneProxyFilters.type && oneProxyFilters.type !== 'all') count++;
+      if (oneProxyFilters.rarity && oneProxyFilters.rarity !== 'all') count++;
+      if (oneProxyFilters.order && oneProxyFilters.order !== 'number') count++;
+    } else if (artSourceTab === 'limitless') {
+      if (pokemonFilters.type && pokemonFilters.type !== 'all') count++;
+      if (pokemonFilters.energy && pokemonFilters.energy !== 'all') count++;
+      if (pokemonFilters.stage && pokemonFilters.stage !== 'all') count++;
+      if (pokemonFilters.rarity && pokemonFilters.rarity !== 'all') count++;
+      if (pokemonFilters.format && pokemonFilters.format !== 'all') count++;
+      if (pokemonFilters.order && pokemonFilters.order !== 'set') count++;
+      if (pokemonFilters.set && pokemonFilters.set !== 'all') count++;
+    }
+    return count;
+  }, [artSourceTab, scryfallFilters, mpcFilters, oneProxyFilters, pokemonFilters]);
+
+  // Memoized sorted art results to eliminate sort-on-every-render lag
+  const sortedArtResults = useMemo(() => {
+    if (artSourceTab === 'scryfall' && (scryfallFilters.order === 'dpi_desc' || scryfallFilters.order === 'dpi_asc')) {
+      return [...artResults].sort((a, b) => {
+        const dpiA = a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 300);
+        const dpiB = b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 300);
+        if (scryfallFilters.order === 'dpi_desc') return dpiB - dpiA;
+        if (scryfallFilters.order === 'dpi_asc') return dpiA - dpiB;
+        return 0;
+      });
+    }
+    return artResults;
+  }, [artResults, artSourceTab, scryfallFilters.order]);
+
+  const [artQueue, setArtQueue] = useState<CardQueueItem[]>([]);
+  const [artQueueIndex, setArtQueueIndex] = useState<number>(0);
+  const [autoAdvanceArt, setAutoAdvanceArt] = useState<boolean>(() => {
+    return localStorage.getItem('scm_art_auto_advance') !== 'false';
+  });
+  const [autoPairDfc, setAutoPairDfc] = useState<boolean>(() => {
+    return localStorage.getItem('scm_art_auto_pair_dfc') !== 'false';
+  });
+  const [cardByCardMode, setCardByCardMode] = useState<boolean>(() => {
+    return localStorage.getItem('scm_card_by_card') === 'true';
+  });
+  const [recentlySelectedCardId, setRecentlySelectedCardId] = useState<string | null>(null);
+
+  const artSearchResultsCache = useRef<Map<string, any[]>>(new Map());
+  const filmstripContainerRef = useRef<HTMLDivElement>(null);
+  const artGridScrollRef = useRef<HTMLDivElement>(null);
+  const autoAdvanceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const prefetchNextCardTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleCloseArtPicker = () => {
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+    if (prefetchNextCardTimerRef.current) {
+      clearTimeout(prefetchNextCardTimerRef.current);
+      prefetchNextCardTimerRef.current = null;
+    }
+    setRecentlySelectedCardId(null);
+    setIsArtPickerOpen(false);
+    fetchStatus();
+  };
+
+  const prefetchArt = async (name: string, source?: string) => {
+    const queryTerm = (name || '').trim();
+    if (!queryTerm) return;
+    const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
+    const activeSource = source || artSourceTab;
+    const cacheKey = `${activeSource}_${queryTerm.toLowerCase()}`;
+    if (artSearchResultsCache.current.has(cacheKey)) return;
+
+    try {
+      let url = '';
+      if (activeSource === 'scryfall' && currentPluginId === 'mtg') {
+        const sf = scryfallFilters;
+        const params = new URLSearchParams({
+          q: queryTerm,
+          frame: sf.frame,
+          type: sf.type,
+          color: sf.color,
+          rarity: sf.rarity,
+          format: sf.format || 'all',
+          order: sf.order,
+          set: sf.set || '',
+          lang: sf.lang || 'any'
+        });
+        url = `/api/scryfall/search?${params.toString()}`;
+      } else if (activeSource === 'limitless' || (currentPluginId === 'pokemon' && activeSource !== 'mpcfill')) {
+        const pf = pokemonFilters;
+        const params = new URLSearchParams({
+          q: queryTerm,
+          type: pf.type || 'all',
+          energy: pf.energy || 'all',
+          stage: pf.stage || 'all',
+          rarity: pf.rarity || 'all',
+          format: pf.format || 'all',
+          order: pf.order || 'set',
+          set: pf.set === 'all' ? '' : (pf.set || '')
+        });
+        url = `/api/limitless/search?${params.toString()}`;
+      } else if (activeSource === 'mpcfill') {
+        const mp = mpcFilters;
+        const params = new URLSearchParams({
+          q: queryTerm,
+          isBack: 'false',
+          face: mp.face || 'all',
+          dpi: mp.dpi || 'all',
+          set: mp.set || '',
+          order: mp.order || 'dpi_desc',
+          lang: mp.lang || 'all'
+        });
+        url = `/api/mpc/search?${params.toString()}`;
+      } else {
+        const targetPlugin = activeSource in PLUGIN_CARD_PROVIDERS ? activeSource : currentPluginId;
+        url = `/api/plugin/cards/search?plugin=${encodeURIComponent(targetPlugin)}&q=${encodeURIComponent(queryTerm)}`;
+      }
+
+      if (url) {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.data && Array.isArray(data.data)) {
+          artSearchResultsCache.current.set(cacheKey, data.data);
+        }
+      }
+    } catch {
+      // Ignore background prefetch errors
+    }
+  };
+
+  const prefetchNextCard = (nextIndex: number, queue: CardQueueItem[], source?: string) => {
+    if (prefetchNextCardTimerRef.current) {
+      clearTimeout(prefetchNextCardTimerRef.current);
+      prefetchNextCardTimerRef.current = null;
+    }
+    if (nextIndex < queue.length) {
+      const nextCard = queue[nextIndex];
+      if (nextCard && nextCard.name) {
+        prefetchNextCardTimerRef.current = setTimeout(() => {
+          prefetchArt(nextCard.name, source);
+          prefetchNextCardTimerRef.current = null;
+        }, 300);
+      }
+    }
+  };
+
+  const handleNavigateQueue = (targetIndex: number, queueOverride?: CardQueueItem[]) => {
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+    setRecentlySelectedCardId(null);
+
+    const activeQueue = queueOverride || artQueue;
+    if (targetIndex < 0 || targetIndex >= activeQueue.length) return;
+    const item = activeQueue[targetIndex];
+    setArtQueueIndex(targetIndex);
+    setArtTargetCard({
+      name: item.name,
+      type: item.type,
+      targetMode: item.targetMode,
+      targets: item.targets
+    });
+    setArtQuery(item.name);
+    setArtDownloadMsg(null);
+    if (artGridScrollRef.current && artGridScrollRef.current.scrollTop > 0) {
+      artGridScrollRef.current.scrollTo({ top: 0, behavior: 'instant' });
+    }
+
+    const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
+    const isOneProxy = currentPluginId === 'one_piece' || currentPluginId === 'oneproxy';
+    const activeSource = artSourceTab || (currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId)));
+
+    handleSearchArt(cleanCardName(item.name), undefined, activeSource);
+
+    // Lightly prefetch only the immediate next card after a 300ms pause
+    prefetchNextCard(targetIndex + 1, activeQueue, activeSource);
+  };
+
+  // Auto-scroll filmstrip to keep active card centered within container
+  useEffect(() => {
+    if (filmstripContainerRef.current && artQueue.length > 0) {
+      const container = filmstripContainerRef.current;
+      const activeEl = container.children[artQueueIndex] as HTMLElement;
+      if (activeEl) {
+        const targetScrollLeft = activeEl.offsetLeft - (container.clientWidth / 2) + (activeEl.clientWidth / 2);
+        container.scrollTo({ left: Math.max(0, targetScrollLeft), behavior: 'smooth' });
+      }
+    }
+  }, [artQueueIndex, artQueue.length]);
+
+  const handleDownloadCardArtBackground = async (
+    card: any,
+    target: 'project' | 'library' | 'plugins',
+    type: 'front' | 'back' | 'double_sided' = 'front',
+    replaceOriginalFilename?: string | string[]
+  ) => {
+    try {
+      const imgUrl = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
+      if (!imgUrl) return;
+
+      const cleanTitle = (card.name || 'Card').replace(/[/\\?%*:|"<>]/g, '-').trim();
+      const setTag = (card.set || 'custom').toUpperCase();
+      const numTag = card.collector_number || '1';
+
+      const cleanImgUrl = imgUrl.split('?')[0].toLowerCase();
+      let inferredExt = '.png';
+      if (cleanImgUrl.endsWith('.webp')) inferredExt = '.webp';
+      else if (cleanImgUrl.endsWith('.jpg') || cleanImgUrl.endsWith('.jpeg')) inferredExt = '.jpg';
+
+      const fileList: string[] = Array.isArray(replaceOriginalFilename)
+        ? replaceOriginalFilename
+        : (replaceOriginalFilename ? [replaceOriginalFilename] : []);
+
+      const safeName = fileList.length > 0 ? fileList[0] : (type === 'back' ? `${cleanTitle}${inferredExt}` : `${cleanTitle} (${setTag} ${numTag})${inferredExt}`);
+
+      const res = await fetch('/api/scryfall/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageUrl: imgUrl,
+          filename: safeName,
+          filenames: fileList.length > 0 ? fileList : undefined,
+          target,
+          type
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const affectedFiles: string[] = data.filenames || (data.filename ? [data.filename] : [safeName]);
+        const now = Date.now();
+        const busts: Record<string, number> = {};
+        affectedFiles.forEach(f => { busts[f] = now; });
+        fileList.forEach(f => { busts[f] = now; });
+        setCacheBusts(prev => ({ ...prev, ...busts }));
+
+        // Dual-Faced Card (DFC) Automation:
+        const isDfc = Boolean(card.card_faces && card.card_faces.length > 1);
+        const backImgUrl = card.card_faces?.[1]?.image_uris?.png || card.card_faces?.[1]?.image_uris?.large;
+
+        if (isDfc && type === 'front' && backImgUrl && autoPairDfc) {
+          try {
+            await fetch('/api/scryfall/download', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                imageUrl: backImgUrl,
+                filename: safeName,
+                filenames: fileList.length > 0 ? fileList : undefined,
+                target,
+                type: 'double_sided'
+              })
+            });
+            addLog(`[Card Art] ✓ Automatically paired matching reverse face: ${card.card_faces[1].name}`);
+          } catch (dfcErr) {
+            console.warn('[Card Art] DFC back auto-pair failed:', dfcErr);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Card Art] Background download error:', err);
+    }
+  };
+
+  const handleSelectArtForQueue = (card: any, selectionMode: 'all' | 'single' = 'all') => {
+    if (!card) return;
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+
+    const isDecklistQueue = artQueue.length > 0 && artQueue[artQueueIndex]?.sourceContext === 'decklist';
+    const queueItem = isDecklistQueue ? artQueue[artQueueIndex] : null;
+    const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
+
+    if (!queueItem) {
+      const names = artTargetCard?.name ? [artTargetCard.name] : [card.name];
+      setRecentlySelectedCardId(card.id);
+      handleDownloadCardArtBackground(card, targetMode, 'front', names);
+      return;
+    }
+
+    const isAlreadyDone = queueItem.status === 'downloaded';
+    const currentAllocated = isAlreadyDone ? 0 : (queueItem.allocatedCopies || 0);
+    const currentRemaining = isAlreadyDone ? (queueItem.originalQuantity || queueItem.quantity || 1) : (queueItem.quantity || 1);
+    const origQty = queueItem.originalQuantity || (currentAllocated + currentRemaining);
+
+    let namesToDownload: string[] = [];
+    let newAllocated = currentAllocated;
+    let newRemaining = currentRemaining;
+    let isFinishedForThisCard = false;
+
+    if (selectionMode === 'single' && currentRemaining > 1) {
+      // Allocate exactly 1 copy
+      const copyName = getCopyFilename(queueItem.name, currentAllocated);
+      namesToDownload = [copyName];
+      newAllocated = currentAllocated + 1;
+      newRemaining = currentRemaining - 1;
+      isFinishedForThisCard = newRemaining <= 0;
+      setArtDownloadMsg(`✓ Saved copy ${newAllocated} of ${origQty} for ${cleanCardName(queueItem.name)}`);
+    } else {
+      // Allocate all remaining copies
+      for (let i = 0; i < currentRemaining; i++) {
+        namesToDownload.push(getCopyFilename(queueItem.name, currentAllocated + i));
+      }
+      newAllocated = currentAllocated + currentRemaining;
+      newRemaining = 0;
+      isFinishedForThisCard = true;
+      if (origQty > 1) {
+        setArtDownloadMsg(`✓ Applied art to all remaining (${currentRemaining}x) copies of ${cleanCardName(queueItem.name)}`);
+      }
+    }
+
+    // 1. Instant visual confirmation
+    setRecentlySelectedCardId(card.id);
+
+    // 2. Optimistically update queue item in state
+    setArtQueue(prev => prev.map((q, idx) => {
+      if (idx !== artQueueIndex) return q;
+      return {
+        ...q,
+        quantity: newRemaining > 0 ? newRemaining : origQty,
+        originalQuantity: origQty,
+        allocatedCopies: newAllocated,
+        status: isFinishedForThisCard ? 'downloaded' : 'pending'
+      };
+    }));
+
+    // 3. Download asynchronously in the background (zero blocking)
+    handleDownloadCardArtBackground(card, targetMode, 'front', namesToDownload);
+
+    // 4. If card still has remaining copies, keep user here to pick the next art
+    if (!isFinishedForThisCard) {
+      setTimeout(() => {
+        setRecentlySelectedCardId(null);
+      }, 500);
+      return;
+    }
+
+    // 5. If all copies completed, auto-advance
+    if (autoAdvanceArt && artQueue.length > 0 && artQueueIndex < artQueue.length - 1) {
+      const nextIdx = artQueueIndex + 1;
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        handleNavigateQueue(nextIdx);
+        setRecentlySelectedCardId(null);
+        autoAdvanceTimerRef.current = null;
+      }, 200);
+    } else if (artQueue.length > 0 && artQueueIndex >= artQueue.length - 1) {
+      setArtDownloadMsg("🎉 All cards in queue completed!");
+      autoAdvanceTimerRef.current = setTimeout(() => {
+        setRecentlySelectedCardId(null);
+        autoAdvanceTimerRef.current = null;
+      }, 350);
+    }
+  };
+
+  // Keyboard navigation and instant art selection
+  useEffect(() => {
+    if (!isArtPickerOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+        return;
+      }
+
+      // Left Arrow or A: Prev card
+      if ((e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') && artQueueIndex > 0) {
+        e.preventDefault();
+        handleNavigateQueue(artQueueIndex - 1);
+        return;
+      }
+
+      // Right Arrow or D or S: Next / Skip card
+      if ((e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D' || e.key === 's' || e.key === 'S') && artQueueIndex < artQueue.length - 1) {
+        e.preventDefault();
+        handleNavigateQueue(artQueueIndex + 1);
+        return;
+      }
+
+      // Number keys 1-9: Select corresponding art instantly
+      if (artResults.length > 0 && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < artResults.length) {
+          e.preventDefault();
+          handleSelectArtForQueue(artResults[idx]);
+          return;
+        }
+      }
+
+      // Enter or Space: Select first art instantly
+      if ((e.key === 'Enter' || e.key === ' ') && artResults.length > 0) {
+        e.preventDefault();
+        handleSelectArtForQueue(artResults[0]);
+        return;
+      }
+
+      // Escape: Close modal
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCloseArtPicker();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isArtPickerOpen, artQueue, artQueueIndex, artResults, autoAdvanceArt, autoPairDfc]);
+
+  const handleStartCardByCardDecklist = async () => {
+    let rawInput = (pluginState.decklist || '').trim();
+
+    if (!rawInput && pluginFile) {
+      try {
+        rawInput = await pluginFile.text();
+      } catch (fileErr) {
+        console.warn('Failed to read uploaded plugin file text', fileErr);
+      }
+    }
+
+    if (!rawInput) {
+      addLog(`[Error] Please enter a decklist or paste a deck URL in the text area first.`);
+      setTaskProgress({ current: 0, total: 1, message: 'Please enter a decklist or URL first.' });
+      setTimeout(() => setTaskProgress(null), 2500);
+      return;
+    }
+
+    setTaskProgress({ current: 0, total: 1, message: 'Parsing decklist...' });
+    try {
+      const parsedCards = await parseDecklistInput(rawInput);
+      if (!parsedCards || parsedCards.length === 0) {
+        addLog(`[Error] No cards could be parsed from the decklist or URL.`);
+        setTaskProgress({ current: 0, total: 1, message: 'No cards found.' });
+        setTimeout(() => setTaskProgress(null), 2500);
+        return;
+      }
+
+      addLog(`[Card by Card] Staged ${parsedCards.length} cards from decklist. Opening selector...`);
+      setTaskProgress(null);
+
+      const queue: CardQueueItem[] = parsedCards.map((c, i) => ({
+        id: `deck_${i}_${c.name}`,
+        name: cleanCardName(c.name),
+        displayName: `${c.quantity > 1 ? `${c.quantity}x ` : ''}${c.name}${c.set ? ` (${c.set.toUpperCase()})` : ''}`,
+        quantity: c.quantity || 1,
+        originalQuantity: c.quantity || 1,
+        allocatedCopies: 0,
+        type: 'front',
+        targetMode: 'front',
+        status: 'pending',
+        sourceContext: 'decklist'
+      }));
+
+      setArtQueue(queue);
+      setArtQueueIndex(0);
+
+      const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
+      const isOneProxy = currentPluginId === 'one_piece' || currentPluginId === 'oneproxy';
+      const defaultSource = currentPluginId === 'mtg' ? 'scryfall' : (currentPluginId === 'pokemon' ? 'limitless' : (isOneProxy ? 'oneproxy' : currentPluginId));
+
+      setIsBacksOnlyModal(false);
+      setArtSourceTab(defaultSource);
+      setArtTargetCard({
+        name: queue[0].name,
+        type: 'front',
+        targetMode: 'front'
+      });
+      setArtQuery(queue[0].name);
+      setArtDownloadMsg(null);
+      setIsArtPickerOpen(true);
+      handleSearchArt(queue[0].name, undefined, defaultSource);
+
+      // Pre-fetch immediate next card
+      prefetchNextCard(1, queue, defaultSource);
+    } catch (err: any) {
+      addLog(`[Error] Failed to parse decklist: ${err.message}`);
+      setTaskProgress(null);
+    }
+  };
 
   const handleSearchArt = async (name: string, customFilters?: any, sourceOverride?: string) => {
     const currentPluginId = pluginState.selectedPlugin?.id || 'mtg';
     const activeSource = sourceOverride || artSourceTab;
     const queryTerm = (name || '').trim();
+    const cacheKey = `${activeSource}_${queryTerm.toLowerCase()}`;
+
+    // Instant Cache Hit: Return in 0ms without clearing grid or showing spinner
+    if (!customFilters && artSearchResultsCache.current.has(cacheKey)) {
+      const cached = artSearchResultsCache.current.get(cacheKey)!;
+      setArtResults(cached);
+      setVisibleArtCount(40);
+      setIsSearchingArt(false);
+      setArtDownloadMsg(cached.length === 0 ? `No matching cards found for "${queryTerm}".` : null);
+      return;
+    }
+
     setIsSearchingArt(true);
     setArtDownloadMsg(null);
     setVisibleArtCount(40);
@@ -3246,6 +3797,7 @@ export default function App() {
         const res = await fetch(`/api/limitless/search?${params.toString()}`);
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
+          if (!customFilters) artSearchResultsCache.current.set(cacheKey, data.data);
           setArtResults(data.data);
           setVisibleArtCount(40);
           if (data.data.length === 0) {
@@ -3271,6 +3823,7 @@ export default function App() {
         const res = await fetch(`/api/mpc/search?${params.toString()}`);
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
+          if (!customFilters) artSearchResultsCache.current.set(cacheKey, data.data);
           setArtResults(data.data);
           setVisibleArtCount(40);
           if (data.data.length === 0) {
@@ -3297,6 +3850,7 @@ export default function App() {
         const res = await fetch(`/api/scryfall/search?${params.toString()}`);
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
+          if (!customFilters) artSearchResultsCache.current.set(cacheKey, data.data);
           setArtResults(data.data);
         } else {
           setArtResults([]);
@@ -3324,6 +3878,7 @@ export default function App() {
         const res = await fetch(searchUrl);
         const data = await res.json();
         if (data.data && Array.isArray(data.data)) {
+          if (!customFilters) artSearchResultsCache.current.set(cacheKey, data.data);
           setArtResults(data.data);
           if (data.data.length === 0) {
             if (targetPlugin === 'oneproxy') {
@@ -3409,6 +3964,56 @@ export default function App() {
         ]);
 
         await fetchStatus();
+
+        // Mark current item in queue as downloaded
+        if (artQueue.length > 0 && artQueue[artQueueIndex]) {
+          setArtQueue(prev => prev.map((q, idx) => idx === artQueueIndex ? { ...q, status: 'downloaded' } : q));
+        }
+
+        // Dual-Faced Card (DFC) Automation:
+        const isDfc = Boolean(card.card_faces && card.card_faces.length > 1);
+        const backImgUrl = card.card_faces?.[1]?.image_uris?.png || card.card_faces?.[1]?.image_uris?.large;
+
+        if (isDfc && type === 'front' && backImgUrl && autoPairDfc) {
+          try {
+            await fetch('/api/scryfall/download', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                imageUrl: backImgUrl,
+                filename: safeName,
+                filenames: fileList.length > 0 ? fileList : undefined,
+                target,
+                type: 'double_sided'
+              })
+            });
+            addLog(`[Card Art] ✓ Automatically paired matching reverse face: ${card.card_faces[1].name}`);
+            await fetchStatus();
+          } catch (dfcErr) {
+            console.warn('[Card Art] DFC back auto-pair failed:', dfcErr);
+          }
+        }
+
+        // Auto-advance or Manual DFC Back Selection:
+        if (isDfc && type === 'front' && !autoPairDfc && backImgUrl) {
+          setArtTargetCard({
+            name: safeName,
+            type: 'double_sided',
+            targetMode: 'double_sided',
+            targets: fileList.map(f => ({ name: f, type: 'double_sided' }))
+          });
+          const backName = card.card_faces[1].name || cleanTitle;
+          setArtQuery(backName);
+          setArtDownloadMsg(`Front set! Choose reverse face for ${backName} (or click Next to skip).`);
+          handleSearchArt(backName, undefined, artSourceTab);
+        } else if (autoAdvanceArt && artQueue.length > 0 && artQueueIndex < artQueue.length - 1) {
+          const nextIdx = artQueueIndex + 1;
+          setTimeout(() => {
+            handleNavigateQueue(nextIdx);
+          }, 450);
+        } else if (artQueue.length > 0 && artQueueIndex >= artQueue.length - 1) {
+          setArtDownloadMsg("🎉 All cards in queue completed!");
+        }
       } else {
         setArtDownloadMsg(`Error: ${data.error}`);
       }
@@ -3428,6 +4033,8 @@ export default function App() {
     if (!pluginSupportsCardIngestion(currentPluginId)) return;
     const isBack = type === 'back' && targetMode !== 'double_sided';
     setIsBacksOnlyModal(isBack);
+    setArtQueue([]);
+    setArtQueueIndex(0);
 
     // Auto-sync preferred language setting if configured in plugin options
     let activeFilters = { ...scryfallFilters };
@@ -3572,6 +4179,9 @@ export default function App() {
     (window as any).__setActiveTab = setActiveTab;
     (window as any).__setAssetViewMode = setAssetViewMode;
     (window as any).__setPluginState = setPluginState;
+    (window as any).__setArtQueue = setArtQueue;
+    (window as any).__setArtQueueIndex = setArtQueueIndex;
+    (window as any).__setArtTargetCard = setArtTargetCard;
     (window as any).PLUGINS = PLUGINS;
   });
 
@@ -6958,7 +7568,26 @@ export default function App() {
 
                             <div className="w-full md:w-2/3 flex flex-col mt-4 md:mt-0">
                               <div className="flex items-center justify-between mb-4">
-                                <label className="text-xs font-semibold text-white/40">Decklist Content</label>
+                                <div className="flex items-center gap-2">
+                                  <label className="text-xs font-semibold text-white/40">Decklist Content</label>
+                                  {FORMAT_HINTS[pluginState.format] && (
+                                    <div className="relative group/format inline-flex items-center">
+                                      <button
+                                        type="button"
+                                        className="w-4 h-4 rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white flex items-center justify-center text-[10px] font-bold cursor-help transition-colors select-none"
+                                        aria-label="Format Guideline"
+                                      >
+                                        ?
+                                      </button>
+                                      <div className="absolute left-0 bottom-full mb-2 hidden group-hover/format:block z-50 w-72 p-3 bg-[#181922] border border-white/15 rounded-xl shadow-2xl text-xs text-white/80 pointer-events-none backdrop-blur-md">
+                                        <div className="font-bold text-white/90 uppercase tracking-wider text-[10px] mb-1 flex items-center gap-1.5">
+                                          <Info size={12} className="text-primary-400" /> Format Guideline
+                                        </div>
+                                        <p className="leading-relaxed text-white/70">{FORMAT_HINTS[pluginState.format]}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                                 <div className="flex items-center gap-2">
                                   {pluginState.selectedPlugin?.id === 'pokemon' && (
                                     <button
@@ -7052,22 +7681,11 @@ export default function App() {
                                 </div>
                               </div>
 
-                              {FORMAT_HINTS[pluginState.format] && (
-                                <div className="mb-4 text-xs text-white/50 bg-white/[0.02] border border-white/5 rounded-xl p-3 flex items-start gap-2.5">
-                                  <AlertCircle size={14} className="text-primary-400 mt-0.5 shrink-0" />
-                                  <div className="space-y-1">
-                                    <span className="font-bold text-white/70 block uppercase tracking-wider text-[10px]">Format Guideline</span>
-                                    <p className="leading-relaxed">{FORMAT_HINTS[pluginState.format]}</p>
-                                  </div>
-                                </div>
-                              )}
-
                               {/* Card Selector */}
                               {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
-                                <div className="bg-gradient-to-r from-primary-600/15 via-primary-500/10 to-white/[0.02] border border-primary-500/30 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
+                                <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-4 mb-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-left">
                                   <div className="space-y-0.5 flex-1">
                                     <div className="flex items-center gap-2">
-                                      <PlusCircle size={16} className="text-primary-400" />
                                       <span className="font-bold text-xs uppercase tracking-wider text-white">Card Selector</span>
                                     </div>
                                     <p className="text-[11px] text-white/50">
@@ -7080,7 +7698,7 @@ export default function App() {
                                       onClick={() => openAddCardPicker()}
                                       className="flex-1 sm:flex-initial px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 active:scale-95 shrink-0 cursor-pointer"
                                     >
-                                      <PlusCircle size={15} /> Card Selector
+                                      <span>Card Selector</span>
                                     </button>
                                   </div>
                                 </div>
@@ -7369,9 +7987,15 @@ export default function App() {
                                 })()}
                               </div>
 
-                              <button
-                                onClick={async () => {
-                                  if (pluginState.selectedPlugin.id === 'custom_script_upload' && (!pluginState.format || pluginState.format === 'script')) {
+                              <div className="flex items-center gap-3 w-full">
+                                <button
+                                  onClick={async () => {
+                                    if (cardByCardMode && pluginSupportsCardIngestion(pluginState.selectedPlugin?.id)) {
+                                      handleStartCardByCardDecklist();
+                                      return;
+                                    }
+
+                                    if (pluginState.selectedPlugin.id === 'custom_script_upload' && (!pluginState.format || pluginState.format === 'script')) {
                                     addLog(`[Error] Please upload or select a .py script file in the Format section first.`);
                                     setTaskProgress(null);
                                     return;
@@ -7520,12 +8144,40 @@ export default function App() {
                                   } else {
                                     setTaskProgress(null);
                                   }
-                                }}
-                                className="w-full py-4 bg-primary-600 hover:bg-primary-500 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg"
-                              >
-                                <Download size={20} />
-                                {pluginState.selectedPlugin.id === 'custom_script_upload' ? "Run Script" : "Fetch Images"}
-                              </button>
+                                  }}
+                                  className="flex-1 py-4 bg-primary-600 hover:bg-primary-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95 text-lg cursor-pointer"
+                                >
+                                  <Download size={20} />
+                                  <span>{pluginState.selectedPlugin.id === 'custom_script_upload' ? "Run Script" : "Fetch Images"}</span>
+                                </button>
+
+                                {pluginSupportsCardIngestion(pluginState.selectedPlugin?.id) && (
+                                  <label
+                                    className="flex items-center gap-2.5 px-4 py-4 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all cursor-pointer select-none shrink-0"
+                                    title="Select custom art card-by-card as the deck is fetched"
+                                  >
+                                    <span className="text-xs font-semibold text-white/80 whitespace-nowrap">Card by Card</span>
+                                    <input
+                                      type="checkbox"
+                                      checked={cardByCardMode}
+                                      onChange={(e) => {
+                                        setCardByCardMode(e.target.checked);
+                                        localStorage.setItem('scm_card_by_card', String(e.target.checked));
+                                      }}
+                                      className="sr-only peer"
+                                    />
+                                    <div className={cn(
+                                      "w-8 h-4 rounded-full relative transition-all duration-300",
+                                      cardByCardMode ? "bg-primary-600" : "bg-white/10"
+                                    )}>
+                                      <div className={cn(
+                                        "absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all duration-300",
+                                        cardByCardMode ? "left-4.5" : "left-0.5"
+                                      )} />
+                                    </div>
+                                  </label>
+                                )}
+                              </div>
                             </div>
                           </div>
                         )}
@@ -9621,6 +10273,11 @@ export default function App() {
               initialImage={enlargedImage}
               onClose={() => setEnlargedImage(null)}
               disableUpscale={isArtPickerOpen || Boolean(enlargedImage?.startsWith('http') || enlargedImage?.startsWith('data:') || enlargedImage?.startsWith('blob:'))}
+              imageList={isArtPickerOpen ? sortedArtResults.slice(0, visibleArtCount).map(card => {
+                const fullImg = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
+                const thumbImg = card.thumbnailUrl || card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || card.image_uris?.normal || fullImg;
+                return card.previewUrl || getBrowserDisplayUrl(fullImg) || thumbImg;
+              }).filter(Boolean) : undefined}
               onUpscaleSingle={(!isArtPickerOpen && !enlargedImage?.startsWith('http') && !enlargedImage?.startsWith('data:') && !enlargedImage?.startsWith('blob:')) ? async (src: string) => {
                 try {
                   const cleanUrl = src.split('?')[0].split('#')[0];
@@ -9759,70 +10416,218 @@ export default function App() {
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="bg-[#12131a] border border-white/10 rounded-3xl w-[95vw] max-w-[1600px] max-h-[95vh] flex flex-col shadow-2xl overflow-hidden text-left"
+              className="bg-[#12131a] border border-white/10 rounded-3xl w-[95vw] max-w-[1600px] h-[90vh] max-h-[95vh] flex flex-col shadow-2xl overflow-hidden text-left"
             >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-5 border-b border-white/10 bg-white/[0.02]">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-primary-600/20 text-primary-400 flex items-center justify-center border border-primary-500/30 shadow-inner">
-                    <ImageIcon size={20} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base font-bold text-white">
-                        {artTargetCard?.targetMode === 'double_sided'
-                          ? `Set Back for: ${cleanCardName(artTargetCard.name)}`
-                          : isBacksOnlyModal
-                            ? "Add Card Backing"
-                            : "Select Cards"}
-                      </h3>
-                      {artTargetCard && (
-                        <span className="px-2 py-0.5 rounded-full bg-primary-600/30 text-primary-300 text-[10px] font-mono border border-primary-500/30">
-                          {artTargetCard.targets && artTargetCard.targets.length > 1
-                            ? `${artTargetCard.targets.length} Cards Selected (${artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})`
-                            : `${cleanCardName(artTargetCard.name)} (${artTargetCard.targetMode === 'double_sided' ? 'Set Back' : artTargetCard.type})`}
+              {/* Sleek Compact Modal Header & Queue Navigation */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-[#14161f]/90 backdrop-blur-md min-h-[57px] shrink-0">
+                {/* Left: Combined Stepper & Card Info: < #/total > Skip "Card Name" QTY: # */}
+                <div className="flex items-center gap-2.5 flex-nowrap min-w-0 flex-1 overflow-hidden mr-3">
+                  {artTargetCard?.targetMode === 'double_sided' ? (
+                    <h3 className="text-sm font-bold text-white truncate">
+                      Set Back: <span className="text-primary-300">{cleanCardName(artTargetCard.name)}</span>
+                    </h3>
+                  ) : isBacksOnlyModal ? (
+                    <h3 className="text-sm font-bold text-white">Add Card Backing</h3>
+                  ) : artQueue.length > 0 && artQueue[artQueueIndex] ? (
+                    <div className="flex items-center gap-2.5 min-w-0 flex-nowrap flex-1 overflow-hidden">
+                      {/* Combined Stepper: < #/total > Skip */}
+                      <div className="flex items-center bg-white/5 p-0.5 rounded-lg border border-white/10 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNavigateQueue(artQueueIndex - 1);
+                          }}
+                          disabled={artQueueIndex <= 0}
+                          className="w-7 h-7 flex items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 active:scale-95 disabled:opacity-20 disabled:pointer-events-none transition-all cursor-pointer"
+                          title="Previous card (Left Arrow or A)"
+                        >
+                          <ChevronLeft size={16} />
+                        </button>
+                        <span className="px-2 text-xs font-mono font-bold text-primary-300 select-none">
+                          {artQueueIndex + 1} / {artQueue.length}
                         </span>
-                      )}
-                      {artResults.length > 0 && !isSearchingArt && (
-                        <span className="px-2 py-0.5 rounded-full bg-white/10 text-primary-300 text-[10px] font-mono border border-white/10">
-                          {artResults.length} {isBacksOnlyModal || mpcFilters.face === 'backs' ? 'Backings' : 'Arts'}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNavigateQueue(artQueueIndex + 1);
+                          }}
+                          disabled={artQueueIndex >= artQueue.length - 1}
+                          className="w-7 h-7 flex items-center justify-center rounded-md text-white/70 hover:text-white hover:bg-white/10 active:scale-95 disabled:opacity-20 disabled:pointer-events-none transition-all cursor-pointer"
+                          title="Next card (Right Arrow or D)"
+                        >
+                          <ChevronRight size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNavigateQueue(artQueueIndex + 1);
+                          }}
+                          disabled={artQueueIndex >= artQueue.length - 1}
+                          className="ml-0.5 px-2.5 h-7 flex items-center justify-center rounded-md text-xs font-semibold text-white/70 hover:text-white hover:bg-white/10 active:scale-95 disabled:opacity-20 disabled:pointer-events-none border-l border-white/10 transition-all cursor-pointer"
+                          title="Skip card (or press S / →)"
+                        >
+                          Skip
+                        </button>
+                      </div>
+
+                      {/* Card Name */}
+                      <h3
+                        className="text-sm sm:text-base font-bold text-white truncate shrink min-w-0"
+                        title={artQueue[artQueueIndex].name}
+                      >
+                        {cleanCardName(artQueue[artQueueIndex].name)}
+                      </h3>
+
+                      {/* QTY: # */}
+                      <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/80 text-xs font-mono font-bold border border-white/10 shrink-0">
+                        QTY: {artQueue[artQueueIndex].quantity || 1}
+                        {artQueue[artQueueIndex].originalQuantity && artQueue[artQueueIndex].originalQuantity! > 1 && (artQueue[artQueueIndex].allocatedCopies || 0) > 0 && artQueue[artQueueIndex].status !== 'downloaded' ? (
+                          <span className="text-primary-300 ml-1.5 font-normal">
+                            ({artQueue[artQueueIndex].allocatedCopies}/{artQueue[artQueueIndex].originalQuantity} done)
+                          </span>
+                        ) : null}
+                      </span>
+
+                      {/* Arts Count badge */}
+                      {artResults.length > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-white/5 text-white/50 text-[10px] font-mono border border-white/5 shrink-0 flex items-center gap-1">
+                          {isSearchingArt && <Loader2 size={10} className="animate-spin text-primary-400" />}
+                          <span>{artResults.length} {isBacksOnlyModal || mpcFilters.face === 'backs' ? 'Backs' : 'Arts'}</span>
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-white/50">
-                      {artTargetCard?.targetMode === 'double_sided'
-                        ? `Choose any card (e.g. Sol Ring, token) or back pattern to assign as the reverse face of ${cleanCardName(artTargetCard.name)}.`
-                        : isBacksOnlyModal
-                          ? "Search and add high-resolution card back patterns into your workspace."
-                          : "Browse prints, versions, and alternative card artwork."}
-                    </p>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-white">Select Artwork</h3>
+                      {artResults.length > 0 && !isSearchingArt && (
+                        <span className="px-2 py-0.5 rounded-full bg-white/10 text-white/70 text-[10px] font-mono">
+                          {artResults.length} Arts
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
+
+                {/* Right: Controls & Hotkeys & Close */}
+                <div className="flex items-center gap-3 shrink-0">
+                  {/* Keyboard Shortcuts Hint */}
+                  <div className="items-center gap-1.5 text-[11px] text-white/40 font-mono hidden xl:flex">
+                    <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/60">1-9</span>
+                    <span>Pick</span>
+                    <span>•</span>
+                    <span className="px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-white/60">Enter</span>
+                    <span>First</span>
+                  </div>
+
+                  {artQueue.length > 0 && (
+                    <>
+                      {/* Auto-Advance Toggle */}
+                      <label className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={autoAdvanceArt}
+                          onChange={(e) => {
+                            setAutoAdvanceArt(e.target.checked);
+                            localStorage.setItem('scm_art_auto_advance', String(e.target.checked));
+                          }}
+                          className="rounded border-white/20 bg-white/5 text-primary-600 focus:ring-0 cursor-pointer"
+                        />
+                        <span className="font-medium">Auto-Advance</span>
+                      </label>
+
+                      {artQueue.some(q => q.sourceContext === 'decklist') && (
+                        <button
+                          type="button"
+                          onClick={() => handleCloseArtPicker()}
+                          className="px-3 py-1 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                        >
+                          Finish / Close
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {/* External provider site link */}
                   {artSourceTab === 'mpcfill' ? (
-                    <a href="https://mpcfill.com" target="_blank" rel="noopener noreferrer" className="p-2 text-white/40 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer" title="Open MPCFill.com">
-                      <ExternalLink size={16} />
+                    <a href="https://mpcfill.com" target="_blank" rel="noopener noreferrer" className="p-1.5 text-white/40 hover:text-white rounded-lg hover:bg-white/10 transition-colors" title="Open MPCFill.com">
+                      <ExternalLink size={15} />
                     </a>
                   ) : (
-                    <a href="https://scryfall.com" target="_blank" rel="noopener noreferrer" className="p-2 text-white/40 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer" title="Open Scryfall.com">
-                      <ExternalLink size={16} />
+                    <a href="https://scryfall.com" target="_blank" rel="noopener noreferrer" className="p-1.5 text-white/40 hover:text-white rounded-lg hover:bg-white/10 transition-colors" title="Open Scryfall.com">
+                      <ExternalLink size={15} />
                     </a>
                   )}
+
+                  {/* Close button */}
                   <button
-                    onClick={() => setIsArtPickerOpen(false)}
-                    className="p-2 text-white/40 hover:text-white rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                    onClick={() => handleCloseArtPicker()}
+                    className="p-1.5 text-white/40 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                    title="Close (Esc)"
                   >
-                    <X size={20} />
+                    <X size={18} />
                   </button>
                 </div>
               </div>
 
-              {/* Source Tabs & Search Bar (Visible in ALL modes including Add Back and Set Back) */}
-              <div className="p-5 border-b border-white/10 bg-white/[0.01] space-y-4">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
+              {/* Slim Queue Filmstrip & Progress Line (Visible when artQueue has cards) */}
+              {artQueue.length > 0 && (() => {
+                const completedCount = artQueue.filter(q => q.status === 'downloaded').length;
+                const progressPct = Math.round((completedCount / artQueue.length) * 100);
+
+                return (
+                  <div className="bg-black/30 border-b border-white/5">
+                    <div ref={filmstripContainerRef} className="flex items-center gap-1.5 px-4 py-1.5 overflow-x-auto scrollbar-thin scrollbar-thumb-white/10">
+                      {artQueue.map((item, idx) => {
+                        const isActive = idx === artQueueIndex;
+                        const isDone = item.status === 'downloaded';
+                        return (
+                          <button
+                            key={item.id || idx}
+                            type="button"
+                            onClick={() => handleNavigateQueue(idx)}
+                            className={cn(
+                              "shrink-0 px-2.5 py-0.5 rounded-md text-[11px] font-medium flex items-center gap-1.5 transition-all cursor-pointer border",
+                              isActive
+                                ? "bg-primary-600 text-white border-primary-400 shadow-sm"
+                                : isDone
+                                  ? "bg-emerald-600/15 text-emerald-300 border-emerald-500/30 hover:bg-emerald-600/25"
+                                  : (item.allocatedCopies || 0) > 0
+                                    ? "bg-amber-600/15 text-amber-300 border-amber-500/30 hover:bg-amber-600/25"
+                                    : "bg-white/5 text-white/50 border-white/10 hover:bg-white/10 hover:text-white"
+                            )}
+                          >
+                            {isDone ? (
+                              <CheckCircle size={10} className="text-emerald-400 shrink-0" />
+                            ) : (item.allocatedCopies || 0) > 0 ? (
+                              <span className="text-[9px] text-amber-400 font-mono font-bold">{item.allocatedCopies}/{item.originalQuantity}</span>
+                            ) : (
+                              <span className="text-[9px] text-white/40 font-mono">#{idx + 1}</span>
+                            )}
+                            <span className="truncate max-w-[110px]">{item.displayName || item.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Slim Progress Bar */}
+                    <div className="w-full h-0.5 bg-white/5">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-primary-400 transition-all duration-200"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Compact Search & Filter Toolbar */}
+              <div className="px-5 py-2.5 border-b border-white/10 bg-white/[0.01] flex flex-col gap-2.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
                   {/* Category toggle if in Set Back mode (Fronts vs Backs) */}
                   {artTargetCard?.targetMode === 'double_sided' ? (
-                    <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
+                    <div className="flex bg-black/40 p-0.5 rounded-xl border border-white/5 gap-1 shrink-0">
                       <button
                         type="button"
                         onClick={() => {
@@ -9831,11 +10636,11 @@ export default function App() {
                           if (artQuery) handleSearchArt(artQuery, undefined, artSourceTab);
                         }}
                         className={cn(
-                          "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                          setBackSearchCategory === 'cards' ? "bg-primary-600 text-white shadow-lg" : "text-white/50 hover:text-white"
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                          setBackSearchCategory === 'cards' ? "bg-primary-600 text-white shadow-sm" : "text-white/50 hover:text-white"
                         )}
                       >
-                        <Layers size={13} /> Search Cards
+                        <Layers size={13} /> Cards
                       </button>
                       <button
                         type="button"
@@ -9849,18 +10654,18 @@ export default function App() {
                           handleSearchArt('', updated, 'mpcfill');
                         }}
                         className={cn(
-                          "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                          setBackSearchCategory === 'backs' ? "bg-primary-600 text-white shadow-lg" : "text-white/50 hover:text-white"
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                          setBackSearchCategory === 'backs' ? "bg-primary-600 text-white shadow-sm" : "text-white/50 hover:text-white"
                         )}
                       >
-                        <ImageIcon size={13} /> Search Backs
+                        <ImageIcon size={13} /> Backs
                       </button>
                     </div>
                   ) : (
                     /* Provider Tabs */
-                    <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 gap-1">
+                    <div className="flex bg-black/40 p-0.5 rounded-xl border border-white/5 gap-1 shrink-0">
                       {isBacksOnlyModal ? (
-                        <div className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-primary-600 text-white shadow-lg flex items-center gap-1.5 select-none">
+                        <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary-600 text-white shadow-sm flex items-center gap-1.5 select-none">
                           <ImageIcon size={13} /> MPC Backs
                         </div>
                       ) : pluginState.selectedPlugin?.id === 'mtg' ? (
@@ -9872,8 +10677,8 @@ export default function App() {
                               handleSearchArt(artQuery || 'Sol Ring', undefined, 'scryfall');
                             }}
                             className={cn(
-                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                              artSourceTab === 'scryfall' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                              "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                              artSourceTab === 'scryfall' ? "bg-primary-600 text-white shadow-sm" : "text-white/50 hover:text-white"
                             )}
                           >
                             Scryfall
@@ -9887,8 +10692,8 @@ export default function App() {
                               handleSearchArt(artQuery || 'Sol Ring', updated, 'mpcfill');
                             }}
                             className={cn(
-                              "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                              artSourceTab === 'mpcfill' ? "bg-primary-600 text-white shadow-lg shadow-primary-600/30" : "text-white/50 hover:text-white"
+                              "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                              artSourceTab === 'mpcfill' ? "bg-primary-600 text-white shadow-sm" : "text-white/50 hover:text-white"
                             )}
                           >
                             MPC
@@ -9897,16 +10702,7 @@ export default function App() {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => {
-                            const isOneProxy = pluginState.selectedPlugin?.id === 'one_piece' || pluginState.selectedPlugin?.id === 'oneproxy';
-                            const provKey = isOneProxy ? 'oneproxy' : (pluginState.selectedPlugin?.id === 'pokemon' ? 'limitless' : (pluginState.selectedPlugin?.id || 'pokemon'));
-                            setArtSourceTab(provKey);
-                            handleSearchArt(artQuery || getPluginCardProvider(provKey, pluginState.format).defaultQuery, undefined, provKey);
-                          }}
-                          className={cn(
-                            "px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                            "bg-primary-600 text-white shadow-lg shadow-primary-600/30"
-                          )}
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-primary-600 text-white shadow-sm select-none"
                         >
                           {getPluginCardProvider(pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy' ? 'oneproxy' : pluginState.selectedPlugin?.id, pluginState.format).tabLabel}
                         </button>
@@ -9914,50 +10710,101 @@ export default function App() {
                     </div>
                   )}
 
-                  {artTargetCard && (
-                    <span className="text-xs text-white/40 font-mono">
-                      Target: <span className="text-primary-300 font-bold">{artTargetCard.targets && artTargetCard.targets.length > 1 ? `${artTargetCard.targets.length} Selected Cards` : artTargetCard.name}</span>
-                    </span>
-                  )}
-                </div>
+                  {/* Unified Search Input */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSearchArt(artQuery);
+                    }}
+                    className="flex-1 min-w-[200px] flex gap-2"
+                  >
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" size={14} />
+                      <input
+                        type="text"
+                        value={artQuery}
+                        onChange={(e) => setArtQuery(e.target.value)}
+                        placeholder={
+                          isBacksOnlyModal 
+                            ? "Search back patterns..." 
+                            : (artSourceTab === 'oneproxy'
+                                ? "Search local OneProxy card assets..."
+                                : `Search ${getPluginCardProvider(pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy' ? 'oneproxy' : pluginState.selectedPlugin?.id, pluginState.format).providerName} cards...`)
+                        }
+                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-primary-500 font-medium h-8"
+                        autoFocus={!(artQueue.length > 0 && artQueue[artQueueIndex]?.sourceContext === 'decklist')}
+                      />
+                      {artQuery && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setArtQuery('');
+                            handleSearchArt('');
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 hover:text-white cursor-pointer"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isSearchingArt}
+                      className="px-3.5 py-1.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm shadow-primary-600/25 h-8 shrink-0"
+                    >
+                      {isSearchingArt ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                      <span>Search</span>
+                    </button>
+                  </form>
 
-                {/* Unified Search Input */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSearchArt(artQuery);
-                  }}
-                  className="flex gap-3"
-                >
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" size={16} />
+                  {/* Filters Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdvancedFilters(prev => {
+                        const next = !prev;
+                        localStorage.setItem('scm_show_art_filters', String(next));
+                        return next;
+                      });
+                    }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all h-8 shrink-0",
+                      showAdvancedFilters || activeFiltersCount > 0
+                        ? "bg-primary-600/20 border-primary-500/50 text-primary-300"
+                        : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+                    )}
+                    title={showAdvancedFilters ? "Hide filter dropdowns" : "Show filter dropdowns"}
+                  >
+                    <SlidersHorizontal size={13} />
+                    <span>Filters</span>
+                    {activeFiltersCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-primary-500 text-white text-[10px] font-bold">
+                        {activeFiltersCount}
+                      </span>
+                    )}
+                    {showAdvancedFilters ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  </button>
+
+                  {/* Card Size Zoom Slider */}
+                  <div className="flex items-center gap-2 bg-white/5 px-2.5 py-1 rounded-xl border border-white/10 h-8 shrink-0">
+                    <ZoomIn size={12} className="text-white/40" />
                     <input
-                      type="text"
-                      value={artQuery}
-                      onChange={(e) => setArtQuery(e.target.value)}
-                      placeholder={
-                        isBacksOnlyModal 
-                          ? "Search back patterns (e.g. Lotus, Retro, Japanese, Dark, Classic)..." 
-                          : (artSourceTab === 'oneproxy'
-                              ? "Search local OneProxy card assets (e.g. OP01-001 or card name)..."
-                              : `Search ${getPluginCardProvider(pluginState.selectedPlugin?.id === 'one_piece' && pluginState.format === 'oneproxy' ? 'oneproxy' : pluginState.selectedPlugin?.id, pluginState.format).providerName} cards...`)
-                      }
-                      className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-primary-500"
-                      autoFocus
+                      type="range"
+                      min="100"
+                      max="300"
+                      value={artCardSize}
+                      onChange={(e) => setArtCardSize(parseInt(e.target.value))}
+                      className="w-16 accent-primary-500 cursor-pointer"
+                      title="Card zoom size"
                     />
                   </div>
-                  <button
-                    type="submit"
-                    disabled={isSearchingArt}
-                    className="px-6 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-2 cursor-pointer shadow-lg shadow-primary-600/25"
-                  >
-                    {isSearchingArt ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                    Search
-                  </button>
-                </form>
+                </div>
 
-                {/* Filters Toolbar */}
-                {artSourceTab === 'scryfall' && !isBacksOnlyModal ? (
+                {/* Collapsible Advanced Filters Drawer */}
+                {showAdvancedFilters && (
+                  <div className="pt-2 pb-1 border-t border-white/10 flex flex-col gap-2.5 animate-in fade-in duration-150">
+                    {/* Filters Toolbar */}
+                    {artSourceTab === 'scryfall' && !isBacksOnlyModal ? (
                   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 pt-1">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold uppercase tracking-wider text-white/40 block">Language</label>
@@ -10624,77 +11471,73 @@ export default function App() {
                   </div>
                 ) : null}
 
-                {artDownloadMsg && (
-                  <div className="text-xs px-3.5 py-2 rounded-xl bg-primary-600/15 border border-primary-500/30 text-primary-300 font-medium">
-                    {artDownloadMsg}
+                    {/* Clear Filters Row */}
+                    <div className="flex justify-end pt-1">
+                      {artSourceTab === 'oneproxy' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const reset = { set: 'all', color: 'all', type: 'all', rarity: 'all', order: 'number' };
+                            setOneProxyFilters(reset);
+                            handleSearchArt(artQuery, reset, 'oneproxy');
+                          }}
+                          className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Clear Filters
+                        </button>
+                      ) : artSourceTab === 'scryfall' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const reset = { frame: 'all', type: 'all', color: 'all', rarity: 'all', format: 'all', order: 'released', set: '', lang: 'any' };
+                            setScryfallFilters(reset);
+                            handleSearchArt(artQuery, reset, 'scryfall');
+                          }}
+                          className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Clear Filters
+                        </button>
+                      ) : artSourceTab === 'mpcfill' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const reset = { dpi: 'all', face: 'all', tag: 'all', set: '', order: 'dpi_desc', lang: 'all' };
+                            setMpcFilters(reset);
+                            handleSearchArt(artQuery, reset, 'mpcfill');
+                          }}
+                          className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Clear Filters
+                        </button>
+                      ) : artSourceTab === 'limitless' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const reset = { type: 'all', energy: 'all', stage: 'all', rarity: 'all', format: 'all', order: 'set', set: 'all' };
+                            setPokemonFilters(reset);
+                            handleSearchArt(artQuery, reset, 'limitless');
+                          }}
+                          className="px-3 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Clear Filters
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 )}
 
-                <div className="flex justify-between items-center pt-2">
-                  {artSourceTab === 'oneproxy' ? (
-                    <button
-                      onClick={() => {
-                        const reset = { set: 'all', color: 'all', type: 'all', rarity: 'all', order: 'number' };
-                        setOneProxyFilters(reset);
-                        handleSearchArt(artQuery, reset, 'oneproxy');
-                      }}
-                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                    >
-                      Clear Filters
-                    </button>
-                  ) : artSourceTab === 'scryfall' ? (
-                    <button
-                      onClick={() => {
-                        const reset = { frame: 'all', type: 'all', color: 'all', rarity: 'all', format: 'all', order: 'released', set: '', lang: 'any' };
-                        setScryfallFilters(reset);
-                        handleSearchArt(artQuery, reset, 'scryfall');
-                      }}
-                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                    >
-                      Clear Filters
-                    </button>
-                  ) : artSourceTab === 'mpcfill' ? (
-                    <button
-                      onClick={() => {
-                        const reset = { dpi: 'all', face: 'all', tag: 'all', set: '', order: 'dpi_desc', lang: 'all' };
-                        setMpcFilters(reset);
-                        handleSearchArt(artQuery, reset, 'mpcfill');
-                      }}
-                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                    >
-                      Clear Filters
-                    </button>
-                  ) : artSourceTab === 'limitless' ? (
-                    <button
-                      onClick={() => {
-                        const reset = { type: 'all', energy: 'all', stage: 'all', rarity: 'all', format: 'all', order: 'set', set: 'all' };
-                        setPokemonFilters(reset);
-                        handleSearchArt(artQuery, reset, 'limitless');
-                      }}
-                      className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold transition-colors cursor-pointer"
-                    >
-                      Clear Filters
-                    </button>
-                  ) : <div />}
-
-                  <div className="flex items-center gap-3">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-white/40">Card Size</label>
-                    <input
-                      type="range"
-                      min="100"
-                      max="300"
-                      value={artCardSize}
-                      onChange={(e) => setArtCardSize(parseInt(e.target.value))}
-                      className="w-24 accent-primary-500"
-                    />
+                {artDownloadMsg && (
+                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 text-xs px-4 py-2 rounded-xl bg-[#141620]/95 backdrop-blur-md border border-primary-500/40 text-primary-300 font-medium shadow-2xl pointer-events-none animate-in fade-in">
+                    {artDownloadMsg}
                   </div>
-                </div>
-
+                )}
               </div>
 
               {/* Modal Body: Results Grid */}
+              {/* Modal Body: Results Grid */}
               <div 
-                className="flex-1 overflow-y-auto p-5"
+                ref={artGridScrollRef}
+                className="flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-thumb-white/10"
                 onScroll={(e) => {
                   const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
                   if (scrollHeight - scrollTop - clientHeight < 450) {
@@ -10704,108 +11547,217 @@ export default function App() {
                   }
                 }}
               >
-                {isSearchingArt ? (
-                  <div className="h-72 flex flex-col items-center justify-center gap-3 text-white/40">
-                    <Loader2 size={36} className="animate-spin text-primary-400" />
-                    <span className="text-xs">Fetching cards & printings from {artSourceTab === 'limitless' ? 'Limitless TCG' : artSourceTab === 'scryfall' ? 'Scryfall API' : artSourceTab === 'mpcfill' ? 'MPCFill' : (artSourceTab === 'oneproxy' ? 'OneProxy Local Library' : getPluginCardProvider(artSourceTab in PLUGIN_CARD_PROVIDERS ? artSourceTab : pluginState.selectedPlugin?.id).providerName)}...</span>
+                {isSearchingArt && artResults.length === 0 ? (
+                  <div className="grid gap-4 py-1" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${artCardSize}px, 1fr))` }}>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="bg-white/[0.02] border border-white/5 rounded-2xl p-2.5 flex flex-col justify-between animate-pulse">
+                        <div className="aspect-[5/7] rounded-xl bg-white/5 mb-2" />
+                        <div className="space-y-1.5 py-1">
+                          <div className="h-3 bg-white/5 rounded w-3/4" />
+                          <div className="h-2 bg-white/5 rounded w-1/2" />
+                        </div>
+                        <div className="h-7 bg-white/5 rounded-lg mt-2" />
+                      </div>
+                    ))}
                   </div>
                 ) : artResults.length > 0 ? (
-                  <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${artCardSize}px, 1fr))` }}>
-                    {artResults
-                      .slice()
-                      .sort((a, b) => {
-                        if (artSourceTab === 'scryfall' && (scryfallFilters.order === 'dpi_desc' || scryfallFilters.order === 'dpi_asc')) {
-                          const dpiA = a.dpi || (a.image_uris?.png ? 300 : a.highres_image ? 300 : 300);
-                          const dpiB = b.dpi || (b.image_uris?.png ? 300 : b.highres_image ? 300 : 300);
-                          if (scryfallFilters.order === 'dpi_desc') return dpiB - dpiA;
-                          if (scryfallFilters.order === 'dpi_asc') return dpiA - dpiB;
-                        }
-                        return 0;
-                      })
-                      .slice(0, visibleArtCount)
-                      .map((card) => {
-                        const fullImg = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
-                        const thumbImg = card.thumbnailUrl || card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || card.image_uris?.normal || fullImg;
-                        const enlargeImg = card.previewUrl || getBrowserDisplayUrl(fullImg) || thumbImg;
-                        const frameEffects = card.frame_effects?.join(', ') || card.tags?.join(', ');
+                  <div className="relative">
+                    {/* Non-intrusive floating indicator when searching while keeping existing cards visible */}
+                    {isSearchingArt && (
+                      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex justify-center pointer-events-none">
+                        <div className="bg-[#12131a]/95 backdrop-blur-md border border-primary-500/50 text-primary-300 text-xs font-bold px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-2">
+                          <Loader2 size={13} className="animate-spin text-primary-400" />
+                          <span>Fetching printings for {cleanCardName(artTargetCard?.name || '')}...</span>
+                        </div>
+                      </div>
+                    )}
+                    <div
+                      className={cn(
+                        "grid gap-4 transition-opacity duration-150",
+                        isSearchingArt && "opacity-40 pointer-events-none"
+                      )}
+                      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${artCardSize}px, 1fr))` }}
+                    >
+                      {sortedArtResults
+                        .slice(0, visibleArtCount)
+                        .map((card, idx) => {
+                          const fullImg = card.imageUrl || card.image_uris?.png || card.image_uris?.large || card.card_faces?.[0]?.image_uris?.png || card.card_faces?.[0]?.image_uris?.large;
+                          const thumbImg = card.thumbnailUrl || card.image_uris?.small || card.card_faces?.[0]?.image_uris?.small || card.image_uris?.normal || fullImg;
+                          const enlargeImg = card.previewUrl || getBrowserDisplayUrl(fullImg) || thumbImg;
+                          const frameEffects = card.frame_effects?.join(', ') || card.tags?.join(', ');
+                          const isSelectedCard = recentlySelectedCardId === card.id;
+                          const isDecklistMode = artQueue.length > 0 && artQueue[artQueueIndex]?.sourceContext === 'decklist';
 
-                        return (
-                          <div key={card.id} className="bg-white/[0.03] border border-white/10 hover:border-primary-500/40 rounded-2xl p-2.5 flex flex-col justify-between transition-all group">
-                            <div>
-                              <div
-                                onClick={() => enlargeImg && setEnlargedImage(enlargeImg)}
-                                className="relative aspect-[5/7] rounded-xl overflow-hidden bg-black/40 mb-2 cursor-pointer group/img lightbox-trigger"
-                                data-enlarge-src={enlargeImg}
-                                data-lightbox-group="art-results"
-                                title="Click to enlarge"
-                              >
-                                {thumbImg ? (
-                                  <img
-                                    src={thumbImg}
-                                    alt={card.name}
-                                    loading="lazy"
-                                    decoding="async"
-                                    onError={(e) => {
-                                      const target = e.currentTarget;
-                                      if (card.fallbackUrl && target.src !== card.fallbackUrl) {
-                                        target.src = card.fallbackUrl;
-                                      } else if (fullImg && target.src !== getBrowserDisplayUrl(fullImg)) {
-                                        target.src = getBrowserDisplayUrl(fullImg);
-                                      }
-                                    }}
-                                    className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-xs text-white/30">No Image</div>
-                                )}
-                                <span className="absolute top-1.5 left-1.5 max-w-[85%] truncate px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none" title={`${String(card.set || '').toUpperCase()} #${card.collector_number}`}>
-                                  {String(card.set || '').toUpperCase()} #{card.collector_number}
-                                </span>
-                                {card.lang && card.lang !== 'en' && (
-                                  <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-amber-500/80 backdrop-blur-md text-[8px] font-mono font-bold text-white shadow pointer-events-none uppercase">
-                                    {card.lang}
+                          return (
+                            <div
+                              key={card.id}
+                              className={cn(
+                                "relative bg-white/[0.03] border rounded-2xl p-2.5 flex flex-col justify-between transition-all group/card overflow-hidden",
+                                isDecklistMode
+                                  ? "hover:border-primary-500/50 hover:shadow-lg hover:shadow-primary-500/10"
+                                  : "border-white/10 hover:border-primary-500/40",
+                                isSelectedCard && "border-emerald-500 shadow-lg shadow-emerald-500/20 scale-[0.98]"
+                              )}
+                            >
+                              {/* Instant Selection Feedback Overlay */}
+                              {isSelectedCard && (
+                                <div className="absolute inset-0 bg-emerald-600/85 backdrop-blur-[1px] rounded-2xl flex flex-col items-center justify-center gap-1.5 z-30 animate-in fade-in duration-100">
+                                  <CheckCircle size={32} className="text-white drop-shadow-md" />
+                                  <span className="text-[11px] font-bold text-white tracking-wider uppercase">Selected!</span>
+                                </div>
+                              )}
+
+                              <div>
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (enlargeImg) {
+                                      setEnlargedImage(enlargeImg);
+                                    }
+                                  }}
+                                  className="relative aspect-[5/7] rounded-xl overflow-hidden bg-black/40 mb-2 cursor-zoom-in group/img"
+                                  title="Click to view enlarged card"
+                                >
+                                  {/* Hotkey number badge for 1-9 in decklist card-by-card mode */}
+                                  {isDecklistMode && idx < 9 && (
+                                    <div className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md bg-black/85 backdrop-blur-sm border border-white/20 text-white font-mono text-[10px] font-bold flex items-center justify-center shadow-lg z-10 pointer-events-none select-none group-hover/card:border-emerald-400 group-hover/card:text-emerald-300 transition-colors">
+                                      <span className="text-[8px] text-white/40 mr-1 font-sans">KEY</span>{idx + 1}
+                                    </div>
+                                  )}
+
+
+                                  {/* Zoom button on hover */}
+                                  {enlargeImg && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEnlargedImage(enlargeImg);
+                                      }}
+                                      className="absolute bottom-1.5 right-1.5 z-20 p-1.5 rounded-lg bg-black/75 hover:bg-black/95 text-white/70 hover:text-white backdrop-blur-md border border-white/20 flex items-center justify-center transition-all opacity-0 group-hover/card:opacity-100 shadow-md cursor-pointer"
+                                      title="Preview full size image"
+                                    >
+                                      <ZoomIn size={12} />
+                                    </button>
+                                  )}
+
+                                  {thumbImg ? (
+                                    <img
+                                      src={thumbImg}
+                                      alt={card.name}
+                                      loading={idx < 12 ? "eager" : "lazy"}
+                                      decoding="async"
+                                      onError={(e) => {
+                                        const target = e.currentTarget;
+                                        if (card.fallbackUrl && target.src !== card.fallbackUrl) {
+                                          target.src = card.fallbackUrl;
+                                        } else if (fullImg && target.src !== getBrowserDisplayUrl(fullImg)) {
+                                          target.src = getBrowserDisplayUrl(fullImg);
+                                        }
+                                      }}
+                                      className="w-full h-full object-cover group-hover/img:scale-105 transition-transform duration-300"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-xs text-white/30">No Image</div>
+                                  )}
+                                  <span className="absolute top-1.5 left-1.5 max-w-[80%] truncate px-1.5 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-[9px] font-mono font-bold text-primary-300 border border-white/10 pointer-events-none" title={`${String(card.set || '').toUpperCase()} #${card.collector_number}`}>
+                                    {String(card.set || '').toUpperCase()} #{card.collector_number}
                                   </span>
-                                )}
-                                {card.isWebp && (
-                                  <span className="absolute top-1.5 right-1.5 px-1 py-0.5 rounded bg-emerald-500/80 backdrop-blur-md text-[8px] font-mono font-bold text-white shadow pointer-events-none">
-                                    WEBP
+                                  {card.lang && card.lang !== 'en' && (
+                                    <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-amber-500/80 backdrop-blur-md text-[8px] font-mono font-bold text-white shadow pointer-events-none uppercase">
+                                      {card.lang}
+                                    </span>
+                                  )}
+                                  {card.isWebp && (
+                                    <span className="absolute bottom-1.5 left-10 px-1 py-0.5 rounded bg-emerald-500/80 backdrop-blur-md text-[8px] font-mono font-bold text-white shadow pointer-events-none">
+                                      WEBP
+                                    </span>
+                                  )}
+                                </div>
+                                <h4 className="text-xs font-bold text-white truncate" title={card.printed_name && card.printed_name !== card.name ? `${card.printed_name} (${card.name})` : card.name}>
+                                  {card.printed_name && card.printed_name !== card.name ? `${card.printed_name} (${card.name})` : card.name}
+                                </h4>
+                                <p className="text-[10px] text-white/40 truncate" title={card.set_name || card.source}>
+                                  {card.set_name || card.source || 'Community'} {card.released_at ? `(${card.released_at.slice(0, 4)})` : ''}
+                                </p>
+                                {frameEffects && (
+                                  <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-white/5 text-[9px] text-primary-300/80 capitalize truncate max-w-full">
+                                    {frameEffects}
                                   </span>
                                 )}
                               </div>
-                              <h4 className="text-xs font-bold text-white truncate" title={card.printed_name && card.printed_name !== card.name ? `${card.printed_name} (${card.name})` : card.name}>
-                                {card.printed_name && card.printed_name !== card.name ? `${card.printed_name} (${card.name})` : card.name}
-                              </h4>
-                              <p className="text-[10px] text-white/40 truncate" title={card.set_name || card.source}>
-                                {card.set_name || card.source || 'Community'} {card.released_at ? `(${card.released_at.slice(0, 4)})` : ''}
-                              </p>
-                              {frameEffects && (
-                                <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-white/5 text-[9px] text-primary-300/80 capitalize truncate max-w-full">
-                                  {frameEffects}
-                                </span>
-                              )}
-                            </div>
 
-                            <div className="space-y-1.5 mt-3 pt-2 border-t border-white/5">
-                              {/* Primary Action Button: Replaces old Project & Library buttons */}
-                              {artTargetCard?.targetMode === 'double_sided' ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
-                                    const names = artTargetCard.targets && artTargetCard.targets.length > 0
-                                      ? artTargetCard.targets.map(t => t.name)
-                                      : [artTargetCard.name];
-                                    handleDownloadCardArt(card, targetMode, 'double_sided', names);
-                                  }}
-                                  className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1"
-                                  title={artTargetCard.targets && artTargetCard.targets.length > 1
-                                    ? `Pair this art as the reverse back of all ${artTargetCard.targets.length} selected cards`
-                                    : `Pair this art as the reverse back of ${artTargetCard.name}`}
-                                >
-                                  <Layers size={12} />
-                                  <span>{artTargetCard.targets && artTargetCard.targets.length > 1 ? `Set Back (${artTargetCard.targets.length} Cards)` : 'Set Back'}</span>
-                                </button>
-                              ) : artTargetCard?.type === 'back' ? (
+                              <div className="space-y-1.5 mt-3 pt-2 border-t border-white/5">
+                                {/* Primary Action Button: Replaces old Project & Library buttons */}
+                                {artTargetCard?.targetMode === 'double_sided' ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const targetMode = assetViewMode === 'plugins' ? 'plugins' : (assetViewMode === 'library' ? 'library' : 'project');
+                                      const names = artTargetCard.targets && artTargetCard.targets.length > 0
+                                        ? artTargetCard.targets.map(t => t.name)
+                                        : [artTargetCard.name];
+                                      handleDownloadCardArt(card, targetMode, 'double_sided', names);
+                                    }}
+                                    className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1"
+                                    title={artTargetCard.targets && artTargetCard.targets.length > 1
+                                      ? `Pair this art as the reverse back of all ${artTargetCard.targets.length} selected cards`
+                                      : `Pair this art as the reverse back of ${artTargetCard.name}`}
+                                  >
+                                    <Layers size={12} />
+                                    <span>{artTargetCard.targets && artTargetCard.targets.length > 1 ? `Set Back (${artTargetCard.targets.length} Cards)` : 'Set Back'}</span>
+                                  </button>
+                                ) : isDecklistMode ? (
+                                  (() => {
+                                    const currentItem = artQueue[artQueueIndex];
+                                    const remainingQty = currentItem?.status === 'downloaded'
+                                      ? (currentItem.originalQuantity || currentItem.quantity || 1)
+                                      : (currentItem?.quantity || 1);
+                                    const isMulti = remainingQty > 1;
+
+                                    return isMulti ? (
+                                      <div className="flex items-center gap-1.5 w-full">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSelectArtForQueue(card, 'all');
+                                          }}
+                                          className="flex-1 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-all text-center cursor-pointer shadow-sm flex items-center justify-center gap-1 active:scale-95"
+                                          title={`Apply this artwork to all remaining (${remainingQty}x) copies of ${cleanCardName(currentItem?.name || '')} (or press ${idx < 9 ? idx + 1 : 'Enter'})`}
+                                        >
+                                          <Sparkles size={11} />
+                                          <span>All ({remainingQty}x)</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSelectArtForQueue(card, 'single');
+                                          }}
+                                          className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-bold transition-all text-center cursor-pointer border border-white/10 flex items-center justify-center gap-1 active:scale-95 hover:border-primary-500/40"
+                                          title={`Assign this artwork to 1 copy only (Copy ${(currentItem.allocatedCopies || 0) + 1} of ${currentItem.originalQuantity || remainingQty})`}
+                                        >
+                                          <span>+1 copy</span>
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleSelectArtForQueue(card, 'all');
+                                        }}
+                                        className="w-full py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-[10px] font-bold transition-colors text-center cursor-pointer shadow-sm flex items-center justify-center gap-1.5 active:scale-95"
+                                        title={`Select this artwork for ${cleanCardName(currentItem?.name || '')} (or press ${idx < 9 ? idx + 1 : 'Enter'})`}
+                                      >
+                                        <Sparkles size={12} />
+                                        <span>Select Art</span>
+                                      </button>
+                                    );
+                                  })()
+                                ) : artTargetCard?.type === 'back' ? (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -10895,6 +11847,7 @@ export default function App() {
                         All {artResults.length} {isBacksOnlyModal || mpcFilters.face === 'backs' ? 'card backings' : 'cards'} loaded
                       </div>
                     )}
+                    </div>
                   </div>
                 ) : (
                   <div className="h-72 flex flex-col items-center justify-center gap-2 text-white/30 text-center px-4">

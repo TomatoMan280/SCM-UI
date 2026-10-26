@@ -4,6 +4,27 @@ All notable changes to **SCMUI (Silhouette Card Maker UI)** are documented in th
 
 ---
 
+## [3.0.12] - 2026-10-26
+
+### 🧭 Streamlined Card Art Stepper & Queue Navigation
+- **Unified Stepper Header**: Combined card stepper and queue indicators into a clean top-left bar `< #/total > Skip "Card Name" QTY: #` for intuitive browsing through queued decklist cards.
+- **Enhanced Keyboard Navigation**: Rapidly navigate through cards using `ArrowLeft` / `ArrowRight` (or `A` / `D`), skip cards with `S` or `Enter`, and select printings directly via `1-9` number keys.
+- **Dual-Art & Multi-Copy Allocation**: Added dedicated "All (Nx)" and "+1 copy" selection buttons for multi-quantity cards, displaying live copy completion (e.g. `QTY: 4 (1/4 done)`) and auto-advancing once all copies are allocated.
+
+### 📐 Rock-Solid Zero-Shift Grid Layout Stability
+- **Non-Intrusive Floating Search Indicator**: Converted the search status pill into an absolute overlay (`absolute top-2 left-1/2 -translate-x-1/2`) taking 0px in document flow, eliminating vertical jumping and layout bouncing while cycling through card arts.
+- **Floating Toast Notification System**: Replaced in-toolbar status banners with an anchored floating toast (`fixed bottom-6`), preventing layout shifts across the toolbar and scroll view.
+- **Fixed-Height Modal & Single-Line Header**: Locked the modal container to `h-[90vh]` and header to `min-h-[57px] flex-nowrap`, guaranteeing consistent geometry regardless of card title length.
+
+### 🖼️ Enlarged Art Lightbox Gallery Cycling
+- **Full Art Carousel**: Enlarging any card in the Card Art Selector modal now supports seamless cycling through all available prints and alternate arts using left/right arrows and arrow keys directly inside the lightbox preview.
+
+### 🃏 Multi-Game Decklist Parser & Fast In-Memory Scryfall Cache
+- **Robust Multi-TCG Decklist Parser**: Integrated comprehensive decklist parsing supporting MTG, Pokémon, One Piece, Yu-Gi-Oh!, Digimon, and Lorcana formats with automatic quantity extraction, collector numbers, set codes, and sideboards.
+- **Sub-Millisecond Search Response**: Implemented in-memory TTL caching on `/api/scryfall/search` delivering instant 0ms responses on repeated card queries.
+
+---
+
 ## [3.0.11] - 2026-10-22
 
 ### 🧹 Clean Asset Ingestion & DPI Metadata Stripping

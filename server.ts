@@ -1266,7 +1266,7 @@ except Exception:
   };
 
   const getCurrentAppVersion = () => {
-    let currentVersion = '3.0.11';
+    let currentVersion = '3.0.12';
     try {
       const possiblePkgPaths = [
         path.join(baseAppPath, 'package.json'),
@@ -1472,8 +1472,8 @@ except Exception:
       if (policy.forceUpdate && policy.simulateDownload) {
         requiredRelease = {
           id: 999999,
-          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.11',
-          name: `SCMUI v${policy.minRequiredVersion || '3.0.11'}`,
+          tag: policy.minRequiredVersion ? `v${policy.minRequiredVersion}` : 'v3.0.12',
+          name: `SCMUI v${policy.minRequiredVersion || '3.0.12'}`,
           publishedAt: new Date().toISOString(),
           isPrerelease: false,
           isCurrent: false,
@@ -1481,7 +1481,7 @@ except Exception:
           notes: 'Automatic background update with performance improvements.',
           htmlUrl: 'https://github.com/TomatoMan280/SCM-UI/releases',
           primaryAsset: {
-            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.11'}.exe`,
+            name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.12'}.exe`,
             size: 28500000,
             downloadUrl: 'simulate',
             isInstaller: true,
@@ -1489,7 +1489,7 @@ except Exception:
           },
           assets: [
             {
-              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.11'}.exe`,
+              name: `SCMUI-Setup-${policy.minRequiredVersion || '3.0.12'}.exe`,
               size: 28500000,
               downloadUrl: 'simulate',
               isInstaller: true,
@@ -1583,8 +1583,8 @@ except Exception:
     if (assetUrl === 'simulate' || req.query.simulate === 'true' || req.body.simulate === true) {
       activeDownload = {
         isDownloading: true,
-        tag: tag || 'v3.0.11',
-        assetName: assetName || 'SCMUI-Setup-3.0.11.exe',
+        tag: tag || 'v3.0.12',
+        assetName: assetName || 'SCMUI-Setup-3.0.12.exe',
         progress: 8,
         downloadedBytes: 2280000,
         totalBytes: 28500000,
@@ -2092,8 +2092,17 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
     res.json({ configs });
   });
 
-    // Scryfall Custom Art Search & Download Proxy with Advanced Filters & Smart Resolution
+  // In-memory cache for Scryfall searches to provide instant 0ms responses on repeated queries
+  const scryfallSearchCache = new Map<string, { timestamp: number; data: any; status: number }>();
+
+  // Scryfall Custom Art Search & Download Proxy with Advanced Filters & Smart Resolution
   app.get("/api/scryfall/search", async (req, res) => {
+    const cacheKey = req.originalUrl || req.url;
+    const cached = scryfallSearchCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < 1000 * 60 * 60)) {
+      return res.status(cached.status).json(cached.data);
+    }
+
     let q = (req.query.q as string || '').trim();
     const typeFilter = req.query.type as string;
     const colorFilter = req.query.color as string;
@@ -2237,6 +2246,9 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
           };
         });
       }
+      if (searchRes.status === 200 || !searchRes.status) {
+        scryfallSearchCache.set(cacheKey, { timestamp: Date.now(), data: searchRes.data, status: 200 });
+      }
       return res.status(searchRes.status || 200).json(searchRes.data);
     } catch (err: any) {
       console.error("[Scryfall Error]", err.message);
@@ -2308,7 +2320,7 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
           console.log("[MPCFill] Fetching complete cardbacks catalog from MPCFill...");
           const cbResp = await fetch("https://mpcfill.com/2/cardbacks/", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.11" },
+            headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.12" },
             body: JSON.stringify({
               searchSettings: {
                 filterSettings: {
@@ -2334,7 +2346,7 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
             if (cbIds.length > 0) {
               const cardsResp = await fetch("https://mpcfill.com/2/cards/", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.11" },
+                headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.12" },
                 body: JSON.stringify({ cardIdentifiers: cbIds })
               });
               if (cardsResp.ok) {
@@ -2405,7 +2417,7 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
           for (const cand of [noParens || q, q]) {
             try {
               const fuzzyRes = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cand)}`, {
-                headers: { 'User-Agent': 'SCMUI/3.0.11' }
+                headers: { 'User-Agent': 'SCMUI/3.0.12' }
               });
               if (fuzzyRes.ok) {
                 const sfData = await fuzzyRes.json();
@@ -2446,7 +2458,7 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
 
         const editorResp = await fetch("https://mpcfill.com/2/editorSearch/", {
           method: "POST",
-          headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.11" },
+          headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.12" },
           body: JSON.stringify(editorPayload)
         });
 
@@ -2470,7 +2482,7 @@ function autoPairCustomTokens(gameDir: string, decklistDir: string) {
           if (cardIds.length > 0) {
             const cardsResp = await fetch("https://mpcfill.com/2/cards/", {
               method: "POST",
-              headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.11" },
+              headers: { "Content-Type": "application/json", "User-Agent": "SCMUI/3.0.12" },
               body: JSON.stringify({ cardIdentifiers: cardIds })
             });
 
@@ -3040,7 +3052,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
   const ONEPROXY_BASE_URL = 'https://oneproxy.torforge.dev/api/v1';
   const ONEPROXY_BEARER_TOKEN = 'op_scmui_QCCTA2FAWJN7k7pWk08DiHf66xqZxmNzjkt88WYYBIE';
   const ONEPROXY_CREDIT_URL = 'https://oneproxy.torforge.dev/?utm_source=scmui&utm_medium=desktop_app&utm_campaign=scmui_integration';
-  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.11 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
+  const ONEPROXY_USER_AGENT = 'SCMUI/3.0.12 (Silhouette Card Maker UI; +https://github.com/TomatoMan280/SCM-UI)';
 
   const defaultOneProxyCacheDir = path.join(os.homedir(), '.cache', 'oneproxy');
   const defaultUserOneProxyDir = path.join(os.homedir(), 'OneProxy');
@@ -3173,7 +3185,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
     const headers = {
       'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
       'User-Agent': ONEPROXY_USER_AGENT,
-      'X-SCMUI-Version': '3.0.11',
+      'X-SCMUI-Version': '3.0.12',
       'Accept': 'application/json',
       ...(options.headers || {})
     };
@@ -3687,7 +3699,7 @@ app.get("/api/moxfield-proxy", async (req, res) => {
                 const fetchHeaders: any = {
                   'Authorization': `Bearer ${ONEPROXY_BEARER_TOKEN}`,
                   'User-Agent': ONEPROXY_USER_AGENT,
-                  'X-SCMUI-Version': '3.0.11'
+                  'X-SCMUI-Version': '3.0.12'
                 };
 
                 if (existingPartBytes > 0 && asset.sha256) {
